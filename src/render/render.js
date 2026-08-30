@@ -12,6 +12,7 @@ import { spriteForSeed } from "../sim/entities.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
+import { drawBubbles } from "./bubbles.js?v=living-bubbles-20260830";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=environment-boundaries-20260830";
 import {
@@ -653,7 +654,7 @@ export function render(state, { deformationStrength = 1 } = {}) {
     if (record.layerName === "background") addPlantRecord(builder, record, LAYERS.backgroundPlants);
     if (record.layerName === "midground") addPlantRecord(builder, record, LAYERS.midgroundPlants);
   }
-  drawAmbient(builder, state, palette, metrics);
+  drawBubbles(builder, state, palette, metrics, LAYERS.ambient);
   drawSchool(builder, state, palette, metrics);
   drawIndividuals(builder, state, palette, metrics, deformationStrength);
   drawReaction(builder, state.reaction, palette, metrics);

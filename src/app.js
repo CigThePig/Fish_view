@@ -1,5 +1,5 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=living-skeletal-plants-20260830";
-import { render } from "./render/render.js?v=living-skeletal-plants-20260830";
+import { render } from "./render/render.js?v=living-bubbles-20260830";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { DEFAULT_SEED } from "./sim/config.js";
 import { hashSeed } from "./sim/prng.js";
