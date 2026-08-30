@@ -12,15 +12,22 @@ import { spriteForSeed } from "../sim/entities.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
-import { drawBubbles } from "./bubbles.js?v=living-bubbles-20260830";
+import { drawBubbles } from "./bubbles.js?v=visual-depth-20260830";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
-import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=environment-boundaries-20260830";
+import {
+  depthScale,
+  laneForDepth,
+  schoolDepthScale,
+  scatteredDepth,
+  spreadDepth,
+} from "./depth.js?v=visual-depth-20260830";
+import { bodyFillForDepth, mixColor, MASK_SYMBOLS, scenePalette } from "./palette.js?v=visual-depth-20260830";
 import {
   addPlantRecord,
   createPlantRenderRecords,
   plantRenderRecord,
   skeletonLinesForRecord,
-} from "./plants.js?v=environment-boundaries-20260830";
+} from "./plants.js?v=visual-depth-20260830";
 import {
   addGlyphObject,
   createSceneBuilder,
@@ -40,14 +47,46 @@ const BAYER_4 = Object.freeze([
 export const LAYERS = Object.freeze({
   waterline: 10,
   backgroundPlants: 20,
+  // The far end of the school swims behind the midground weed rather than in
+  // front of it. Something passing behind a plant is the one depth cue no
+  // amount of colour work can fake.
+  deepSchool: 22,
   midgroundPlants: 24,
   ambient: 25,
+  // The nearer four school lanes stack on 30..33 and the five individual lanes
+  // on 40..44. The six named individuals stay between the midground and
+  // foreground vegetation at every distance: they are the characters, and an
+  // opaque fish disappearing behind a weed reads as a bug rather than as depth.
   school: 30,
   individuals: 40,
   reaction: 45,
   foregroundPlants: 50,
   substrate: 60,
 });
+
+// Sunlight entering a tank is the cheapest volume there is: a handful of
+// tilted, widening, fading rectangles behind everything else. They are part of
+// the background rather than scene objects, so they cost nothing per frame
+// beyond the background repaint that every damage rectangle already performs.
+const SHAFT_STEPS = 11;
+const SHAFT_MAX_TILT = 0.3;
+// The shafts lean with the sun, quantized to two-hour stages. That is the same
+// trick as the 12 palette stages: whole-field changes stay infrequent, and the
+// two stage clocks are the only things that force a full repaint.
+const SHAFT_STAGE_HOURS = 2;
+// Sunlight in water is a suggestion, not a spotlight. Keeping the peak mix low
+// is what stops the steps in the taper from reading as stacked blocks.
+const SHAFT_MINIMUM = 0.008;
+const SHAFT_PEAK = 0.15;
+// The floor recedes towards the water it meets. Four slabs is enough to read as
+// a ground plane and cheap enough to stay full width.
+const FLOOR_STEPS = 4;
+const FLOOR_LIFT = 0.5;
+// A little falloff at the left and right edges turns six horizontal bands into
+// a volume with a front pane.
+const EDGE_STEPS = 3;
+const EDGE_FRACTION = 0.12;
+const EDGE_STRENGTH = 0.3;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -62,15 +101,17 @@ function positiveModulo(value, modulus) {
   return ((value % modulus) + modulus) % modulus;
 }
 
-function maskColor(symbol, seed, palette) {
-  if (!symbol || symbol === " ") return palette.masks.C;
-  if (symbol === "4" || symbol === "W" || symbol === "w") return palette.masks.W;
+// Takes the mask table rather than the palette, because a fish is coloured from
+// the table for the depth lane it is swimming in, not from the scene default.
+function maskColor(symbol, seed, masks) {
+  if (!symbol || symbol === " ") return masks.C;
+  if (symbol === "4" || symbol === "W" || symbol === "w") return masks.W;
   if (/^[1-9]$/.test(symbol)) {
     const slot = Number(symbol);
     const choice = Math.floor(sample01(seed, slot * 37) * MASK_SYMBOLS.length) % MASK_SYMBOLS.length;
-    return palette.masks[MASK_SYMBOLS[choice]];
+    return masks[MASK_SYMBOLS[choice]];
   }
-  return palette.masks[symbol] ?? palette.masks.C;
+  return masks[symbol] ?? masks.C;
 }
 
 const spritePointCache = new Map();
@@ -163,7 +204,81 @@ function turnPose(fish) {
   };
 }
 
-function createBackground(dimensions, palette, seed, withSubstrate = true) {
+// How far a given horizontal position is dimmed by the tank's side falloff.
+// Used both for the explicit edge rectangles and for the per-column terrain
+// segments, which are already split finely enough to be shaded in place.
+function edgeAmount(x, width) {
+  const margin = width * EDGE_FRACTION;
+  if (margin <= 0) return 0;
+  const distance = Math.min(x, width - x);
+  if (distance >= margin) return 0;
+  const step = Math.floor((distance / margin) * EDGE_STEPS);
+  return EDGE_STRENGTH * (1 - step / EDGE_STEPS);
+}
+
+// Light shafts fall from the surface, lean with the sun, widen as they spread
+// and die out with depth. Each step is one core rectangle plus two dimmer
+// flanks, so a shaft is a soft column rather than a painted stripe.
+function createSunShafts(dimensions, palette, seed, bands, surfaceTop, waterBottom, timeOfDayHours) {
+  const strength = SHAFT_PEAK * (0.16 + palette.daylight * 0.84);
+  const count = dimensions.logicalWidth > 50 ? 4 : 3;
+  const stages = 24 / SHAFT_STAGE_HOURS;
+  const stage = Math.floor(positiveModulo(timeOfDayHours, 24) / SHAFT_STAGE_HOURS);
+  // Morning light leans one way, evening light the other, and the quantized
+  // stage is what makes that motion cost one repaint every two simulated hours.
+  const tilt = (((stage + 0.5) / stages) - 0.5) * 2 * SHAFT_MAX_TILT;
+  const waterHeight = Math.max(1, waterBottom - surfaceTop);
+  const stepHeight = waterHeight / SHAFT_STEPS;
+  const rects = [];
+  for (let index = 0; index < count; index += 1) {
+    const originX = sampleRange(seed, 5200 + index, 0.1, 0.9) * dimensions.width;
+    const coreWidth = sampleRange(seed, 5300 + index, 0.018, 0.038) * dimensions.width;
+    const brightness = sampleRange(seed, 5400 + index, 0.55, 1);
+    for (let step = 0; step < SHAFT_STEPS; step += 1) {
+      const progress = (step + 0.5) / SHAFT_STEPS;
+      const intensity = strength * brightness * Math.pow(1 - progress, 1.7);
+      if (intensity < SHAFT_MINIMUM) break;
+      const top = surfaceTop + step * stepHeight;
+      const band = bands.find((candidate) => top < candidate.y + candidate.height) ?? bands.at(-1);
+      const width = coreWidth * (1 + progress * 1.4);
+      const centerX = originX + tilt * progress * dimensions.width;
+      const y = Math.round(top);
+      const height = Math.round(top + stepHeight) - y;
+      // Outer flank, core, outer flank. Widths are rounded so the panel driver
+      // sees whole pixels, exactly like the opaque fish bodies.
+      const columns = [
+        { offset: -width * 0.8, span: width * 0.62, share: 0.42 },
+        { offset: 0, span: width, share: 1 },
+        { offset: width * 0.8, span: width * 0.62, share: 0.42 },
+      ];
+      for (const column of columns) {
+        const amount = intensity * column.share;
+        if (amount < SHAFT_MINIMUM) continue;
+        const left = Math.round(clamp(centerX + column.offset - column.span / 2, 0, dimensions.width));
+        const right = Math.round(clamp(centerX + column.offset + column.span / 2, 0, dimensions.width));
+        if (right - left < 1 || height < 1) continue;
+        rects.push({
+          x: left,
+          y,
+          width: right - left,
+          height,
+          color: mixColor(band.color, palette.shaftLight, amount),
+        });
+      }
+    }
+  }
+  return rects;
+}
+
+// `tankDepth` is what separates the aquarium from the two labs. The labs exist
+// to judge artwork, so they get the water and the terrain but never the sun
+// shafts or the side falloff: a reference view has to show the ink, not the
+// room it is standing in.
+function createBackground(dimensions, palette, seed, {
+  withSubstrate = true,
+  tankDepth = true,
+  timeOfDayHours = 12,
+} = {}) {
   const metrics = sceneMetrics(dimensions);
   const surfaceTop = withSubstrate ? SURFACE_Y_ROWS * metrics.cellHeight : 0;
   const waterBottom = withSubstrate
@@ -189,7 +304,11 @@ function createBackground(dimensions, palette, seed, withSubstrate = true) {
     matrix: BAYER_4,
     blockSize: 4,
   }));
+  const shafts = tankDepth
+    ? createSunShafts(dimensions, palette, seed, bands, surfaceTop, waterBottom, timeOfDayHours)
+    : [];
   const substrateSegments = [];
+  const floorSlabs = [];
   if (withSubstrate) {
     const terrainState = {
       seed,
@@ -211,8 +330,57 @@ function createBackground(dimensions, palette, seed, withSubstrate = true) {
         y: top,
         width: sampleWidth + 1,
         height: dimensions.height - top,
-        color: palette.substrateBg,
+        // The terrain crest is the far edge of the floor, and the side falloff
+        // is folded straight into its colour because the segments are already
+        // one narrow column each.
+        color: tankDepth
+          ? mixColor(
+            palette.substrateBg,
+            palette.edge,
+            edgeAmount(sample * sampleWidth + sampleWidth / 2, dimensions.width),
+          )
+          : palette.substrateBg,
       });
+    }
+    // Below the lowest possible crest the floor is unbroken, so its recession
+    // is a few full-width slabs instead of another per-column pass. The strip
+    // nearest the bottom of the panel is the part closest to the viewer.
+    const slabTop = clamp(waterBottom, 0, dimensions.height);
+    const slabHeight = (dimensions.height - slabTop) / FLOOR_STEPS;
+    if (slabHeight >= 1) {
+      for (let step = 0; step < FLOOR_STEPS; step += 1) {
+        const y = Math.round(slabTop + step * slabHeight);
+        floorSlabs.push({
+          x: 0,
+          y,
+          width: dimensions.width,
+          height: Math.round(slabTop + (step + 1) * slabHeight) - y,
+          // The first slab is the crest colour exactly, so the ground plane
+          // brightens away from the water instead of starting with a seam.
+          color: mixColor(
+            palette.substrateBg,
+            palette.floorNear,
+            FLOOR_LIFT * (step / (FLOOR_STEPS - 1)),
+          ),
+        });
+      }
+    }
+  }
+  // One falloff rectangle per side, per step, for every horizontal zone that is
+  // painted full width. Terrain segments shade themselves above.
+  const edges = [];
+  const stepWidth = (dimensions.width * EDGE_FRACTION) / EDGE_STEPS;
+  if (tankDepth && stepWidth >= 1) {
+    for (const zone of [...bands, ...floorSlabs]) {
+      for (let step = 0; step < EDGE_STEPS; step += 1) {
+        const amount = EDGE_STRENGTH * (1 - step / EDGE_STEPS);
+        const color = mixColor(zone.color, palette.edge, amount);
+        const left = Math.round(step * stepWidth);
+        const right = Math.round((step + 1) * stepWidth);
+        const height = zone.height + 1;
+        edges.push({ x: left, y: zone.y, width: right - left, height, color });
+        edges.push({ x: dimensions.width - right, y: zone.y, width: right - left, height, color });
+      }
     }
   }
   return {
@@ -222,13 +390,20 @@ function createBackground(dimensions, palette, seed, withSubstrate = true) {
       dimensions.logicalWidth,
       dimensions.logicalHeight,
       palette.paletteStage,
+      // The sun's own stage clock. Whole-field repaints stay as rare as the
+      // palette stages they sit beside.
+      tankDepth ? Math.floor(positiveModulo(timeOfDayHours, 24) / SHAFT_STAGE_HOURS) : 0,
       seed >>> 0,
       withSubstrate ? 1 : 0,
+      tankDepth ? 1 : 0,
     ].join(":"),
     baseColor: withSubstrate ? palette.airBg : palette.waterBands[0],
     bands,
     transitions,
+    shafts,
+    edges,
     substrateSegments,
+    floorSlabs,
   };
 }
 
@@ -242,7 +417,9 @@ function builderForState(state, palette) {
   };
   return createSceneBuilder({
     ...dimensions,
-    background: createBackground(dimensions, palette, state.seed),
+    background: createBackground(dimensions, palette, state.seed, {
+      timeOfDayHours: state.timeOfDayHours,
+    }),
     metadata: {
       orientation: state.orientation,
       paletteStage: palette.paletteStage,
@@ -322,14 +499,19 @@ function drawSchool(builder, state, palette, metrics) {
       + sampleRange(seed, 1801, 0, TAU);
     const bob = Math.sin(phase * 0.46) * 0.035;
     const compression = 0.58 + clamp(Math.abs(fish.vx) / 0.34, 0, 1) * 0.42;
-    const scale = sampleRange(seed, 1802, 0.76, 0.88);
+    // Distance from the glass, unrelated to how deep the fish is swimming.
+    const distance = scatteredDepth(seed, 1900, state.elapsedRealSeconds);
+    const lane = laneForDepth(distance);
+    const scale = sampleRange(seed, 1802, 0.76, 0.88) * schoolDepthScale(distance);
+    const spacing = 0.82 * (0.86 + schoolDepthScale(distance) * 0.14);
     const depth = clamp((fish.y - WATERLINE_ROWS) / Math.max(1, state.rows - WATERLINE_ROWS - SUBSTRATE_ROWS), 0, 0.999);
-    const color = palette.school[Math.floor(depth * palette.school.length)];
+    const laneColors = palette.depthLanes[lane].school;
+    const color = laneColors[Math.floor(depth * laneColors.length)];
     const glyphs = chars.map((char, offset) => {
       const tail = chars.length <= 1 ? 0 : facing > 0 ? 1 - offset / (chars.length - 1) : offset / (chars.length - 1);
       return positionedGlyph(metrics, {
         char,
-        worldX: fish.x + (offset - (chars.length - 1) / 2) * 0.82 * compression,
+        worldX: fish.x + (offset - (chars.length - 1) / 2) * spacing * compression,
         worldY: fish.y + bob + Math.sin(phase - offset * 0.55) * 0.045 * tail,
         fg: color,
         scaleX: scale,
@@ -338,7 +520,9 @@ function drawSchool(builder, state, palette, metrics) {
     });
     addGlyphObject(builder, {
       id: `school:${index}`,
-      layer: LAYERS.school + Math.floor(depth * 3),
+      // The farthest lane goes behind the midground weed. Everything nearer
+      // stacks above it in distance order.
+      layer: lane === 0 ? LAYERS.deepSchool : LAYERS.school + lane - 1,
       glyphs,
     });
   });
@@ -463,6 +647,10 @@ function bodyFill(sprite, metrics, {
   phase,
   deformationStrength,
   color,
+  // Distance scale. It multiplies the posed offsets rather than the pose
+  // itself, so the body keeps travelling with the same wave as the ink above
+  // it however far away the fish is.
+  scale = 1,
 }) {
   const source = spritePoints(sprite);
   const box = spriteBodyBox(sprite);
@@ -475,7 +663,7 @@ function bodyFill(sprite, metrics, {
   // Glyph centres compress with turnScale, but each bitmap intentionally stays
   // readable. Preserve that local ink width around each compressed slice so the
   // body does not collapse to 32% while the characters remain about 93% wide.
-  const glyphScaleX = 0.9 + turnScale * 0.1;
+  const glyphScaleX = (0.9 + turnScale * 0.1) * scale;
   const pose = { facing, phase, deformationStrength, turnScale };
   const fill = [];
 
@@ -499,7 +687,7 @@ function bodyFill(sprite, metrics, {
     const leftEdge = poseCoordinate(source, centerColumn + localLeft, centerRow, pose);
     const rightEdge = poseCoordinate(source, centerColumn + localRight, centerRow, pose);
 
-    const geometricWidth = Math.abs(rightEdge.x - leftEdge.x) * metrics.cellWidth;
+    const geometricWidth = Math.abs(rightEdge.x - leftEdge.x) * metrics.cellWidth * scale;
     const localInkWidth = sliceSourceWidth * metrics.cellWidth * glyphScaleX;
     // Narrow the end slices as well as shortening them. Besides keeping the
     // silhouette round, this preserves the old renderer contract that a body
@@ -508,11 +696,11 @@ function bodyFill(sprite, metrics, {
       2,
       Math.max(geometricWidth, localInkWidth) * (0.6 + taper * 0.4) + BODY_SLICE_OVERLAP,
     );
-    const centerX = (worldX + center.x) * metrics.cellWidth;
+    const centerX = (worldX + center.x * scale) * metrics.cellWidth;
     const left = Math.round(centerX - sliceWidth / 2);
     const right = Math.round(centerX + sliceWidth / 2) + 1;
-    const spanTop = Math.round((worldY + Math.min(top.y, bottom.y)) * metrics.cellHeight);
-    const spanBottom = Math.round((worldY + Math.max(top.y, bottom.y)) * metrics.cellHeight) + 1;
+    const spanTop = Math.round((worldY + Math.min(top.y, bottom.y) * scale) * metrics.cellHeight);
+    const spanBottom = Math.round((worldY + Math.max(top.y, bottom.y) * scale) * metrics.cellHeight) + 1;
     if (right - left < 1 || spanBottom - spanTop < 1) continue;
 
     fill.push({
@@ -526,9 +714,18 @@ function bodyFill(sprite, metrics, {
   return fill;
 }
 
-function individualParts(fish, state, palette, metrics, deformationStrength = 1, depth = 0) {
+function individualParts(fish, state, palette, metrics, deformationStrength = 1, {
+  // Where in the water column the fish is swimming: picks the band companion
+  // painted behind it.
+  verticalDepth = 0,
+  // How far it is from the glass: picks its size, its colour table, and how far
+  // that companion has already faded into the water.
+  lane = null,
+  scale = 1,
+} = {}) {
   const sprite = spriteForSeed(fish.seed);
   const turning = turnPose(fish);
+  const masks = lane === null ? palette.masks : palette.depthLanes[lane].masks;
   const frequency = sampleRange(fish.seed, 100, 0.55, 0.78) * (0.64 + palette.daylight * 0.36);
   const phase = state.elapsedRealSeconds * TAU * frequency + sampleRange(fish.seed, 101, 0, TAU);
   const bob = Math.sin(state.elapsedRealSeconds * TAU * sampleRange(fish.seed, 102, 0.12, 0.19)
@@ -541,11 +738,11 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   });
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
-    worldX: fish.x + point.x,
-    worldY: fish.y + point.y + bob,
-    fg: maskColor(point.mask, fish.seed, palette),
-    scaleX: 0.9 + turning.widthScale * 0.1,
-    scaleY: 1,
+    worldX: fish.x + point.x * scale,
+    worldY: fish.y + point.y * scale + bob,
+    fg: maskColor(point.mask, fish.seed, masks),
+    scaleX: (0.9 + turning.widthScale * 0.1) * scale,
+    scaleY: scale,
   }));
   const fill = bodyFill(sprite, metrics, {
     worldX: fish.x,
@@ -554,7 +751,8 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     facing: turning.facing,
     phase,
     deformationStrength,
-    color: bodyFillForDepth(palette, depth),
+    scale,
+    color: bodyFillForDepth(palette, verticalDepth, lane),
   });
   return { glyphs, fill };
 }
@@ -569,12 +767,22 @@ function waterBandDepth(state, worldY) {
 }
 
 function drawIndividuals(builder, state, palette, metrics, deformationStrength) {
+  const count = state.individuals.length;
   state.individuals.forEach((fish, index) => {
-    const depth = waterBandDepth(state, fish.y);
-    const parts = individualParts(fish, state, palette, metrics, deformationStrength, depth);
+    const distance = spreadDepth(state.seed, fish.seed, index, count, state.elapsedRealSeconds);
+    const lane = laneForDepth(distance);
+    const parts = individualParts(fish, state, palette, metrics, deformationStrength, {
+      verticalDepth: waterBandDepth(state, fish.y),
+      lane,
+      scale: depthScale(distance),
+    });
     addGlyphObject(builder, {
       id: `individual:${index}:${fish.seed}`,
-      layer: LAYERS.individuals,
+      // Individuals stay between the midground and foreground vegetation at
+      // every distance and only sort against each other. They are the
+      // characters of the tank, and one vanishing behind a weed reads as a bug
+      // rather than as depth.
+      layer: LAYERS.individuals + lane,
       glyphs: parts.glyphs,
       fill: parts.fill,
       padding: 2,
@@ -627,13 +835,18 @@ function drawSubstrate(builder, state, palette, metrics) {
         state.rows - 0.18,
         surfaceY + 0.36 + row * 0.74 + sampleSigned(state.seed, salt + 1100) * 0.18,
       );
+      // The grain gets the same treatment as the floor beneath it: the row at
+      // the crest is the far edge of the ground plane, so it is smaller and
+      // sits closer to the shadow the crest is painted in.
+      const near = SUBSTRATE_ROWS <= 1 ? 1 : row / (SUBSTRATE_ROWS - 1);
+      const grainScale = 0.82 + near * 0.3;
       chunks.get(chunk).push(positionedGlyph(metrics, {
         char: row === 0 && sample01(state.seed, salt + 600) < 0.13 ? "_" : substrateArt[choice],
         worldX,
         worldY,
-        fg: palette.substrateFg,
-        scaleX: sampleRange(state.seed, salt + 1300, 0.7, 0.84),
-        scaleY: sampleRange(state.seed, salt + 1500, 0.64, 0.78),
+        fg: mixColor(palette.substrateBg, palette.substrateFg, 0.72 + near * 0.28),
+        scaleX: sampleRange(state.seed, salt + 1300, 0.7, 0.84) * grainScale,
+        scaleY: sampleRange(state.seed, salt + 1500, 0.64, 0.78) * grainScale,
       }));
     }
   }
@@ -685,7 +898,7 @@ export function renderSpriteScene(sprite, {
   const palette = scenePalette({ timeOfDayHours: paletteMode === "night" ? 2 : 12 });
   const builder = createSceneBuilder({
     ...dimensions,
-    background: createBackground(dimensions, palette, 0x51a7, false),
+    background: createBackground(dimensions, palette, 0x51a7, { withSubstrate: false, tankDepth: false }),
     metadata: { paletteStage: palette.paletteStage, lab: true },
   });
   const metrics = sceneMetrics(builder);
@@ -702,7 +915,7 @@ export function renderSpriteScene(sprite, {
     char: point.char,
     worldX: logicalWidth / 2 + point.x,
     worldY: logicalHeight / 2 + point.y,
-    fg: maskColor(point.mask, spriteSeed, palette),
+    fg: maskColor(point.mask, spriteSeed, palette.masks),
     scaleX: 0.9 + turnScale * 0.1,
     scaleY: 1,
   }));
@@ -790,7 +1003,7 @@ export function renderPlantLabScene(speciesId, {
   const palette = scenePalette(state);
   const builder = createSceneBuilder({
     ...dimensions,
-    background: createBackground(dimensions, palette, specimenSeed),
+    background: createBackground(dimensions, palette, specimenSeed, { tankDepth: false }),
     metadata: {
       lab: true,
       plantLab: true,

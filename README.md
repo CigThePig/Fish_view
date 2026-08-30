@@ -25,6 +25,15 @@ persistent simulation.
   The night field is one warm hue that only loses value with depth, over a floor
   quieter than the water above it, and the arc is routed through a green
   twilight so dusk never drains to grey.
+- A real depth axis. The tank used to have a vertical axis and nothing else, so
+  every fish was one size, in one set of colours, on one plane. Distance from
+  the glass is now its own value: near fish are drawn larger and crisper, far
+  fish smaller and mixed towards the water they are seen through, the far end of
+  the school passes behind the midground weed, the three plant depth groups are
+  really separated instead of being three shades of green, sunlight falls
+  through the water in tilted shafts that lean with the sun, the floor recedes
+  towards the water it meets, and the left and right edges fall away so the
+  water reads as a volume with a front pane.
 - Opaque fish: each individual carries a body of horizontal spans behind its
   strokes, so plants, water bands, and other fish stop reading straight through
   it. The body is fitted to each sprite's own artwork and to the real ink of the
@@ -98,6 +107,16 @@ backend paints. The logical 40×33 and
 66×20 layouts remain useful for simulation and art authoring, but no longer snap
 motion or limit the physical panel to cell multiples.
 
+Depth is continuous in `[0, 1]`, where 0 is the far wall and 1 is the glass.
+Geometry reads it continuously, so a fish that drifts nearer grows smoothly.
+Colour reads it through five quantized lanes whose tables - masks, school
+colours, and one body companion per water band - the palette builds once per
+day/night stage, exactly like the 12 palette stages themselves. Atmospheric
+perspective therefore costs one array index per fish per frame rather than a
+colour mix per glyph. Vertical position and distance stay independent: where a
+fish swims in the water column still picks its band companion, and how far away
+it is picks how far that companion has already faded into the water.
+
 The canvas backend uses the bundled 5×7 bitmap font, with lit-pixel runs
 precomputed once and raster origins rounded to physical pixels for crisp output.
 It compares stable scene objects, damages the previous and current bounds of
@@ -108,6 +127,21 @@ Fish bodies sit inside the bounds their glyphs already damage, so opacity costs
 draw calls rather than repainted area.
 Day/night colours are part of the scene rather than a CSS brightness filter;
 12 quantized palette stages keep slow whole-field transitions infrequent.
+
+Sun shafts, the receding floor, and the edge falloff are background rectangles,
+not scene objects or per-pixel effects, so they cost plain `fillRect` calls
+inside damage regions the compositor was already going to repaint. A noon
+landscape background is 6 water bands, 95 shaft rectangles, 60 edge
+rectangles, 4 floor slabs, and the existing 132 terrain columns; portrait is
+70 shafts against 80 terrain columns, and a deep-night background keeps only
+21 and 14 shafts respectively. After overlap culling an ordinary 10 fps frame
+asks for about 117 of those in landscape and 99 in portrait, worst observed 169
+and 139 - well under the dithered band transitions, which remain the most
+expensive thing in the background. The shafts lean with the sun on their own
+two-hour stage clock, so they add 12 whole-field repaints a simulated day beside
+the 12 the palette already spends, and none during ordinary animation. Measured
+over 200 frames at 10 fps, damage is 22.7% of the landscape framebuffer and
+35.1% of portrait, which is where it was before the depth axis existed.
 
 ## Skeletal plants and ESP32 portability
 
@@ -125,6 +159,13 @@ parent order; growth exposes joints and locally lengthens new segments instead
 of scaling finished artwork. A mature specimen emits at most 12 glyphs. Tests
 cap a mature landscape at 200 visible plant glyphs and portrait at 150; the
 dense validation seed currently produces 193 and 141 respectively.
+
+The three depth groups are now separated by size as well as by colour: a
+foreground specimen draws at 1.12 and a background one at 0.76, with each
+species mixed towards the water on the same fog ramp as the fish. The
+background floor is deliberate rather than tuned by eye - a stem is a column of
+glyphs, and much below 0.75 the glyphs stop touching and a distant reed reads as
+a dashed line.
 
 There is no soft-body solver, recursion, per-pixel plant effect, rotation, or
 per-glyph collision work. Three low-frequency current samples are shared by the
@@ -149,7 +190,8 @@ and 32.5% respectively.
 ```text
 src/art/       extracted art data and glyph-aware mirroring
 src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose
-src/render/    scene composition, plant glyph mapping, palette, font, damage
+src/render/    scene composition, depth lanes, plant glyph mapping, palette,
+               font, damage
 src/platform/  browser-only persistence adapter
 tests/         deterministic simulation, art, persistence, and renderer checks
 ```

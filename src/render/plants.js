@@ -36,9 +36,19 @@ export function glyphForPlantJoint(plant, pose, point) {
   return stemGlyph(species, point, plant.seed);
 }
 
+// The three authored depth groups used to differ by 15% in size, which is not
+// enough to separate them: a background reed and a foreground reed read as the
+// same plant in two shades of green. Pushing the spread out - and letting each
+// specimen sit somewhere inside its own group rather than exactly on it - is
+// what makes the garden occupy a volume. The spread matches the fish depth
+// lanes: the nearest weed is about half again the size of the farthest.
 function glyphScale(plant, layer) {
-  const base = layer === "background" ? 0.82 : layer === "foreground" ? 0.97 : 0.9;
-  return base + (sample01(plant.seed, 470) - 0.5) * 0.06;
+  // The floor on the background group is not arbitrary: a stem is drawn as a
+  // column of glyphs, and below about 0.75 the glyphs stop touching and a
+  // distant reed reads as a dashed line rather than as a distant reed.
+  const base = layer === "background" ? 0.76 : layer === "foreground" ? 1.12 : 0.9;
+  const spread = layer === "midground" ? 0.12 : 0.09;
+  return base + (sample01(plant.seed, 470) - 0.5) * spread;
 }
 
 function colorForPoint(plant, pose, point, palette) {

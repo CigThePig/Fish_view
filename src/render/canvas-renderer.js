@@ -34,10 +34,32 @@ function drawBackground(context, scene, region) {
     }
   }
 
+  // Sun shafts sit on the water and under everything that swims or grows in it.
+  for (const shaft of background.shafts ?? []) {
+    if (!rectanglesOverlap(region, shaft)) continue;
+    context.fillStyle = shaft.color;
+    context.fillRect(shaft.x, shaft.y, shaft.width, shaft.height);
+  }
+
   for (const segment of background.substrateSegments) {
     if (!rectanglesOverlap(region, segment)) continue;
     context.fillStyle = segment.color;
     context.fillRect(segment.x, segment.y, segment.width, segment.height);
+  }
+
+  // The unbroken part of the floor, painted after the terrain crest so the
+  // silhouette above it survives.
+  for (const slab of background.floorSlabs ?? []) {
+    if (!rectanglesOverlap(region, slab)) continue;
+    context.fillStyle = slab.color;
+    context.fillRect(slab.x, slab.y, slab.width, slab.height);
+  }
+
+  // Side falloff goes last: it dims the water, the shafts, and the floor alike.
+  for (const edge of background.edges ?? []) {
+    if (!rectanglesOverlap(region, edge)) continue;
+    context.fillStyle = edge.color;
+    context.fillRect(edge.x, edge.y, edge.width, edge.height);
   }
 }
 

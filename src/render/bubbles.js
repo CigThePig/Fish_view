@@ -3,12 +3,20 @@ import { SURFACE_Y_ROWS, substrateSurfaceY } from "../sim/environment.js";
 import { spriteForSeed } from "../sim/entities.js";
 import { environmentalCurrent } from "../sim/plants.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { mixColor } from "./palette.js?v=environment-boundaries-20260830";
+import { laneForDepth, scatteredDepth, spreadDepth } from "./depth.js?v=visual-depth-20260830";
+import { mixColor } from "./palette.js?v=visual-depth-20260830";
 import { addGlyphObject, positionedGlyph } from "./scene.js?v=opaque-bodies-20260830";
 
 const TAU = Math.PI * 2;
 const POP_DURATION_SECONDS = 0.72;
 const SURFACE_CLEARANCE = 0.28;
+// Bubbles get the depth axis as a lift on the near end only. Slowing the far
+// ones down would be the other half of the parallax, but it would also undercut
+// the guarantee that a bubble is several times quicker than the drift it
+// replaced, so distance buys a near bubble speed and size instead of taking
+// them from a far one.
+const NEAR_BUBBLE_SPEED = 0.3;
+const NEAR_BUBBLE_SCALE = 0.28;
 
 const SIZE_CLASSES = Object.freeze({
   micro: Object.freeze({ speed: [0.24, 0.35], scale: [0.5, 0.66], wobble: [0.11, 0.2] }),
@@ -60,7 +68,9 @@ function depthAt(state, worldY) {
   return clamp((worldY - top) / Math.max(1, bottom - top), 0, 1);
 }
 
-function bubbleColor(state, palette, worldY) {
+// `distance` is how far the bubble is from the glass, and is independent of how
+// deep in the water column it currently sits.
+function bubbleColor(state, palette, worldY, distance = 1) {
   const depth = depthAt(state, worldY);
   const bandIndex = Math.min(
     palette.waterBands.length - 1,
@@ -68,7 +78,8 @@ function bubbleColor(state, palette, worldY) {
   );
   const water = palette.waterBands[bandIndex];
   const visible = mixColor(water, palette.ambient, 0.44 + (1 - depth) * 0.24);
-  return mixColor(visible, palette.waterline, (1 - depth) * 0.24);
+  const lit = mixColor(visible, palette.waterline, (1 - depth) * 0.24);
+  return mixColor(lit, palette.fog, palette.depthLanes[laneForDepth(distance)].haze);
 }
 
 function emitterX(state, emitterSeed, index) {
@@ -129,10 +140,11 @@ function bubbleGlyphs(metrics, {
   worldY,
   color,
   seed,
+  sizeMultiplier = 1,
 }) {
   const config = SIZE_CLASSES[sizeClass];
   const growth = smoothstep(progress);
-  const scale = config.scale[0] + (config.scale[1] - config.scale[0]) * growth;
+  const scale = (config.scale[0] + (config.scale[1] - config.scale[0]) * growth) * sizeMultiplier;
   let chars;
   if (sizeClass === "micro") {
     chars = [progress < 0.7 ? "." : "'"];
@@ -225,15 +237,18 @@ function movingBubbleRecord(state, palette, metrics, {
   laneOffset = 0,
   kind = "stream",
   skipFishIndex = -1,
+  distance = scatteredDepth(seed, 90, state.elapsedRealSeconds),
 }) {
   if (ageSeconds < 0) return null;
   const top = waterTop();
   const travel = Math.max(0.25, sourceY - top);
   const config = SIZE_CLASSES[sizeClass];
   const orientationMultiplier = state.orientation === "portrait" ? 1.16 : 1;
+  const sizeMultiplier = 1 + distance * NEAR_BUBBLE_SCALE;
   const speed = sampleRange(seed, 21, config.speed[0], config.speed[1])
     * orientationMultiplier
-    * speedMultiplier;
+    * speedMultiplier
+    * (1 + distance * NEAR_BUBBLE_SPEED);
   const ascentSeconds = travel / speed;
   if (ageSeconds > ascentSeconds + POP_DURATION_SECONDS) return null;
 
@@ -243,7 +258,7 @@ function movingBubbleRecord(state, palette, metrics, {
     const worldX = sourceX + laneOffset + current.primary * 0.28
       + Math.sin(ageSeconds * 1.7 + sampleRange(seed, 22, 0, TAU)) * 0.08;
     const worldY = top + Math.sin(popProgress * Math.PI) * -0.04;
-    const color = mixColor(bubbleColor(state, palette, worldY), palette.waterline, 0.38);
+    const color = mixColor(bubbleColor(state, palette, worldY, distance), palette.waterline, 0.38);
     return {
       id,
       kind,
@@ -270,7 +285,7 @@ function movingBubbleRecord(state, palette, metrics, {
   const disturbance = fishDisturbance(state, worldX, worldY, skipFishIndex);
   worldX = clamp(worldX + disturbance.pushX, 0.35, state.cols - 0.35);
   worldY -= disturbance.lift;
-  const color = bubbleColor(state, palette, worldY);
+  const color = bubbleColor(state, palette, worldY, distance);
   return {
     id,
     kind,
@@ -278,9 +293,10 @@ function movingBubbleRecord(state, palette, metrics, {
     sizeClass,
     speed,
     progress,
+    distance,
     worldX,
     worldY,
-    glyphs: bubbleGlyphs(metrics, { sizeClass, progress, worldX, worldY, color, seed }),
+    glyphs: bubbleGlyphs(metrics, { sizeClass, progress, worldX, worldY, color, seed, sizeMultiplier }),
   };
 }
 
@@ -288,6 +304,9 @@ function streamBubbleRecords(state, palette, metrics) {
   const records = [];
   for (const emitter of createBubbleEmitters(state)) {
     const clock = positiveModulo(state.elapsedRealSeconds + emitter.phase, emitter.period);
+    // One distance per emitter: a column of bubbles rising from a single spot
+    // on the floor has to hold together as one column.
+    const distance = scatteredDepth(emitter.seed, 90, state.elapsedRealSeconds);
     for (let slot = 0; slot < emitter.burstCount; slot += 1) {
       const bubbleSeed = mix32(emitter.seed ^ Math.imul(slot + 1, 0x85ebca6b));
       const launch = slot * emitter.burstSpacing + sampleRange(bubbleSeed, 30, 0, 0.2);
@@ -299,6 +318,7 @@ function streamBubbleRecords(state, palette, metrics) {
         ageSeconds: clock - launch,
         laneOffset: sampleSigned(bubbleSeed, 31) * 0.28,
         kind: "stream",
+        distance,
       });
       if (record) records.push(record);
     }
@@ -343,8 +363,12 @@ function spriteWidthForFish(fish) {
 
 function fishExhaleRecords(state, palette, metrics) {
   const records = [];
-  for (let index = 0; index < (state.individuals?.length ?? 0); index += 1) {
+  const count = state.individuals?.length ?? 0;
+  for (let index = 0; index < count; index += 1) {
     const fish = state.individuals[index];
+    // The same depth the renderer draws this fish at, so its breath is at its
+    // own distance rather than at the glass.
+    const distance = spreadDepth(state.seed, fish.seed, index, count, state.elapsedRealSeconds);
     const seed = mix32(fish.seed ^ 0xa511e9b3);
     const interval = sampleRange(seed, 50, 32, 118);
     const clock = positiveModulo(
@@ -368,16 +392,25 @@ function fishExhaleRecords(state, palette, metrics) {
     if (worldY <= waterTop()) continue;
     const sizeClass = sample01(seed, 54) < 0.72 ? "micro" : "normal";
     const progress = clamp(clock / 4.8, 0, 1);
-    const color = bubbleColor(state, palette, worldY);
+    const color = bubbleColor(state, palette, worldY, distance);
     records.push({
       id: `bubble:fish:${index}`,
       kind: "fish",
       phase: "rise",
       sizeClass,
       progress,
+      distance,
       worldX,
       worldY,
-      glyphs: bubbleGlyphs(metrics, { sizeClass, progress, worldX, worldY, color, seed }),
+      glyphs: bubbleGlyphs(metrics, {
+        sizeClass,
+        progress,
+        worldX,
+        worldY,
+        color,
+        seed,
+        sizeMultiplier: 1 + distance * NEAR_BUBBLE_SCALE,
+      }),
     });
   }
   return records;
@@ -412,7 +445,7 @@ function touchBubbleRecords(state, palette, metrics) {
     const worldY = sourceY - ageSeconds * speed;
     const sizeClass = sample01(seed, 65) < 0.74 ? "micro" : "normal";
     const progress = clamp(ageSeconds / reaction.durationSeconds, 0, 1);
-    const color = bubbleColor(state, palette, worldY);
+    const color = bubbleColor(state, palette, worldY, 1);
     records.push({
       id: `bubble:touch:${index}`,
       kind: "touch",
