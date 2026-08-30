@@ -16,8 +16,12 @@ function glyphSignature(glyphs, layer, fill) {
     hash = hashText(hash, glyph.char);
     hash = hashText(hash, Math.round(glyph.x));
     hash = hashText(hash, Math.round(glyph.y));
-    hash = hashText(hash, Math.round(glyph.scaleX * 100));
-    hash = hashText(hash, Math.round(glyph.scaleY * 100));
+    // The backend rounds every lit-pixel offset through the glyph's own scale,
+    // so a change too small to move the scale by one part in a hundred can
+    // still move a pixel. Hashing at 1% left stretched plant stems repainting
+    // one column late and trailing a stale stroke behind them.
+    hash = hashText(hash, Math.round(glyph.scaleX * 1000));
+    hash = hashText(hash, Math.round(glyph.scaleY * 1000));
     hash = hashText(hash, glyph.fg);
   }
   for (const rectangle of fill) {

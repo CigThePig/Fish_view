@@ -5,6 +5,7 @@ import { glyphFlip } from "../src/art/mirror.js";
 import { individualSprites } from "../src/art/sprites.js";
 import { glyphPixels, isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
+import { DEPTH_LANES, laneForDepth, spreadDepth } from "../src/render/depth.js";
 import { PALETTE_STEPS, scenePalette } from "../src/render/palette.js";
 import { LAYERS, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
@@ -145,8 +146,21 @@ test("deep night is one coherent warm field that darkens with depth", () => {
 test("the night floor stays quieter than the water it sits under", () => {
   const scene = render(createAquariumState({ orientation: "portrait", seed: 2, wallClockHours: 2 }));
   const deepestWater = colorLuminance(scene.background.bands.at(-1).color);
-  const floor = colorLuminance(scene.background.substrateSegments[0].color);
+  const segments = scene.background.substrateSegments;
+  // Terrain segments now carry the tank's side falloff, so the columns at the
+  // very edge are deliberate outliers. The crest away from the edges is the
+  // floor's own colour.
+  const crest = segments[Math.floor(segments.length / 2)].color;
+  const floor = colorLuminance(crest);
   assert.ok(floor <= deepestWater, floor + " floor should not outshine " + deepestWater + " water");
+  // The floor recedes towards the water, so every slab of the ground plane has
+  // to stay under it, not just the crest.
+  for (const slab of scene.background.floorSlabs) {
+    assert.ok(
+      colorLuminance(slab.color) <= deepestWater,
+      "floor slab at " + slab.y + " outshines the water above it",
+    );
+  }
   const grain = scene.objects
     .filter((object) => object.id.startsWith("substrate:"))
     .flatMap((object) => glyphsForObject(scene, object));
@@ -303,6 +317,10 @@ test("a fish body is shaded from the band it is actually swimming in", () => {
     const base = createAquariumState({ orientation, seed: 3, wallClockHours: 12 });
     const palette = scenePalette(base);
     const cellHeight = orientationConfig(orientation).pixelHeight / base.rows;
+    // Vertical position picks the band companion; distance from the glass picks
+    // how far that companion has already been faded into the water. The two
+    // axes are independent, and the body has to honour both.
+    const lane = laneForDepth(spreadDepth(base.seed, base.individuals[0].seed, 0, base.individuals.length, 0));
     let checked = 0;
     for (let worldY = 2.5; worldY < base.rows - 4; worldY += 0.25) {
       const scene = render({
@@ -313,7 +331,11 @@ test("a fish body is shaded from the band it is actually swimming in", () => {
       const band = bands.findIndex((candidate) => worldY * cellHeight < candidate.y + candidate.height);
       assert.ok(band >= 0);
       for (const span of objectByPrefix(scene, "individual:0:").fill) {
-        assert.equal(span.color, palette.bodyFills[band], "wrong band companion at y " + worldY);
+        assert.equal(
+          span.color,
+          palette.depthLanes[lane].bodyFills[band],
+          "wrong band companion at y " + worldY,
+        );
       }
       checked += 1;
     }
