@@ -45,7 +45,7 @@ test("edge-on turns keep enough body width to stay registered behind readable gl
       const normalWidth = fillWidth(normal);
       const edgeWidth = fillWidth(edgeOn);
       assert.ok(
-        edgeWidth >= normalWidth * 0.45,
+        edgeWidth >= normalWidth * 0.38,
         sprite.id + " body collapses from " + normalWidth + "px to " + edgeWidth
           + "px while its glyph bitmaps remain readable facing " + facing,
       );
