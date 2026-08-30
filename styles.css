@@ -1,0 +1,280 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #07100f;
+  color: #d9e1d8;
+  --panel: #111b18;
+  --line: #2a3a34;
+  --muted: #8d9e96;
+  --accent: #b9d9b9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100svh;
+  background:
+    radial-gradient(circle at 50% -10%, #19312b 0, transparent 42%),
+    #07100f;
+  overscroll-behavior: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+select {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #15221e;
+  color: #dce8df;
+}
+
+button {
+  min-height: 42px;
+  padding: 0.58rem 0.95rem;
+  cursor: pointer;
+}
+
+button:hover,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  border-color: #719681;
+  outline: 2px solid transparent;
+}
+
+main {
+  width: min(1180px, 100%);
+  min-height: 100svh;
+  margin: 0 auto;
+  padding: max(0.7rem, env(safe-area-inset-top)) max(0.7rem, env(safe-area-inset-right)) max(0.7rem, env(safe-area-inset-bottom)) max(0.7rem, env(safe-area-inset-left));
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+}
+
+.aquarium-stage {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  gap: 0.75rem;
+}
+
+.tank {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  display: none;
+  place-items: center;
+  position: relative;
+}
+
+.aquarium-stage[data-mode="portrait"] .tank--portrait,
+.aquarium-stage[data-mode="landscape"] .tank--landscape {
+  display: grid;
+}
+
+.aquarium-stage[data-mode="compare"] {
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+}
+
+.aquarium-stage[data-mode="compare"] .tank {
+  display: grid;
+}
+
+canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(100svh - 6.4rem);
+  border: 1px solid #344841;
+  border-radius: 8px;
+  background: #000a0d;
+  box-shadow: 0 16px 55px rgb(0 0 0 / 52%), 0 0 34px rgb(73 109 92 / 11%);
+  image-rendering: pixelated;
+  touch-action: none;
+  transition: filter 1.2s linear;
+}
+
+.aquarium-stage[data-mode="compare"] .tank--portrait canvas {
+  max-height: calc(100svh - 7.5rem);
+}
+
+.aquarium-stage[data-mode="compare"] .tank--landscape canvas {
+  max-width: 100%;
+}
+
+figcaption {
+  position: static;
+  margin-top: 0.35rem;
+  color: #a7b7ae;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+
+.view-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #0c1613;
+}
+
+.segmented button {
+  min-height: 36px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.segmented button.is-active {
+  background: #294139;
+  color: #f0f7f1;
+}
+
+.debug-panel {
+  position: fixed;
+  z-index: 10;
+  inset: 0 0 0 auto;
+  width: min(390px, 100%);
+  overflow-y: auto;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) 1rem;
+  border-left: 1px solid var(--line);
+  background: rgb(10 18 16 / 97%);
+  box-shadow: -20px 0 60px rgb(0 0 0 / 45%);
+  backdrop-filter: blur(18px);
+}
+
+.debug-panel[hidden] {
+  display: none;
+}
+
+.debug-panel__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.debug-panel h1 {
+  margin: 0.1rem 0 0;
+  font-size: 1.35rem;
+}
+
+.debug-panel h2 {
+  margin: 0 0 0.7rem;
+  font-size: 0.93rem;
+  color: var(--accent);
+}
+
+.debug-panel section {
+  margin-top: 1.2rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.debug-panel label {
+  margin: 0.75rem 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 0.7rem;
+  color: #c8d4cc;
+  font-size: 0.85rem;
+}
+
+.debug-panel label input,
+.debug-panel label select {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.debug-panel select {
+  min-height: 40px;
+  padding: 0 0.75rem;
+}
+
+input[type="range"] {
+  accent-color: #78a488;
+}
+
+output,
+.metrics dd {
+  color: #95bca4;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrics {
+  margin: 0 0 1rem;
+}
+
+.metrics div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0;
+}
+
+.metrics dt,
+.metrics dd {
+  margin: 0;
+}
+
+a {
+  color: #a9d6b7;
+}
+
+.debug-actions button {
+  width: 100%;
+  border-color: #695447;
+  background: #251c17;
+  color: #d8c5b8;
+}
+
+@media (max-width: 720px) {
+  .aquarium-stage[data-mode="compare"] {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .aquarium-stage[data-mode="compare"] canvas {
+    max-height: calc(50svh - 4.8rem);
+  }
+
+  figcaption {
+    font-size: 0.62rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  canvas {
+    transition: none;
+  }
+}

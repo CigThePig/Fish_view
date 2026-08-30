@@ -1,0 +1,87 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { WATERLINE_ROWS } from "../src/sim/config.js";
+import {
+  advanceOffline,
+  applyTouch,
+  createAquariumState,
+  restorePersistentState,
+  serializePersistentState,
+  withSettings,
+} from "../src/sim/state.js";
+import { tick } from "../src/sim/tick.js";
+
+function run(state, count, dt = 0.1) {
+  let result = state;
+  for (let index = 0; index < count; index += 1) result = tick(result, dt);
+  return result;
+}
+
+test("the same seed and inputs produce an identical run", () => {
+  const options = { orientation: "landscape", seed: 123456, wallClockHours: 14.25 };
+  const left = run(createAquariumState(options), 120);
+  const right = run(createAquariumState(options), 120);
+  assert.deepEqual(left, right);
+});
+
+test("tick is pure and leaves its input untouched", () => {
+  const state = createAquariumState({ orientation: "portrait", seed: 44, wallClockHours: 8 });
+  const snapshot = structuredClone(state);
+  const next = tick(state, 0.1);
+  assert.deepEqual(state, snapshot);
+  assert.notStrictEqual(next, state);
+  assert.notStrictEqual(next.school, state.school);
+  assert.notStrictEqual(next.individuals, state.individuals);
+});
+
+test("touch response is immediate, reproducible, and not probabilistic", () => {
+  const state = createAquariumState({ orientation: "landscape", seed: 7, wallClockHours: 12 });
+  const first = applyTouch(state, 20, 9);
+  const second = applyTouch(state, 20, 9);
+  assert.deepEqual(first, second);
+  assert.deepEqual(first.reaction, { x: 20, y: 9, ageSeconds: 0, durationSeconds: 3.2 });
+  assert.notDeepEqual(first.school[0], state.school[0]);
+  assert.equal(first.individuals.reduce((sum, fish) => sum + fish.history.touches, 0), 1);
+});
+
+test("bounded emergence keeps fish visible and drives away from extremes", () => {
+  const state = createAquariumState({ orientation: "portrait", seed: 9001, wallClockHours: 2 });
+  const result = run(state, 2000);
+  for (const fish of result.individuals) {
+    assert.ok(fish.x >= 0 && fish.x <= result.cols);
+    assert.ok(fish.y >= WATERLINE_ROWS && fish.y < result.rows - 4);
+    assert.ok(Object.values(fish.drives).every((drive) => drive >= 0.15 && drive <= 0.85));
+  }
+  assert.ok(result.individuals.slice(0, 3).every((fish) => fish.y < WATERLINE_ROWS + (result.rows - 6) * 0.68));
+});
+
+test("week-per-second acceleration exposes plant growth without removing entities", () => {
+  const state = withSettings(createAquariumState({ orientation: "portrait", seed: 3 }), { timeScale: 604800 });
+  const ages = state.plants.map((plant) => plant.ageDays);
+  const result = run(state, 50);
+  assert.equal(result.plants.length, state.plants.length);
+  assert.equal(result.individuals.length, state.individuals.length);
+  assert.ok(result.plants.every((plant, index) => plant.ageDays > ages[index] + 30));
+});
+
+test("persistence stores individuals and plants but not the identity-free school", () => {
+  const base = createAquariumState({ orientation: "landscape", seed: 81 });
+  const evolved = run(applyTouch(base, 12, 8), 30);
+  const saved = serializePersistentState(evolved);
+  assert.equal("school" in saved, false);
+  const restored = restorePersistentState(base, saved);
+  assert.deepEqual(restored.individuals, evolved.individuals);
+  assert.deepEqual(restored.plants, evolved.plants);
+  assert.deepEqual(restored.school, base.school);
+});
+
+test("offline time advances the long horizon without simulating loss", () => {
+  const state = createAquariumState({ orientation: "landscape", seed: 19 });
+  const advanced = advanceOffline(state, 14 * 86400);
+  assert.equal(advanced.individuals.length, state.individuals.length);
+  assert.equal(advanced.plants.length, state.plants.length);
+  assert.ok(advanced.totalDays >= 14);
+  assert.ok(advanced.plants[0].ageDays >= state.plants[0].ageDays + 14);
+});
+

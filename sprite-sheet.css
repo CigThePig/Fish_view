@@ -1,0 +1,81 @@
+.sprite-page {
+  min-height: 100svh;
+  padding: 1.2rem;
+}
+
+.sprite-page > header,
+.sprite-page > main,
+.sprite-page > footer {
+  width: min(1100px, 100%);
+  margin-inline: auto;
+}
+
+.sprite-page > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sprite-page h1 {
+  margin: 0.2rem 0;
+}
+
+.sprite-page header p:not(.eyebrow),
+.sprite-page footer {
+  color: var(--muted);
+}
+
+.sprite-grid {
+  min-height: auto;
+  margin-block: 1.5rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.sprite-card {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0d1714;
+}
+
+.sprite-card h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.sprite-meta {
+  margin: 0.25rem 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.sprite-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.sprite-facing {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+}
+
+.sprite-facing canvas {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 72px;
+  max-height: 180px;
+  border-radius: 5px;
+}
+
+.sprite-facing span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
