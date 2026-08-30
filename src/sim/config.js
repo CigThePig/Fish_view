@@ -19,8 +19,12 @@ export const ORIENTATIONS = Object.freeze({
 // are mapped continuously and are not constrained to multiples of these values.
 export const CELL_WIDTH = 12;
 export const CELL_HEIGHT = 24;
+// This remains the simulation's safe swimming clearance. The visible surface
+// is a separate sub-row boundary owned by sim/environment.js.
 export const WATERLINE_ROWS = 2;
-export const SUBSTRATE_ROWS = 4;
+// Keep the floor physically present without surrendering a fifth of landscape
+// mode to a decorative band. Terrain relief is applied around this baseline.
+export const SUBSTRATE_ROWS = 2;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
 export const DEFAULT_SETTINGS = Object.freeze({
