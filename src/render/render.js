@@ -368,6 +368,25 @@ const BODY_SWELL = 0.2;
 // opening hairline water gaps as their centres move independently.
 const BODY_SLICE_OVERLAP = 1;
 
+// The source artwork is deliberately varied, so one mathematical ellipse is
+// not visually centred on all six silhouettes. These tiny source-space
+// calibrations are authored facing right and mirror automatically with the
+// shared pose transform. `offsetX` moves the whole opaque mass toward the tail;
+// `frontShoulder` only changes how sharply the nose closes, leaving its centre
+// alone. Double-fin is the reference shape and intentionally keeps the default.
+const DEFAULT_BODY_PROFILE = Object.freeze({
+  offsetX: 0,
+  rearShoulder: BODY_SHOULDER,
+  frontShoulder: BODY_SHOULDER,
+});
+const BODY_PROFILES = Object.freeze({
+  "round-fin": Object.freeze({ ...DEFAULT_BODY_PROFILE, offsetX: -0.25 }),
+  "tiny-dart": Object.freeze({ ...DEFAULT_BODY_PROFILE, offsetX: -0.25 }),
+  "single-fin": Object.freeze({ ...DEFAULT_BODY_PROFILE, frontShoulder: 0.7 }),
+  "comma-tail": Object.freeze({ ...DEFAULT_BODY_PROFILE, frontShoulder: 0.7 }),
+  "box-fin": Object.freeze({ ...DEFAULT_BODY_PROFILE, offsetX: -0.25 }),
+});
+
 const bodyBoxCache = new Map();
 const FIN_GLYPHS = new Set(["/", "\\"]);
 // The vocabulary asciiquarium draws a tail from: the fin itself, the stroke
@@ -470,7 +489,8 @@ function bodyFill(sprite, metrics, {
 }) {
   const source = spritePoints(sprite);
   const box = spriteBodyBox(sprite);
-  const centerColumn = (source.width - 1) / 2 + box.offsetX;
+  const profile = BODY_PROFILES[sprite.id] ?? DEFAULT_BODY_PROFILE;
+  const centerColumn = (source.width - 1) / 2 + box.offsetX + profile.offsetX;
   const centerRow = (source.height - 1) / 2 + box.offsetY;
   const radiusX = box.radiusX;
   const radiusY = box.radiusY + BODY_SWELL;
@@ -487,7 +507,11 @@ function bodyFill(sprite, metrics, {
     const localRight = localLeft + sliceSourceWidth;
     const localCenter = (localLeft + localRight) / 2;
     const waist = radiusX > 0 ? Math.abs(localCenter) / radiusX : 0;
-    const taper = Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
+    // Positive source-space X is the nose because all source sprites face right.
+    // Using a separate front shoulder lets pointed fish close around `>` instead
+    // of carrying a round bubble beyond it, while the rear half stays unchanged.
+    const shoulder = localCenter >= 0 ? profile.frontShoulder : profile.rearShoulder;
+    const taper = Math.sqrt(Math.max(0, 1 - waist ** shoulder));
     const halfHeight = radiusY * taper;
     if (halfHeight <= 0) continue;
 
