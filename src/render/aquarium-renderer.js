@@ -7,6 +7,7 @@ import {
   renderPlantLabScene,
   renderSpriteScene,
 } from "./render.js?v=environment-boundaries-20260830";
+import { scenePalette } from "./palette.js?v=environment-boundaries-20260830";
 import {
   createSceneBuilder,
   finalizeScene,
@@ -46,14 +47,7 @@ export function render(state, options = {}) {
     copyCoreObject(builder, core, object);
   }
 
-  drawBubbles(builder, state, {
-    daylight: core.metadata.daylight,
-    night: core.metadata.night,
-    waterBands: core.background.bands.map((band) => band.color),
-    ambient: state.timeOfDayHours >= 20.25 || state.timeOfDayHours < 5.75 ? "#3c2f1e" : "#74abae",
-    waterline: state.timeOfDayHours >= 20.25 || state.timeOfDayHours < 5.75 ? "#8a7048" : "#58c3c4",
-  }, sceneMetrics(builder), LAYERS.ambient);
-
+  drawBubbles(builder, state, scenePalette(state), sceneMetrics(builder), LAYERS.ambient);
   return finalizeScene(builder);
 }
 
