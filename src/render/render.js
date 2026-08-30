@@ -9,7 +9,7 @@ import {
 import { orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { plantHeight, spriteForSeed } from "../sim/entities.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { MASK_SYMBOLS, scenePalette } from "./palette.js";
+import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js";
 import {
   addGlyphObject,
   createSceneBuilder,
@@ -325,7 +325,50 @@ function drawSchool(builder, state, palette, metrics) {
   });
 }
 
-function individualGlyphs(fish, state, palette, metrics, deformationStrength = 1) {
+// ASCII fish used to be see-through: water bands, plants, and every other fish
+// read straight through the sprite, which is what made a crowded school look
+// like scattered line fragments. Each fish now gets one opaque body behind its
+// strokes, built as a short stack of horizontal spans across an ellipse. Fins
+// deliberately fall outside it and keep their open ASCII silhouette, and the
+// whole body costs BODY_SPANS filled rectangles, which is the one operation an
+// ESP32 panel driver is fastest at.
+const BODY_SPANS = 9;
+const BODY_WIDTH = 0.95;
+const BODY_HEIGHT = 0.72;
+const BODY_SHOULDER = 3;
+const BODY_NOSE_BIAS = 0.1;
+
+function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }) {
+  const { width, height } = spriteDimensions(sprite);
+  const radiusX = (width / 2) * BODY_WIDTH * widthScale * metrics.cellWidth;
+  const radiusY = (height / 2) * BODY_HEIGHT * metrics.cellHeight;
+  // Real fish carry their mass forward, and the sprite tails are all narrow
+  // punctuation, so the body sits slightly ahead of the glyph centre.
+  const centerX = (worldX + facing * BODY_NOSE_BIAS * widthScale) * metrics.cellWidth;
+  const centerY = worldY * metrics.cellHeight;
+  const spanHeight = (radiusY * 2) / BODY_SPANS;
+  const fill = [];
+  for (let index = 0; index < BODY_SPANS; index += 1) {
+    const top = -radiusY + index * spanHeight;
+    const bottom = top + spanHeight;
+    // Measuring at whichever span edge is closer to the waist keeps the stepped
+    // silhouette convex, and the cubed falloff holds the flanks near full width
+    // so the drawn body outline stays on the fill rather than beside it.
+    const waist = Math.min(Math.abs(top), Math.abs(bottom)) / radiusY;
+    const half = radiusX * Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
+    if (half < 1) continue;
+    fill.push({
+      x: centerX - half,
+      y: centerY + top,
+      width: half * 2,
+      height: spanHeight + 1,
+      color,
+    });
+  }
+  return fill;
+}
+
+function individualParts(fish, state, palette, metrics, deformationStrength = 1, depth = 0) {
   const sprite = spriteForSeed(fish.seed);
   const turning = turnPose(fish);
   const frequency = sampleRange(fish.seed, 100, 0.55, 0.78) * (0.64 + palette.daylight * 0.36);
@@ -338,7 +381,7 @@ function individualGlyphs(fish, state, palette, metrics, deformationStrength = 1
     deformationStrength,
     turnScale: turning.widthScale,
   });
-  return points.map((point) => positionedGlyph(metrics, {
+  const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: fish.x + point.x,
     worldY: fish.y + point.y + bob,
@@ -346,14 +389,26 @@ function individualGlyphs(fish, state, palette, metrics, deformationStrength = 1
     scaleX: 0.9 + turning.widthScale * 0.1,
     scaleY: 1,
   }));
+  const fill = bodyFill(sprite, metrics, {
+    worldX: fish.x,
+    worldY: fish.y + bob,
+    widthScale: turning.widthScale,
+    facing: turning.facing,
+    color: bodyFillForDepth(palette, depth),
+  });
+  return { glyphs, fill };
 }
 
 function drawIndividuals(builder, state, palette, metrics, deformationStrength) {
+  const waterHeight = Math.max(1, state.rows - WATERLINE_ROWS - SUBSTRATE_ROWS);
   state.individuals.forEach((fish, index) => {
+    const depth = clamp((fish.y - WATERLINE_ROWS) / waterHeight, 0, 0.999);
+    const parts = individualParts(fish, state, palette, metrics, deformationStrength, depth);
     addGlyphObject(builder, {
       id: `individual:${index}:${fish.seed}`,
       layer: LAYERS.individuals,
-      glyphs: individualGlyphs(fish, state, palette, metrics, deformationStrength),
+      glyphs: parts.glyphs,
+      fill: parts.fill,
       padding: 2,
     });
   });
@@ -472,7 +527,19 @@ export function renderSpriteScene(sprite, {
     scaleX: 1,
     scaleY: 1,
   }));
-  addGlyphObject(builder, { id: `lab:${sprite.id}:${facing}`, layer: LAYERS.individuals, glyphs, padding: 3 });
+  addGlyphObject(builder, {
+    id: `lab:${sprite.id}:${facing}`,
+    layer: LAYERS.individuals,
+    glyphs,
+    fill: bodyFill(sprite, metrics, {
+      worldX: logicalWidth / 2,
+      worldY: logicalHeight / 2,
+      widthScale: 1,
+      facing: facing === "left" ? -1 : 1,
+      color: bodyFillForDepth(palette, 0.5),
+    }),
+    padding: 3,
+  });
   return finalizeScene(builder);
 }
 

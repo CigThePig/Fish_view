@@ -124,6 +124,12 @@ export class CanvasSceneRenderer {
     drawBackground(context, scene, rectangle);
     for (const object of scene.objects) {
       if (!rectanglesOverlap(object.bounds, rectangle)) continue;
+      // Opaque spans go down first so the object's own strokes stay on top of
+      // its body instead of being erased by it.
+      for (const span of object.fill) {
+        context.fillStyle = span.color;
+        context.fillRect(span.x, span.y, span.width, span.height);
+      }
       const end = object.glyphStart + object.glyphCount;
       for (let index = object.glyphStart; index < end; index += 1) drawGlyph(context, scene.glyphs[index]);
     }
