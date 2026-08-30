@@ -27,7 +27,10 @@ export function glyphForPlantJoint(plant, pose, point) {
       ? seededChoice(point.glyph, plant.seed, 430 + point.index)
       : point.glyph;
   }
-  if (point.isTip || point.role === "tip") {
+  // isTip is also used for an ordinary stem that merely has no active child.
+  // Those implicit terminal stems still have to paint the final bone; only an
+  // explicitly authored tip role should switch from stem ink to tip punctuation.
+  if (point.role === "tip") {
     return seededChoice(species.tipGlyphs, plant.seed, 450 + point.index);
   }
   return stemGlyph(species, point, plant.seed);
@@ -53,7 +56,11 @@ function placementForPoint(pose, point, baseScale) {
     return { worldX: point.x, worldY: point.y, scaleX: baseScale, scaleY: baseScale };
   }
 
-  const endpointDecoration = point.isTip
+  // A terminal stem is not an authored decoration. posePlant marks stem tips
+  // with isTip simply because they have no active child, so classify structure
+  // before deciding whether an endpoint must stay pinned to the joint.
+  const structural = !point.glyph || point.role === "stem" || point.role === "fork";
+  const endpointDecoration = (!structural && point.isTip)
     || point.role === "tip"
     || point.role === "lantern"
     || point.role === "bell"
@@ -70,7 +77,6 @@ function placementForPoint(pose, point, baseScale) {
   // glyphs, keeping the existing one-glyph-per-joint ESP32 budget.
   const spanX = Math.abs(point.x - parent.x);
   const spanY = Math.abs(point.y - parent.y);
-  const structural = !point.glyph || point.role === "stem" || point.role === "fork";
   const progress = point.parent === 0 ? 0.3 : 0.5;
   return {
     worldX: parent.x + (point.x - parent.x) * progress,
