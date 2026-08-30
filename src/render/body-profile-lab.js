@@ -2,31 +2,16 @@ import { normalizeRows } from "../art/mirror.js";
 import { spriteDimensions } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { glyphPixels } from "./bitmap-font.js";
+import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import { glyphBounds } from "./scene.js?v=opaque-bodies-20260830";
 
 const BODY_SPANS = 9;
-const BODY_SHOULDER = 3;
 const BODY_SWELL = 0.2;
 const BODY_SLICE_OVERLAP = 1;
 const FIN_GLYPHS = new Set(["/", "\\"]);
 const TAIL_GLYPHS = new Set([">", "<", "=", "/", "\\"]);
 
-export const DEFAULT_TUNABLE_BODY_PROFILE = Object.freeze({
-  offsetX: 0,
-  offsetY: 0,
-  radiusXScale: 1,
-  radiusYScale: 1,
-  rearShoulder: BODY_SHOULDER,
-  frontShoulder: BODY_SHOULDER,
-});
-
-const SAVED_BODY_PROFILES = Object.freeze({
-  "round-fin": Object.freeze({ ...DEFAULT_TUNABLE_BODY_PROFILE, offsetX: -0.25 }),
-  "tiny-dart": Object.freeze({ ...DEFAULT_TUNABLE_BODY_PROFILE, offsetX: -0.25 }),
-  "single-fin": Object.freeze({ ...DEFAULT_TUNABLE_BODY_PROFILE, frontShoulder: 0.7 }),
-  "comma-tail": Object.freeze({ ...DEFAULT_TUNABLE_BODY_PROFILE, frontShoulder: 0.7 }),
-  "box-fin": Object.freeze({ ...DEFAULT_TUNABLE_BODY_PROFILE, offsetX: -0.25 }),
-});
+export const DEFAULT_TUNABLE_BODY_PROFILE = DEFAULT_BODY_PROFILE;
 
 const spritePointCache = new Map();
 const bodyBoxCache = new Map();
@@ -152,7 +137,7 @@ function finiteOr(value, fallback) {
 }
 
 export function bodyProfileForSprite(sprite) {
-  return { ...(SAVED_BODY_PROFILES[sprite.id] ?? DEFAULT_TUNABLE_BODY_PROFILE) };
+  return { ...(BODY_PROFILES[sprite.id] ?? DEFAULT_BODY_PROFILE) };
 }
 
 export function normalizeTunableBodyProfile(profile, fallback = DEFAULT_TUNABLE_BODY_PROFILE) {
