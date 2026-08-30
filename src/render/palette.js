@@ -53,7 +53,6 @@ export function scenePalette(state) {
     plantBack: mixColor("#386d59", "#1b2920", night),
     plantFront: mixColor("#64a47a", "#253126", night),
     substrateBg: mixColor("#251b16", "#493d2f", night),
-    substrateAlt: mixColor("#302119", "#514433", night),
     substrateFg: mixColor("#a37d52", "#2b251d", night),
     ripple: mixColor("#e6d992", "#39301f", night),
     ambient: mixColor("#74abae", "#2a342b", night),

@@ -5,7 +5,6 @@ import {
   schoolGlyphs,
   spriteDimensions,
   substrateArt,
-  waterlineArt,
 } from "../art/sprites.js";
 import { orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { plantHeight, spriteForSeed } from "../sim/entities.js";
@@ -156,7 +155,7 @@ function createBackground(dimensions, palette, seed, withSubstrate = true) {
         y: top,
         width: metrics.cellWidth + 1,
         height: dimensions.height - top,
-        color: sample01(seed, 900 + column) > 0.62 ? palette.substrateAlt : palette.substrateBg,
+        color: palette.substrateBg,
       });
     }
   }
@@ -201,14 +200,15 @@ function builderForState(state, palette) {
 
 function drawWaterline(builder, state, palette, metrics) {
   const chunks = new Map();
-  const vocabulary = [...new Set(waterlineArt.join(""))].filter((char) => char !== " ");
-  const count = Math.ceil(state.cols / 1.42);
+  const spacing = 1.65;
+  const count = Math.ceil(state.cols / spacing);
   for (let index = 0; index < count; index += 1) {
-    const worldX = 0.55 + index * 1.42 + sampleSigned(state.seed, 1100 + index) * 0.14;
+    if (sample01(state.seed, 1050 + index) > 0.9) continue;
+    const worldX = 0.55 + index * spacing + sampleSigned(state.seed, 1100 + index) * 0.18;
     if (worldX >= state.cols) continue;
     const wave = Math.sin(state.elapsedRealSeconds * 0.42 + worldX * 0.34 + sampleRange(state.seed, 1200 + index, 0, TAU));
-    const worldY = 0.64 + wave * 0.075 + sampleSigned(state.seed, 1300 + index) * 0.025;
-    const char = index % 11 === 0 ? "'" : index % 7 === 0 ? "^" : vocabulary[index % vocabulary.length];
+    const worldY = 0.64 + wave * 0.09 + sampleSigned(state.seed, 1300 + index) * 0.03;
+    const char = index % 13 === 0 ? "'" : index % 9 === 0 ? "^" : "~";
     const chunk = Math.floor(worldX / 8);
     if (!chunks.has(chunk)) chunks.set(chunk, []);
     chunks.get(chunk).push(positionedGlyph(metrics, {
@@ -401,11 +401,11 @@ function drawSubstrate(builder, state, palette, metrics) {
       const choice = Math.floor(sample01(state.seed, salt + 700) * substrateArt.length) % substrateArt.length;
       chunks.get(chunk).push(positionedGlyph(metrics, {
         char: row === 0 && column % 4 === 0 ? "_" : substrateArt[choice],
-        worldX: column + 0.5 + sampleSigned(state.seed, salt + 900) * 0.22,
-        worldY: start + row + 0.5 + sampleSigned(state.seed, salt + 1100) * 0.13,
+        worldX: column + 0.5 + sampleSigned(state.seed, salt + 900) * 0.32,
+        worldY: start + row + 0.5 + sampleSigned(state.seed, salt + 1100) * 0.27,
         fg: palette.substrateFg,
-        scaleX: 0.82,
-        scaleY: 0.76,
+        scaleX: sampleRange(state.seed, salt + 1300, 0.74, 0.88),
+        scaleY: sampleRange(state.seed, salt + 1500, 0.68, 0.82),
       }));
     }
   }
