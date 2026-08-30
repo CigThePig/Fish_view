@@ -6,7 +6,7 @@ import {
   createBubbleEmitters,
   createBubbleRenderRecords,
 } from "../src/render/bubbles.js";
-import { render } from "../src/render/aquarium-renderer.js";
+import { render } from "../src/render/render.js";
 import { scenePalette } from "../src/render/palette.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { orientationConfig } from "../src/sim/config.js";
