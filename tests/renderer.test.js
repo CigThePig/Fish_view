@@ -195,8 +195,11 @@ test("every individual fish is opaque, through every pose it swims", () => {
         assert.ok(object.fill.length > 0, object.id + " has no body");
         // Cheap enough for a panel driver even with every fish on screen.
         assert.ok(object.fill.length <= 9, object.id + " costs too many fills");
-        const widest = Math.max(...object.fill.map((span) => span.width));
-        assert.ok(widest > cellWidth, object.id + " body is narrower than one cell");
+        // The body is now built from narrow vertical slices, so measure the
+        // composed silhouette rather than requiring one rectangle to span it.
+        const bodyLeft = Math.min(...object.fill.map((span) => span.x));
+        const bodyRight = Math.max(...object.fill.map((span) => span.x + span.width));
+        assert.ok(bodyRight - bodyLeft > cellWidth, object.id + " body is narrower than one cell");
         for (const span of object.fill) {
           assert.match(span.color, HEX_COLOR);
           assert.ok(span.width > 0 && span.height > 0);
