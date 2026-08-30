@@ -1,0 +1,142 @@
+.plant-page {
+  min-height: 100vh;
+  color: #d8e8df;
+  background: #07110f;
+}
+
+.plant-lab-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 2rem;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 4vw, 3rem) 1rem;
+}
+
+.plant-lab-header h1 {
+  margin: 0.15rem 0 0.55rem;
+}
+
+.plant-lab-header p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: #9eb6aa;
+}
+
+.plant-lab-header nav {
+  display: flex;
+  gap: 1rem;
+  white-space: nowrap;
+}
+
+.plant-lab-controls {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.7rem;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 0.9rem clamp(1rem, 4vw, 3rem);
+  border-block: 1px solid #214137;
+  background: rgb(9 23 19 / 96%);
+}
+
+.plant-lab-controls label {
+  display: grid;
+  gap: 0.3rem;
+  color: #a8c0b4;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.plant-lab-controls select,
+.plant-lab-controls button {
+  min-height: 2.35rem;
+  color: #d8e8df;
+  border: 1px solid #315548;
+  border-radius: 0.45rem;
+  background: #10251f;
+}
+
+.plant-check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 2.35rem;
+}
+
+.plant-lab-metrics {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 1rem clamp(1rem, 4vw, 3rem) 0;
+  color: #85a697;
+  font-variant-numeric: tabular-nums;
+}
+
+.plant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 1rem clamp(1rem, 4vw, 3rem) 4rem;
+}
+
+.plant-card {
+  overflow: hidden;
+  border: 1px solid #1e3c33;
+  border-radius: 0.8rem;
+  background: #0b1915;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 18%);
+}
+
+.plant-card__heading {
+  padding: 0.9rem 1rem 0.75rem;
+}
+
+.plant-card__heading h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.plant-card__heading p {
+  margin: 0.3rem 0 0;
+  color: #78988a;
+  font-size: 0.75rem;
+}
+
+.plant-card canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  border-block: 1px solid #183229;
+}
+
+.plant-card__ages {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 0.65rem 1rem 0.8rem;
+  color: #87a79a;
+  font-size: 0.72rem;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 720px) {
+  .plant-lab-header {
+    display: grid;
+  }
+
+  .plant-lab-header nav {
+    flex-wrap: wrap;
+  }
+
+  .plant-lab-controls {
+    position: static;
+  }
+}

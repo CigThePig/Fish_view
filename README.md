@@ -16,7 +16,10 @@ persistent simulation.
   cohesion, boundary pull, depth preference, and speed.
 - Six persistent individual fish with seeded traits, changing drives,
   utility-selected behavior, interaction history, and local persistence.
-- Slow plant growth as the long-horizon visual change signal.
+- A living skeletal vegetation system with 28 data-driven species, seeded
+  colonies, structural growth, three depth groups, shared current, and subtle
+  touch/fish disturbance. ASCII glyphs decorate tiny parent-index skeletons;
+  plants are never fixed text sprites.
 - A reliable day/night arc with a warm filled night wash, dark fish silhouettes,
   continuously moving fish, and scene colours that model the nightlight directly.
   The night field is one warm hue that only loses value with depth, over a floor
@@ -42,6 +45,10 @@ persistent simulation.
 - A deterministic [typographic motion lab](https://cigthepig.github.io/Fish_view/sprites.html)
   showing every static source sprite beside animated right- and left-facing
   poses, with phase, palette, deformation, anchor, bounds, and damage controls.
+- A deterministic [skeletal plant lab](https://cigthepig.github.io/Fish_view/plants.html)
+  showing all 28 species as seedlings and mature specimens, with day/night,
+  orientation, size, current, disturbance, quality, bounds, damage, and bone
+  overlay controls.
 
 No fish can die, become ill, disappear as a penalty, or be lost through
 neglect. Phase 0 does not choose the final orientation, decide the Phase 1
@@ -102,12 +109,47 @@ draw calls rather than repainted area.
 Day/night colours are part of the scene rather than a CSS brightness filter;
 12 quantized palette stages keep slow whole-field transitions infrequent.
 
+## Skeletal plants and ESP32 portability
+
+Plant artwork lives in one static descriptor library. Each species is a shallow
+parent-index array with segment length, rest angle, growth stage, glyph role,
+and a few motion constants. The same sequential pose pass handles grasses,
+ribbons, leaves, reeds, limited forks, and four uncommon decorative forms. The
+aquarium deterministically composes 22 specimens in landscape and 16 in
+portrait as clustered habitats with deliberate open-water gaps.
+
+A persisted plant stores its seed, species, continuous root x, age, mature
+height, depth layer, and seven seeded variation values. It never stores animated
+joints. At render time the root is fixed and 5–12 possible joints are walked in
+parent order; growth exposes joints and locally lengthens new segments instead
+of scaling finished artwork. A mature specimen emits at most 12 glyphs. Tests
+cap a mature landscape at 200 visible plant glyphs and portrait at 150; the
+dense validation seed currently produces 193 and 141 respectively.
+
+There is no soft-body solver, recursion, per-pixel plant effect, rotation, or
+per-glyph collision work. Three low-frequency current samples are shared by the
+garden. Each plant adds two seeded harmonics, one root-level touch calculation,
+and—outside the background layer—one coarse nearest-individual disturbance.
+Background poses quantize to 5 Hz while nearer plants use the aquarium's 10 Hz
+cadence. A future fixed-point/LUT port can replace the small bounded set of
+trigonometric calls without changing the descriptors. The normal bitmap-glyph
+backend simply rounds each posed glyph to pixels.
+
+Every specimen remains one stable scene object. Its old and new tight bounds
+enter the existing dirty-rectangle compositor, and opaque fish are painted
+after background/midground plants but before foreground plants. Reduced-detail
+rendering can omit alternating leaf attachments while retaining the same
+skeleton and species identity. In a 60-seed mature-tank sample at 10 Hz, an
+average frame changed 4.7 plant objects. Plant-only damage averaged 4.7% of the
+landscape framebuffer and 10.4% of portrait; whole-scene damage averaged 26.0%
+and 32.5% respectively.
+
 ## Source layout
 
 ```text
 src/art/       extracted art data and glyph-aware mirroring
-src/sim/       seeded state creation, behaviors, boids, growth, persistence model
-src/render/    continuous scene composition, palette, bitmap font, damage renderer
+src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose
+src/render/    scene composition, plant glyph mapping, palette, font, damage
 src/platform/  browser-only persistence adapter
 tests/         deterministic simulation, art, persistence, and renderer checks
 ```

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#07100f">
+    <title>Fish View — Skeletal plant lab</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="plant-lab.css?v=living-skeletal-plants-20260830">
+  </head>
+  <body class="plant-page">
+    <header class="plant-lab-header">
+      <div>
+        <p class="eyebrow">Deterministic vegetation validation</p>
+        <h1>Skeletal plant motion lab</h1>
+        <p>Every species uses the same parent-index skeleton and glyph renderer. Each card compares one seeded specimen as a seedling and at maturity.</p>
+      </div>
+      <nav aria-label="Development pages">
+        <a href="index.html">Aquarium</a>
+        <a href="sprites.html">Fish motion lab</a>
+      </nav>
+    </header>
+
+    <section class="plant-lab-controls" aria-label="Plant lab controls">
+      <button type="button" id="freeze-toggle" aria-pressed="false">Freeze animation</button>
+      <label>Orientation
+        <select id="orientation-control">
+          <option value="landscape">800 × 480 landscape</option>
+          <option value="portrait">480 × 800 portrait</option>
+        </select>
+      </label>
+      <label>Palette
+        <select id="palette-control">
+          <option value="day">Day</option>
+          <option value="night">Deep night</option>
+        </select>
+      </label>
+      <label>Mature size
+        <select id="size-control">
+          <option value="minimum">Minimum</option>
+          <option value="typical" selected>Typical</option>
+          <option value="maximum">Maximum</option>
+        </select>
+      </label>
+      <label>Current
+        <select id="current-control">
+          <option value="0.55">Calm</option>
+          <option value="1" selected>Typical</option>
+          <option value="1.85">Strong</option>
+        </select>
+      </label>
+      <label>Local response
+        <select id="disturbance-control">
+          <option value="none">None</option>
+          <option value="touch">Touch wave</option>
+          <option value="fish">Passing fish</option>
+        </select>
+      </label>
+      <label>Seed variation
+        <select id="variation-control">
+          <option value="0">Variation 1</option>
+          <option value="1">Variation 2</option>
+          <option value="2">Variation 3</option>
+        </select>
+      </label>
+      <label>Quality
+        <select id="quality-control">
+          <option value="1">Full attachments</option>
+          <option value="0">Reduced attachments</option>
+        </select>
+      </label>
+      <label class="plant-check"><input id="skeleton-control" type="checkbox"> Skeleton overlay</label>
+      <label class="plant-check"><input id="bounds-control" type="checkbox"> Object bounds</label>
+      <label class="plant-check"><input id="damage-control" type="checkbox"> Damage rectangles</label>
+    </section>
+
+    <p id="lab-metrics" class="plant-lab-metrics" aria-live="polite"></p>
+    <main id="plant-grid" class="plant-grid"></main>
+
+    <script type="module" src="src/plant-lab.js?v=living-skeletal-plants-20260830"></script>
+  </body>
+</html>
