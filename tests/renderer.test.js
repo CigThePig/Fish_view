@@ -207,11 +207,13 @@ test("every individual fish is opaque, through every pose it swims", () => {
   }
 });
 
-test("every stroke of a fish body sits on the opaque body", () => {
-  // The body is fitted to the artwork, so the check has to be against real ink:
-  // `_` draws along the bottom of its cell, which is what a body sized from
-  // cell centres got wrong at the roof and belly of the short sprites.
-  const fins = new Set(["/", "\\", "'"]);
+test("every enclosing stroke of a fish body sits on the opaque body", () => {
+  // The glyphs that draw the closed body: its roof, belly, flanks and eye.
+  // Fins, tail and the strokes that fan them are deliberately left open, so
+  // only this vocabulary has to be backed. The check is against real ink,
+  // because `_` draws along the bottom of its cell and a body sized from cell
+  // centres got the roof and belly of the short sprites wrong.
+  const body = new Set(["_", "-", "(", ")", "o", "O", ","]);
   let checked = 0;
   for (const sprite of individualSprites) {
     for (const facing of ["right", "left"]) {
@@ -219,7 +221,7 @@ test("every stroke of a fish body sits on the opaque body", () => {
         const scene = renderSpriteScene(sprite, { facing, phase });
         const object = objectByPrefix(scene, "lab:");
         for (const glyph of glyphsForObject(scene, object)) {
-          if (fins.has(glyph.char)) continue;
+          if (!body.has(glyph.char)) continue;
           const centre = inkCentre(glyph);
           const covered = object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
             && centre.y >= span.y && centre.y <= span.y + span.height);
@@ -229,7 +231,27 @@ test("every stroke of a fish body sits on the opaque body", () => {
       }
     }
   }
-  assert.ok(checked > 200);
+  assert.ok(checked > 100);
+});
+
+test("the tail is left open at the trailing edge of every sprite", () => {
+  for (const sprite of individualSprites) {
+    for (const facing of ["right", "left"]) {
+      const scene = renderSpriteScene(sprite, { facing, phase: 0 });
+      const object = objectByPrefix(scene, "lab:");
+      const glyphs = glyphsForObject(scene, object);
+      // Sprites are authored facing right, so the tail trails the direction of
+      // travel. Its outermost glyph must have bare water behind it: a body
+      // reaching into the tail reads as one blunt mass rather than as a fish.
+      const trailing = glyphs.reduce((furthest, glyph) => (facing === "right"
+        ? (glyph.x < furthest.x ? glyph : furthest)
+        : (glyph.x > furthest.x ? glyph : furthest)), glyphs[0]);
+      const centre = inkCentre(trailing);
+      const covered = object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
+        && centre.y >= span.y && centre.y <= span.y + span.height);
+      assert.equal(covered, false, sprite.id + " backs its tail glyph '" + trailing.char + "'");
+    }
+  }
 });
 
 test("fins are left outside the body so they keep an open silhouette", () => {

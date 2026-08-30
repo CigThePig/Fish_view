@@ -333,10 +333,17 @@ function drawSchool(builder, state, palette, metrics) {
 // to the sprite's own body. The whole body costs BODY_SPANS filled rectangles,
 // which is the one operation an ESP32 panel driver is fastest at.
 const BODY_SPANS = 9;
-const BODY_SHOULDER = 2.4;
+// Corner easing, in cell units. The body is a rounded rectangle rather than an
+// ellipse: the roof and belly are drawn with `_`, whose ink sits on the very
+// edge of the body, and an ellipse has no width left at its own edge to put
+// behind them. A corner radius eases the silhouette without collapsing it.
+const BODY_CORNER = 0.5;
 
 const bodyBoxCache = new Map();
 const FIN_GLYPHS = new Set(["/", "\\"]);
+// The vocabulary asciiquarium draws a tail from: the fin itself, the stroke
+// pair that fans it, and the peduncle joining it to the body.
+const TAIL_GLYPHS = new Set([">", "<", "=", "/", "\\"]);
 
 // The body is fitted to the artwork rather than to the sprite's bounding box,
 // which is a good deal larger than the fish inside it. Two kinds of row are
@@ -368,9 +375,25 @@ function inkExtent(char) {
   };
 }
 
+// Sprites are authored facing right, so the tail is the run of columns at the
+// trailing edge drawn only from tail glyphs. It stops at the first column
+// carrying anything else, which is where the body proper starts. The tail is
+// left open like the fins: an opaque body behind it would read as one blunt
+// mass rather than as a fish.
+function tailColumns(source) {
+  const columns = new Map();
+  for (const point of source.points) {
+    columns.set(point.column, (columns.get(point.column) ?? true) && TAIL_GLYPHS.has(point.char));
+  }
+  let end = 0;
+  while (columns.get(end) === true) end += 1;
+  return end;
+}
+
 function spriteBodyBox(sprite) {
   if (bodyBoxCache.has(sprite.id)) return bodyBoxCache.get(sprite.id);
   const source = spritePoints(sprite);
+  const tail = tailColumns(source);
   const rows = new Map();
   for (const point of source.points) {
     const row = rows.get(point.row) ?? { count: 0, points: [], strokesOnly: true };
@@ -387,6 +410,7 @@ function spriteBodyBox(sprite) {
     const edge = index === 0 || index === source.height - 1;
     if (row.count < 2 || (edge && row.strokesOnly)) continue;
     for (const point of row.points) {
+      if (point.column < tail) continue;
       const ink = inkExtent(point.char);
       top = Math.min(top, index + ink.top);
       bottom = Math.max(bottom, index + ink.bottom);
@@ -412,6 +436,8 @@ function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }
   const radiusY = box.radiusY * metrics.cellHeight;
   const centerX = (worldX + facing * box.offsetX * widthScale) * metrics.cellWidth;
   const centerY = (worldY + box.offsetY) * metrics.cellHeight;
+  const cornerX = Math.min(BODY_CORNER * metrics.cellWidth, radiusX);
+  const cornerY = Math.min(BODY_CORNER * metrics.cellHeight, radiusY);
   const spanHeight = (radiusY * 2) / BODY_SPANS;
   const fill = [];
   for (let index = 0; index < BODY_SPANS; index += 1) {
@@ -419,8 +445,10 @@ function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }
     const bottom = top + spanHeight;
     // Measuring at whichever span edge is closer to the waist keeps the stepped
     // silhouette convex, so no span pinches in behind the ink it has to back.
-    const waist = Math.min(Math.abs(top), Math.abs(bottom)) / radiusY;
-    const half = radiusX * Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
+    const waist = Math.min(Math.abs(top), Math.abs(bottom));
+    const flank = Math.max(0, radiusY - cornerY);
+    const reach = Math.min(cornerY, Math.max(0, waist - flank));
+    const half = radiusX - cornerX * (1 - Math.sqrt(Math.max(0, 1 - (reach / cornerY) ** 2)));
     // Spans are emitted already snapped to whole pixels. The damage signature
     // hashes them at this precision, so anything finer would let a drifting
     // fish change its painted coverage without being repainted, and a panel
