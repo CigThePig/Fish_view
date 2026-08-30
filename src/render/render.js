@@ -366,7 +366,7 @@ const BODY_SHOULDER = 3;
 const BODY_SWELL = 0.2;
 // One or two pixels of overlap keeps adjacent integer-snapped slices from
 // opening hairline water gaps as their centres move independently.
-const BODY_SLICE_OVERLAP = 2;
+const BODY_SLICE_OVERLAP = 1;
 
 const bodyBoxCache = new Map();
 const FIN_GLYPHS = new Set(["/", "\\"]);
