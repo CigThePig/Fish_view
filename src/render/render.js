@@ -10,6 +10,7 @@ import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_R
 import { plantHeight, spriteForSeed } from "../sim/entities.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
+import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=opaque-bodies-20260830";
 import {
   addGlyphObject,
@@ -358,8 +359,6 @@ function drawSchool(builder, state, palette, metrics) {
 // That keeps the fill attached while the fish flexes and during the edge-on
 // turn pose, without asking the panel driver to do anything but fillRect.
 const BODY_SPANS = 9;
-// How sharply the body narrows toward its roof, belly, nose and tail shoulder.
-const BODY_SHOULDER = 3;
 // A little more height than the ink strictly occupies, in cell units. `_` draws
 // along the bottom of its cell, so the roof and belly sit right on the body's
 // edge. A small swell backs those strokes without turning the silhouette square.
@@ -368,25 +367,10 @@ const BODY_SWELL = 0.2;
 // opening hairline water gaps as their centres move independently.
 const BODY_SLICE_OVERLAP = 1;
 
-// The source artwork is deliberately varied, so one mathematical ellipse is
-// not visually centred on all six silhouettes. These tiny source-space
-// calibrations are authored facing right and mirror automatically with the
-// shared pose transform. `offsetX` moves the whole opaque mass toward the tail;
-// `frontShoulder` only changes how sharply the nose closes, leaving its centre
-// alone. Double-fin is the reference shape and intentionally keeps the default.
-const DEFAULT_BODY_PROFILE = Object.freeze({
-  offsetX: 0,
-  rearShoulder: BODY_SHOULDER,
-  frontShoulder: BODY_SHOULDER,
-});
-const BODY_PROFILES = Object.freeze({
-  "round-fin": Object.freeze({ ...DEFAULT_BODY_PROFILE, offsetX: -0.25 }),
-  "tiny-dart": Object.freeze({ ...DEFAULT_BODY_PROFILE, offsetX: -0.25 }),
-  "single-fin": Object.freeze({ ...DEFAULT_BODY_PROFILE, frontShoulder: 0.7 }),
-  "comma-tail": Object.freeze({ ...DEFAULT_BODY_PROFILE, frontShoulder: 0.7 }),
-  "box-fin": Object.freeze({ ...DEFAULT_BODY_PROFILE, offsetX: -0.25 }),
-});
-
+// The source artwork is deliberately varied, so each sprite gets an authored
+// profile for body position, scale and taper. Those final values live in
+// body-profiles.js and are shared with the Typographic Motion Lab so Reset in
+// the lab always returns to the exact production geometry.
 const bodyBoxCache = new Map();
 const FIN_GLYPHS = new Set(["/", "\\"]);
 // The vocabulary asciiquarium draws a tail from: the fin itself, the stroke
@@ -491,9 +475,9 @@ function bodyFill(sprite, metrics, {
   const box = spriteBodyBox(sprite);
   const profile = BODY_PROFILES[sprite.id] ?? DEFAULT_BODY_PROFILE;
   const centerColumn = (source.width - 1) / 2 + box.offsetX + profile.offsetX;
-  const centerRow = (source.height - 1) / 2 + box.offsetY;
-  const radiusX = box.radiusX;
-  const radiusY = box.radiusY + BODY_SWELL;
+  const centerRow = (source.height - 1) / 2 + box.offsetY + profile.offsetY;
+  const radiusX = box.radiusX * profile.radiusXScale;
+  const radiusY = (box.radiusY + BODY_SWELL) * profile.radiusYScale;
   const sliceSourceWidth = (radiusX * 2) / BODY_SPANS;
   // Glyph centres compress with turnScale, but each bitmap intentionally stays
   // readable. Preserve that local ink width around each compressed slice so the
