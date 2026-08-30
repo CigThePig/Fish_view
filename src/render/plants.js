@@ -64,14 +64,17 @@ function placementForPoint(pose, point, baseScale) {
 
   // A joint is the end of a skeletal segment, but drawing every glyph only at
   // those ends left the large portrait plants looking like dotted lines. Place
-  // ordinary segment glyphs halfway along their bone instead. Stretch only the
-  // structural glyphs, and keep the existing one-glyph-per-joint budget.
+  // ordinary segment glyphs on their bone instead. The first segment sits
+  // deliberately closer to its buried root so every species visibly emerges
+  // from the terrain; later segments stay centred. Stretch only structural
+  // glyphs, keeping the existing one-glyph-per-joint ESP32 budget.
   const spanX = Math.abs(point.x - parent.x);
   const spanY = Math.abs(point.y - parent.y);
   const structural = !point.glyph || point.role === "stem" || point.role === "fork";
+  const progress = point.parent === 0 ? 0.3 : 0.5;
   return {
-    worldX: (parent.x + point.x) * 0.5,
-    worldY: (parent.y + point.y) * 0.5,
+    worldX: parent.x + (point.x - parent.x) * progress,
+    worldY: parent.y + (point.y - parent.y) * progress,
     scaleX: structural ? Math.min(1.45, baseScale * (1 + spanX * 0.34)) : baseScale,
     scaleY: structural ? Math.min(1.45, baseScale * (1 + spanY * 0.34)) : baseScale,
   };
@@ -126,7 +129,7 @@ export function createPlantRenderRecords(state, palette, metrics, options = {}) 
     activeJoints: records.reduce((sum, record) => sum + record.pose.activeJointCount, 0),
     glyphs: records.reduce((sum, record) => sum + record.glyphs.length, 0),
     maximumActiveJoints: records.reduce((maximum, record) => Math.max(maximum, record.pose.activeJointCount), 0),
-    maximumGlyphs: records.reduce((maximum, record) => Math.max(maximum, record.glyphs.length), 0),
+    maximumGlyphs: records.reduce((maximum, record) => Math.max(maximum, record.glyphs.length, 0), 0),
     structuralCapacity: records.reduce((sum, record) => sum + record.pose.maximumJointCount, 0),
     background: records.filter((record) => record.layerName === "background").length,
     midground: records.filter((record) => record.layerName === "midground").length,
