@@ -82,6 +82,33 @@ function spritePoints(sprite) {
   return result;
 }
 
+// One pose function owns the geometry for both glyphs and the opaque body.
+// Keeping this shared is important: the fish flexes by column, so any underlay
+// generated from a separate rigid transform will visibly drift behind the ink.
+function poseCoordinate(source, column, row, {
+  facing = 1,
+  phase = 0,
+  deformationStrength = 1,
+  turnScale = 1,
+} = {}) {
+  const tail = source.width <= 1
+    ? 0
+    : clamp(1 - column / (source.width - 1), 0, 1);
+  const displayColumn = facing < 0 ? source.width - 1 - column : column;
+  const columnSpacing = 1 + Math.sin(phase + tail * 0.9) * 0.018 * deformationStrength;
+  const rowSpacing = 1 + Math.sin(phase * 0.72 + column * 0.31) * 0.012 * deformationStrength;
+  const localX = (displayColumn - (source.width - 1) / 2) * columnSpacing * turnScale;
+  const localY = (row - (source.height - 1) / 2) * rowSpacing;
+  const tailWeight = 0.1 + Math.pow(tail, 1.65) * 0.9;
+  const bodyWave = Math.sin(phase - column * 0.22) * 0.145 * tailWeight * deformationStrength;
+  const tailBeat = Math.sin(phase * 1.04 + 0.45) * 0.065 * Math.pow(tail, 3) * deformationStrength;
+  return {
+    x: localX,
+    y: localY + bodyWave + tailBeat,
+    tail,
+  };
+}
+
 export function poseSprite(sprite, {
   facing = 1,
   phase = 0,
@@ -90,21 +117,18 @@ export function poseSprite(sprite, {
 } = {}) {
   const source = spritePoints(sprite);
   return source.points.map((point) => {
-    const tail = source.width <= 1 ? 0 : 1 - point.column / (source.width - 1);
-    const displayColumn = facing < 0 ? source.width - 1 - point.column : point.column;
-    const columnSpacing = 1 + Math.sin(phase + tail * 0.9) * 0.018 * deformationStrength;
-    const rowSpacing = 1 + Math.sin(phase * 0.72 + point.column * 0.31) * 0.012 * deformationStrength;
-    const localX = (displayColumn - (source.width - 1) / 2) * columnSpacing * turnScale;
-    const localY = (point.row - (source.height - 1) / 2) * rowSpacing;
-    const tailWeight = 0.1 + Math.pow(tail, 1.65) * 0.9;
-    const bodyWave = Math.sin(phase - point.column * 0.22) * 0.145 * tailWeight * deformationStrength;
-    const tailBeat = Math.sin(phase * 1.04 + 0.45) * 0.065 * Math.pow(tail, 3) * deformationStrength;
+    const posed = poseCoordinate(source, point.column, point.row, {
+      facing,
+      phase,
+      deformationStrength,
+      turnScale,
+    });
     return {
       char: facing < 0 ? (glyphFlip[point.char] ?? point.char) : point.char,
       mask: point.mask,
-      x: localX,
-      y: localY + bodyWave + tailBeat,
-      tail,
+      x: posed.x,
+      y: posed.y,
+      tail: posed.tail,
     };
   });
 }
@@ -328,20 +352,21 @@ function drawSchool(builder, state, palette, metrics) {
 
 // ASCII fish used to be see-through: water bands, plants, and every other fish
 // read straight through the sprite, which is what made a crowded school look
-// like scattered line fragments. Each fish now gets one opaque body behind its
-// strokes, built as a short stack of horizontal spans across an ellipse fitted
-// to the sprite's own body. The whole body costs BODY_SPANS filled rectangles,
-// which is the one operation an ESP32 panel driver is fastest at.
+// like scattered line fragments. Each fish gets one opaque body behind its
+// strokes. The body is nine vertical slices across a soft ellipse, and each
+// slice goes through the same pose transform as the glyph column beside it.
+// That keeps the fill attached while the fish flexes and during the edge-on
+// turn pose, without asking the panel driver to do anything but fillRect.
 const BODY_SPANS = 9;
-// How sharply the body narrows toward its roof and belly. This is the shape of
-// the fish, so it stays a soft ellipse: squaring it off backs a few more pixels
-// of the outermost strokes and turns every fish into a box.
+// How sharply the body narrows toward its roof, belly, nose and tail shoulder.
 const BODY_SHOULDER = 3;
 // A little more height than the ink strictly occupies, in cell units. `_` draws
 // along the bottom of its cell, so the roof and belly sit right on the body's
-// edge, where an ellipse has no width left to put behind them. A small swell
-// gives them something to sit on while keeping the silhouette round.
+// edge. A small swell backs those strokes without turning the silhouette square.
 const BODY_SWELL = 0.2;
+// One or two pixels of overlap keeps adjacent integer-snapped slices from
+// opening hairline water gaps as their centres move independently.
+const BODY_SLICE_OVERLAP = 2;
 
 const bodyBoxCache = new Map();
 const FIN_GLYPHS = new Set(["/", "\\"]);
@@ -434,30 +459,61 @@ function spriteBodyBox(sprite) {
   return box;
 }
 
-function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }) {
+function bodyFill(sprite, metrics, {
+  worldX,
+  worldY,
+  turnScale,
+  facing,
+  phase,
+  deformationStrength,
+  color,
+}) {
+  const source = spritePoints(sprite);
   const box = spriteBodyBox(sprite);
-  const radiusX = box.radiusX * widthScale * metrics.cellWidth;
-  const radiusY = (box.radiusY + BODY_SWELL) * metrics.cellHeight;
-  const centerX = (worldX + facing * box.offsetX * widthScale) * metrics.cellWidth;
-  const centerY = (worldY + box.offsetY) * metrics.cellHeight;
-  const spanHeight = (radiusY * 2) / BODY_SPANS;
+  const centerColumn = (source.width - 1) / 2 + box.offsetX;
+  const centerRow = (source.height - 1) / 2 + box.offsetY;
+  const radiusX = box.radiusX;
+  const radiusY = box.radiusY + BODY_SWELL;
+  const sliceSourceWidth = (radiusX * 2) / BODY_SPANS;
+  // Glyph centres compress with turnScale, but each bitmap intentionally stays
+  // readable. Preserve that local ink width around each compressed slice so the
+  // body does not collapse to 32% while the characters remain about 93% wide.
+  const glyphScaleX = 0.9 + turnScale * 0.1;
+  const pose = { facing, phase, deformationStrength, turnScale };
   const fill = [];
+
   for (let index = 0; index < BODY_SPANS; index += 1) {
-    const top = -radiusY + index * spanHeight;
-    const bottom = top + spanHeight;
-    // Measuring at whichever span edge is closer to the waist keeps the stepped
-    // silhouette convex, so no span pinches in behind the ink it has to back.
-    const waist = Math.min(Math.abs(top), Math.abs(bottom)) / radiusY;
-    const half = radiusX * Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
-    // Spans are emitted already snapped to whole pixels. The damage signature
-    // hashes them at this precision, so anything finer would let a drifting
-    // fish change its painted coverage without being repainted, and a panel
-    // driver wants integer rectangles anyway.
-    const left = Math.round(centerX - half);
-    const right = Math.round(centerX + half);
-    const spanTop = Math.round(centerY + top);
-    const spanBottom = Math.round(centerY + bottom) + 1;
-    if (right - left < 1) continue;
+    const localLeft = -radiusX + index * sliceSourceWidth;
+    const localRight = localLeft + sliceSourceWidth;
+    const localCenter = (localLeft + localRight) / 2;
+    const waist = radiusX > 0 ? Math.abs(localCenter) / radiusX : 0;
+    const taper = Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
+    const halfHeight = radiusY * taper;
+    if (halfHeight <= 0) continue;
+
+    const sourceColumn = centerColumn + localCenter;
+    const center = poseCoordinate(source, sourceColumn, centerRow, pose);
+    const top = poseCoordinate(source, sourceColumn, centerRow - halfHeight, pose);
+    const bottom = poseCoordinate(source, sourceColumn, centerRow + halfHeight, pose);
+    const leftEdge = poseCoordinate(source, centerColumn + localLeft, centerRow, pose);
+    const rightEdge = poseCoordinate(source, centerColumn + localRight, centerRow, pose);
+
+    const geometricWidth = Math.abs(rightEdge.x - leftEdge.x) * metrics.cellWidth;
+    const localInkWidth = sliceSourceWidth * metrics.cellWidth * glyphScaleX;
+    // Narrow the end slices as well as shortening them. Besides keeping the
+    // silhouette round, this preserves the old renderer contract that a body
+    // cannot become a rectangular block.
+    const sliceWidth = Math.max(
+      2,
+      Math.max(geometricWidth, localInkWidth) * (0.6 + taper * 0.4) + BODY_SLICE_OVERLAP,
+    );
+    const centerX = (worldX + center.x) * metrics.cellWidth;
+    const left = Math.round(centerX - sliceWidth / 2);
+    const right = Math.round(centerX + sliceWidth / 2) + 1;
+    const spanTop = Math.round((worldY + Math.min(top.y, bottom.y)) * metrics.cellHeight);
+    const spanBottom = Math.round((worldY + Math.max(top.y, bottom.y)) * metrics.cellHeight) + 1;
+    if (right - left < 1 || spanBottom - spanTop < 1) continue;
+
     fill.push({
       x: left,
       y: spanTop,
@@ -493,8 +549,10 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   const fill = bodyFill(sprite, metrics, {
     worldX: fish.x,
     worldY: fish.y + bob,
-    widthScale: turning.widthScale,
+    turnScale: turning.widthScale,
     facing: turning.facing,
+    phase,
+    deformationStrength,
     color: bodyFillForDepth(palette, depth),
   });
   return { glyphs, fill };
@@ -604,6 +662,7 @@ export function renderSpriteScene(sprite, {
   deformationStrength = 1,
   paletteMode = "day",
   staticPose = false,
+  turnScale = 1,
 } = {}) {
   const { width: spriteWidth, height: spriteHeight } = spriteDimensions(sprite);
   const logicalWidth = spriteWidth + 4;
@@ -621,11 +680,13 @@ export function renderSpriteScene(sprite, {
     metadata: { paletteStage: palette.paletteStage, lab: true },
   });
   const metrics = sceneMetrics(builder);
+  const effectiveDeformation = staticPose ? 0 : deformationStrength;
+  const facingValue = facing === "left" ? -1 : 1;
   const points = poseSprite(sprite, {
-    facing: facing === "left" ? -1 : 1,
+    facing: facingValue,
     phase,
-    deformationStrength: staticPose ? 0 : deformationStrength,
-    turnScale: 1,
+    deformationStrength: effectiveDeformation,
+    turnScale,
   });
   const spriteSeed = individualSprites.indexOf(sprite) + 1;
   const glyphs = points.map((point) => positionedGlyph(metrics, {
@@ -633,7 +694,7 @@ export function renderSpriteScene(sprite, {
     worldX: logicalWidth / 2 + point.x,
     worldY: logicalHeight / 2 + point.y,
     fg: maskColor(point.mask, spriteSeed, palette),
-    scaleX: 1,
+    scaleX: 0.9 + turnScale * 0.1,
     scaleY: 1,
   }));
   addGlyphObject(builder, {
@@ -643,8 +704,10 @@ export function renderSpriteScene(sprite, {
     fill: bodyFill(sprite, metrics, {
       worldX: logicalWidth / 2,
       worldY: logicalHeight / 2,
-      widthScale: 1,
-      facing: facing === "left" ? -1 : 1,
+      turnScale,
+      facing: facingValue,
+      phase,
+      deformationStrength: effectiveDeformation,
       color: bodyFillForDepth(palette, 0.5),
     }),
     padding: 3,
