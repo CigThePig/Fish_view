@@ -92,6 +92,10 @@ export function scenePalette(state) {
     paletteStage,
     waterBands,
     bodyFills: waterBands.map((color) => mixColor(color, bodyShadow, BODY_SHADE)),
+    // A small real air/glass strip now sits above the visible water boundary.
+    // It stays darker than the water so the surface reads immediately without
+    // spending valuable panel height on a decorative header.
+    airBg: mixColor("#09282c", "#1d1710", night),
     waterline: mixColor("#58c3c4", "#8a7048", night),
     school: [
       mixColor("#6bd0ca", "#261d14", night),
@@ -102,10 +106,10 @@ export function scenePalette(state) {
     plants,
     plantBack: plants.background[0],
     plantFront: plants.foreground[0],
-    // The floor stays the darkest, quietest band at night; its grain sits a
-    // few values above it so texture never becomes speckle.
-    substrateBg: mixColor("#251b16", "#241c13", night),
-    substrateFg: mixColor("#a37d52", "#342819", night),
+    // The floor is deliberately subdued and closer to the vegetation palette.
+    // With only two rows of depth it reads as terrain rather than a brown panel.
+    substrateBg: mixColor("#142522", "#211b14", night),
+    substrateFg: mixColor("#536a55", "#30271c", night),
     ripple: mixColor("#e6d992", "#9a7d4e", night),
     ambient: mixColor("#74abae", "#3c2f1e", night),
     masks: mixMap(DAY_MASK, NIGHT_MASK, night),

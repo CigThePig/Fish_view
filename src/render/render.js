@@ -7,18 +7,19 @@ import {
   substrateArt,
 } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
+import { SUBSTRATE_RELIEF_ROWS, SURFACE_Y_ROWS, substrateSurfaceY } from "../sim/environment.js";
 import { spriteForSeed } from "../sim/entities.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
-import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=opaque-bodies-20260830";
+import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=environment-boundaries-20260830";
 import {
   addPlantRecord,
   createPlantRenderRecords,
   plantRenderRecord,
   skeletonLinesForRecord,
-} from "./plants.js";
+} from "./plants.js?v=environment-boundaries-20260830";
 import {
   addGlyphObject,
   createSceneBuilder,
@@ -163,13 +164,20 @@ function turnPose(fish) {
 
 function createBackground(dimensions, palette, seed, withSubstrate = true) {
   const metrics = sceneMetrics(dimensions);
+  const surfaceTop = withSubstrate ? SURFACE_Y_ROWS * metrics.cellHeight : 0;
   const waterBottom = withSubstrate
-    ? (dimensions.logicalHeight - SUBSTRATE_ROWS) * metrics.cellHeight
+    ? Math.min(
+      dimensions.height,
+      (dimensions.logicalHeight - SUBSTRATE_ROWS + SUBSTRATE_RELIEF_ROWS) * metrics.cellHeight,
+    )
     : dimensions.height;
-  const bandHeight = waterBottom / palette.waterBands.length;
+  const waterHeight = Math.max(1, waterBottom - surfaceTop);
+  const bandHeight = waterHeight / palette.waterBands.length;
   const bands = palette.waterBands.map((color, index) => ({
-    y: index * bandHeight,
-    height: index === palette.waterBands.length - 1 ? waterBottom - index * bandHeight : bandHeight,
+    y: surfaceTop + index * bandHeight,
+    height: index === palette.waterBands.length - 1
+      ? waterBottom - (surfaceTop + index * bandHeight)
+      : bandHeight,
     color,
   }));
   const transitions = bands.slice(1).map((band, index) => ({
@@ -182,12 +190,25 @@ function createBackground(dimensions, palette, seed, withSubstrate = true) {
   }));
   const substrateSegments = [];
   if (withSubstrate) {
-    for (let column = 0; column < Math.ceil(dimensions.logicalWidth); column += 1) {
-      const top = waterBottom + sampleSigned(seed, 700 + column) * metrics.cellHeight * 0.14;
+    const terrainState = {
+      seed,
+      cols: dimensions.logicalWidth,
+      rows: dimensions.logicalHeight,
+    };
+    const samplesPerCell = 2;
+    const sampleWidth = metrics.cellWidth / samplesPerCell;
+    const sampleCount = Math.ceil(dimensions.logicalWidth * samplesPerCell);
+    for (let sample = 0; sample < sampleCount; sample += 1) {
+      const worldX = (sample + 0.5) / samplesPerCell;
+      const top = clamp(
+        substrateSurfaceY(terrainState, worldX) * metrics.cellHeight,
+        0,
+        dimensions.height,
+      );
       substrateSegments.push({
-        x: column * metrics.cellWidth,
+        x: sample * sampleWidth,
         y: top,
-        width: metrics.cellWidth + 1,
+        width: sampleWidth + 1,
         height: dimensions.height - top,
         color: palette.substrateBg,
       });
@@ -203,7 +224,7 @@ function createBackground(dimensions, palette, seed, withSubstrate = true) {
       seed >>> 0,
       withSubstrate ? 1 : 0,
     ].join(":"),
-    baseColor: palette.waterBands[0],
+    baseColor: withSubstrate ? palette.airBg : palette.waterBands[0],
     bands,
     transitions,
     substrateSegments,
@@ -234,24 +255,25 @@ function builderForState(state, palette) {
 
 function drawWaterline(builder, state, palette, metrics) {
   const chunks = new Map();
-  const spacing = 1.65;
+  const spacing = 2.25;
   const count = Math.ceil(state.cols / spacing);
   for (let index = 0; index < count; index += 1) {
-    if (sample01(state.seed, 1050 + index) > 0.9) continue;
-    const worldX = 0.55 + index * spacing + sampleSigned(state.seed, 1100 + index) * 0.18;
+    if (sample01(state.seed, 1050 + index) > 0.74) continue;
+    const worldX = 0.45 + index * spacing + sampleSigned(state.seed, 1100 + index) * 0.26;
     if (worldX >= state.cols) continue;
-    const wave = Math.sin(state.elapsedRealSeconds * 0.42 + worldX * 0.34 + sampleRange(state.seed, 1200 + index, 0, TAU));
-    const worldY = 0.64 + wave * 0.09 + sampleSigned(state.seed, 1300 + index) * 0.03;
-    const char = index % 13 === 0 ? "'" : index % 9 === 0 ? "^" : "~";
-    const chunk = Math.floor(worldX / 8);
+    const wave = Math.sin(state.elapsedRealSeconds * 0.38 + worldX * 0.29 + sampleRange(state.seed, 1200 + index, 0, TAU));
+    const worldY = SURFACE_Y_ROWS + wave * 0.055 + sampleSigned(state.seed, 1300 + index) * 0.025;
+    const shape = sample01(state.seed, 1350 + index);
+    const char = shape < 0.12 ? "'" : shape < 0.27 ? "_" : shape < 0.35 ? "^" : "~";
+    const chunk = Math.floor(worldX / 9);
     if (!chunks.has(chunk)) chunks.set(chunk, []);
     chunks.get(chunk).push(positionedGlyph(metrics, {
       char,
       worldX,
-      worldY: char === "'" ? worldY + 0.38 : worldY,
+      worldY: char === "'" ? worldY + 0.22 : worldY,
       fg: palette.waterline,
-      scaleX: char === "'" ? 0.78 : 0.94,
-      scaleY: char === "'" ? 0.78 : 0.9,
+      scaleX: char === "'" ? 0.7 : char === "_" ? 0.86 : 0.9,
+      scaleY: char === "'" ? 0.7 : 0.84,
     }));
   }
   for (const [chunk, glyphs] of chunks) {
@@ -260,7 +282,7 @@ function drawWaterline(builder, state, palette, metrics) {
 }
 
 function drawAmbient(builder, state, palette, metrics) {
-  const waterTop = WATERLINE_ROWS + 0.2;
+  const waterTop = SURFACE_Y_ROWS + 0.5;
   const waterBottom = state.rows - SUBSTRATE_ROWS - 0.2;
   const travel = waterBottom - waterTop;
   const count = state.orientation === "portrait" ? 8 : 13;
@@ -536,13 +558,13 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   return { glyphs, fill };
 }
 
-// createBackground spreads its six water bands from logical y = 0 down to the
-// substrate, so a body has to be normalised against that same extent and
-// origin. Measuring from the waterline instead put the band boundaries in
-// different places and picked the companion of a band the fish was not
-// actually swimming in.
+// The visible water bands begin at the physical surface instead of y = 0.
+// Normalise body shading against that same interval so opaque fish still pick
+// the water companion behind the depth where they actually swim.
 function waterBandDepth(state, worldY) {
-  return clamp(worldY / Math.max(1, state.rows - SUBSTRATE_ROWS), 0, 0.999);
+  const waterTop = SURFACE_Y_ROWS;
+  const waterBottom = state.rows - SUBSTRATE_ROWS + SUBSTRATE_RELIEF_ROWS;
+  return clamp((worldY - waterTop) / Math.max(1, waterBottom - waterTop), 0, 0.999);
 }
 
 function drawIndividuals(builder, state, palette, metrics, deformationStrength) {
@@ -589,23 +611,28 @@ function drawReaction(builder, reaction, palette, metrics) {
 }
 
 function drawSubstrate(builder, state, palette, metrics) {
-  const start = state.rows - SUBSTRATE_ROWS;
   const chunks = new Map();
   for (let row = 0; row < SUBSTRATE_ROWS; row += 1) {
-    const density = 0.35 + row * 0.16;
+    const density = 0.24 + row * 0.17;
     for (let column = 0; column < state.cols; column += 1) {
       const salt = 2000 + row * 211 + column;
       if (sample01(state.seed, salt) > density) continue;
       const chunk = Math.floor(column / 10);
       if (!chunks.has(chunk)) chunks.set(chunk, []);
       const choice = Math.floor(sample01(state.seed, salt + 700) * substrateArt.length) % substrateArt.length;
+      const worldX = column + 0.5 + sampleSigned(state.seed, salt + 900) * 0.3;
+      const surfaceY = substrateSurfaceY(state, worldX);
+      const worldY = Math.min(
+        state.rows - 0.18,
+        surfaceY + 0.36 + row * 0.74 + sampleSigned(state.seed, salt + 1100) * 0.18,
+      );
       chunks.get(chunk).push(positionedGlyph(metrics, {
-        char: row === 0 && column % 4 === 0 ? "_" : substrateArt[choice],
-        worldX: column + 0.5 + sampleSigned(state.seed, salt + 900) * 0.32,
-        worldY: start + row + 0.5 + sampleSigned(state.seed, salt + 1100) * 0.27,
+        char: row === 0 && sample01(state.seed, salt + 600) < 0.13 ? "_" : substrateArt[choice],
+        worldX,
+        worldY,
         fg: palette.substrateFg,
-        scaleX: sampleRange(state.seed, salt + 1300, 0.74, 0.88),
-        scaleY: sampleRange(state.seed, salt + 1500, 0.68, 0.82),
+        scaleX: sampleRange(state.seed, salt + 1300, 0.7, 0.84),
+        scaleY: sampleRange(state.seed, salt + 1500, 0.64, 0.78),
       }));
     }
   }
