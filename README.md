@@ -27,7 +27,9 @@ persistent simulation.
   it. The body is fitted to each sprite's own artwork and to the real ink of the
   glyphs that draw it, so it hugs the fish instead of its bounding box. It covers
   the main body only: fins and the tail are left outside and keep their open
-  ASCII silhouette.
+  ASCII silhouette. The silhouette stays a soft ellipse rather than squaring off
+  to catch the last few pixels of a roof stroke, because the fish have to look
+  like fish.
 - Free-floating bitmap glyphs: individuals flex through a coherent body wave,
   school fish glide between former cells, plants bend as linked typographic
   stems, and sparse bubbles rise independently of text rows.

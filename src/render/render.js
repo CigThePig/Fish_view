@@ -333,11 +333,15 @@ function drawSchool(builder, state, palette, metrics) {
 // to the sprite's own body. The whole body costs BODY_SPANS filled rectangles,
 // which is the one operation an ESP32 panel driver is fastest at.
 const BODY_SPANS = 9;
-// Corner easing, in cell units. The body is a rounded rectangle rather than an
-// ellipse: the roof and belly are drawn with `_`, whose ink sits on the very
-// edge of the body, and an ellipse has no width left at its own edge to put
-// behind them. A corner radius eases the silhouette without collapsing it.
-const BODY_CORNER = 0.5;
+// How sharply the body narrows toward its roof and belly. This is the shape of
+// the fish, so it stays a soft ellipse: squaring it off backs a few more pixels
+// of the outermost strokes and turns every fish into a box.
+const BODY_SHOULDER = 3;
+// A little more height than the ink strictly occupies, in cell units. `_` draws
+// along the bottom of its cell, so the roof and belly sit right on the body's
+// edge, where an ellipse has no width left to put behind them. A small swell
+// gives them something to sit on while keeping the silhouette round.
+const BODY_SWELL = 0.2;
 
 const bodyBoxCache = new Map();
 const FIN_GLYPHS = new Set(["/", "\\"]);
@@ -433,11 +437,9 @@ function spriteBodyBox(sprite) {
 function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }) {
   const box = spriteBodyBox(sprite);
   const radiusX = box.radiusX * widthScale * metrics.cellWidth;
-  const radiusY = box.radiusY * metrics.cellHeight;
+  const radiusY = (box.radiusY + BODY_SWELL) * metrics.cellHeight;
   const centerX = (worldX + facing * box.offsetX * widthScale) * metrics.cellWidth;
   const centerY = (worldY + box.offsetY) * metrics.cellHeight;
-  const cornerX = Math.min(BODY_CORNER * metrics.cellWidth, radiusX);
-  const cornerY = Math.min(BODY_CORNER * metrics.cellHeight, radiusY);
   const spanHeight = (radiusY * 2) / BODY_SPANS;
   const fill = [];
   for (let index = 0; index < BODY_SPANS; index += 1) {
@@ -445,10 +447,8 @@ function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }
     const bottom = top + spanHeight;
     // Measuring at whichever span edge is closer to the waist keeps the stepped
     // silhouette convex, so no span pinches in behind the ink it has to back.
-    const waist = Math.min(Math.abs(top), Math.abs(bottom));
-    const flank = Math.max(0, radiusY - cornerY);
-    const reach = Math.min(cornerY, Math.max(0, waist - flank));
-    const half = radiusX - cornerX * (1 - Math.sqrt(Math.max(0, 1 - (reach / cornerY) ** 2)));
+    const waist = Math.min(Math.abs(top), Math.abs(bottom)) / radiusY;
+    const half = radiusX * Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
     // Spans are emitted already snapped to whole pixels. The damage signature
     // hashes them at this precision, so anything finer would let a drifting
     // fish change its painted coverage without being repainted, and a panel

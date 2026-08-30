@@ -39,7 +39,7 @@ export function glyphBounds(glyph) {
   };
 }
 
-function combinedBounds(glyphs, padding = 1) {
+function combinedBounds(glyphs, padding = 1, fill = []) {
   let left = Number.POSITIVE_INFINITY;
   let top = Number.POSITIVE_INFINITY;
   let right = Number.NEGATIVE_INFINITY;
@@ -50,6 +50,15 @@ function combinedBounds(glyphs, padding = 1) {
     top = Math.min(top, bounds.y);
     right = Math.max(right, bounds.x + bounds.width);
     bottom = Math.max(bottom, bounds.y + bounds.height);
+  }
+  // Bounds have to cover everything the object paints, not just its glyphs.
+  // The damage renderer repaints an object only inside them, so a fill span
+  // reaching past would leave the body behind at its previous position.
+  for (const span of fill) {
+    left = Math.min(left, span.x);
+    top = Math.min(top, span.y);
+    right = Math.max(right, span.x + span.width);
+    bottom = Math.max(bottom, span.y + span.height);
   }
   return {
     x: left - padding,
@@ -92,7 +101,7 @@ export function addGlyphObject(builder, { id, layer, glyphs, padding = 1, fill =
     glyphStart,
     glyphCount: visible.length,
     fill,
-    bounds: combinedBounds(visible, padding),
+    bounds: combinedBounds(visible, padding, fill),
     signature: glyphSignature(visible, layer, fill),
   };
   builder.objects.push(object);

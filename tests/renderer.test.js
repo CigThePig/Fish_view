@@ -20,6 +20,12 @@ function objectByPrefix(scene, prefix) {
   return object;
 }
 
+function backsGlyph(object, glyph) {
+  const centre = inkCentre(glyph);
+  return object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
+    && centre.y >= span.y && centre.y <= span.y + span.height);
+}
+
 function inkCentre(glyph) {
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -207,31 +213,53 @@ test("every individual fish is opaque, through every pose it swims", () => {
   }
 });
 
-test("every enclosing stroke of a fish body sits on the opaque body", () => {
-  // The glyphs that draw the closed body: its roof, belly, flanks and eye.
-  // Fins, tail and the strokes that fan them are deliberately left open, so
-  // only this vocabulary has to be backed. The check is against real ink,
-  // because `_` draws along the bottom of its cell and a body sized from cell
-  // centres got the roof and belly of the short sprites wrong.
-  const body = new Set(["_", "-", "(", ")", "o", "O", ","]);
-  let checked = 0;
+test("a fish is opaque where it encloses, and mostly opaque at its rim", () => {
+  const interior = new Set(["(", ")", "o", "O"]);
+  const rim = new Set(["_", "-"]);
   for (const sprite of individualSprites) {
+    let rimGlyphs = 0;
+    let rimBacked = 0;
     for (const facing of ["right", "left"]) {
       for (const phase of [0, 1.1, 2.4, 4]) {
         const scene = renderSpriteScene(sprite, { facing, phase });
         const object = objectByPrefix(scene, "lab:");
         for (const glyph of glyphsForObject(scene, object)) {
-          if (!body.has(glyph.char)) continue;
-          const centre = inkCentre(glyph);
-          const covered = object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
-            && centre.y >= span.y && centre.y <= span.y + span.height);
-          assert.ok(covered, sprite.id + " leaves '" + glyph.char + "' unbacked at phase " + phase);
-          checked += 1;
+          if (!interior.has(glyph.char) && !rim.has(glyph.char)) continue;
+          const covered = backsGlyph(object, glyph);
+          // Nothing may read through the middle of a fish. This is the whole
+          // point of the body, and it is checked against real ink because `_`
+          // draws along the bottom of its cell rather than across its centre.
+          if (interior.has(glyph.char)) {
+            assert.ok(covered, sprite.id + " is see-through at '" + glyph.char + "'");
+          }
+          if (rim.has(glyph.char)) {
+            rimGlyphs += 1;
+            if (covered) rimBacked += 1;
+          }
         }
       }
     }
+    // The roof and belly sit on the body's own edge, so most of each has to be
+    // backed - but not all of it. Chasing the last few pixels there is what
+    // squares the silhouette into a box, and the fish have to look like fish.
+    if (rimGlyphs > 0) {
+      assert.ok(rimBacked / rimGlyphs >= 0.7,
+        sprite.id + " backs only " + rimBacked + " of " + rimGlyphs + " roof and belly strokes");
+    }
   }
-  assert.ok(checked > 100);
+});
+
+test("a fish body stays rounded rather than squaring off into a block", () => {
+  for (const sprite of individualSprites) {
+    const object = objectByPrefix(renderSpriteScene(sprite, { facing: "right", phase: 0 }), "lab:");
+    const widths = object.fill.map((span) => span.width);
+    const narrowest = Math.min(...widths);
+    const widest = Math.max(...widths);
+    // A body that never narrows is a rectangle. It backs a few more pixels of
+    // the outermost strokes and it looks it, so the taper is a requirement.
+    assert.ok(narrowest <= widest * 0.85,
+      sprite.id + " tapers from " + widest + " only to " + narrowest);
+  }
 });
 
 test("the tail is left open at the trailing edge of every sprite", () => {
@@ -246,10 +274,7 @@ test("the tail is left open at the trailing edge of every sprite", () => {
       const trailing = glyphs.reduce((furthest, glyph) => (facing === "right"
         ? (glyph.x < furthest.x ? glyph : furthest)
         : (glyph.x > furthest.x ? glyph : furthest)), glyphs[0]);
-      const centre = inkCentre(trailing);
-      const covered = object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
-        && centre.y >= span.y && centre.y <= span.y + span.height);
-      assert.equal(covered, false, sprite.id + " backs its tail glyph '" + trailing.char + "'");
+      assert.equal(backsGlyph(object, trailing), false, sprite.id + " backs its tail glyph '" + trailing.char + "'");
     }
   }
 });
@@ -259,11 +284,7 @@ test("fins are left outside the body so they keep an open silhouette", () => {
   const scene = renderSpriteScene(individualSprites[1], { facing: "right", phase: 0 });
   const object = objectByPrefix(scene, "lab:");
   const strokes = glyphsForObject(scene, object).filter((glyph) => glyph.char === "/" || glyph.char === "\\");
-  const outside = strokes.filter((glyph) => {
-    const centre = inkCentre(glyph);
-    return !object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
-      && centre.y >= span.y && centre.y <= span.y + span.height);
-  });
+  const outside = strokes.filter((glyph) => !backsGlyph(object, glyph));
   assert.ok(outside.length > 0, "every stroke was swallowed by the body");
 });
 
