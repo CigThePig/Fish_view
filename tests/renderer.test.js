@@ -252,16 +252,26 @@ test("a fish is opaque where it encloses, and mostly opaque at its rim", () => {
   }
 });
 
-test("a fish body stays rounded rather than squaring off into a block", () => {
+test("a fish body stays tapered rather than squaring off into a block", () => {
   for (const sprite of individualSprites) {
-    const object = objectByPrefix(renderSpriteScene(sprite, { facing: "right", phase: 0 }), "lab:");
-    const widths = object.fill.map((span) => span.width);
-    const narrowest = Math.min(...widths);
-    const widest = Math.max(...widths);
-    // A body that never narrows is a rectangle. It backs a few more pixels of
-    // the outermost strokes and it looks it, so the taper is a requirement.
-    assert.ok(narrowest <= widest * 0.85,
-      sprite.id + " tapers from " + widest + " only to " + narrowest);
+    const object = objectByPrefix(
+      renderSpriteScene(sprite, { facing: "right", staticPose: true }),
+      "lab:",
+    );
+    const heights = object.fill.map((span) => span.height);
+    const tallest = Math.max(...heights);
+    const rear = heights[0];
+    const front = heights.at(-1);
+    // Bodies are built from vertical slices, so roundness is expressed by the
+    // end slices being shorter than the waist. Slice widths are intentionally
+    // almost constant and can change by a pixel when a profile offset moves the
+    // body across the pixel grid; that quantisation says nothing about whether
+    // the composed silhouette has become rectangular.
+    assert.ok(
+      Math.max(rear, front) <= tallest * 0.75,
+      sprite.id + " ends are too square: " + rear + "px / " + front
+        + "px versus " + tallest + "px waist",
+    );
   }
 });
 
