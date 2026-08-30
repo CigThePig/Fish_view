@@ -18,25 +18,31 @@
   gap: 1rem;
 }
 
-.sprite-page h1 {
+.sprite-page h1,
+.sprite-page h2 {
   margin: 0.2rem 0;
 }
 
 .sprite-page header p:not(.eyebrow),
-.sprite-page footer {
+.sprite-page footer,
+.profile-lab__heading p:not(.eyebrow) {
   color: var(--muted);
 }
 
-.lab-controls {
+.lab-controls,
+.profile-lab {
   margin-top: 1.2rem;
   padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0d1714;
+}
+
+.lab-controls {
   display: flex;
   align-items: center;
   gap: 0.85rem 1rem;
   flex-wrap: wrap;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #0d1714;
 }
 
 .lab-controls label {
@@ -54,7 +60,18 @@
   width: 100%;
 }
 
-.lab-controls select {
+.lab-controls select,
+.profile-fish-picker select,
+.profile-number,
+.profile-copy-area textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #09110f;
+  color: #e4eee8;
+}
+
+.lab-controls select,
+.profile-fish-picker select {
   min-height: 34px;
   padding-inline: 0.7rem;
 }
@@ -64,6 +81,115 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.profile-lab {
+  display: grid;
+  gap: 1rem;
+}
+
+.profile-lab__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.profile-lab__heading > div {
+  max-width: 760px;
+}
+
+.profile-lab__heading p {
+  margin: 0.35rem 0 0;
+  line-height: 1.45;
+}
+
+.profile-fish-picker {
+  min-width: 190px;
+  display: grid;
+  gap: 0.35rem;
+  color: #c8d4cc;
+  font-size: 0.78rem;
+}
+
+.profile-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.profile-field {
+  min-width: 0;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 0.55rem 0.7rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #09110f;
+}
+
+.profile-field__heading {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+  color: #dce7e0;
+  font-size: 0.82rem;
+}
+
+.profile-field__heading small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
+.profile-number {
+  width: 92px;
+  min-height: 36px;
+  padding: 0.35rem 0.45rem;
+  text-align: right;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-field input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.profile-actions .primary-action {
+  border-color: #527b6d;
+  background: #173c32;
+}
+
+.profile-copy-area {
+  display: grid;
+  gap: 0.4rem;
+  color: #c8d4cc;
+  font-size: 0.78rem;
+}
+
+.profile-copy-area textarea {
+  width: 100%;
+  min-height: 170px;
+  padding: 0.75rem;
+  resize: vertical;
+  font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  tab-size: 2;
+}
+
+.profile-copy-status {
+  min-height: 1.2em;
+  margin: -0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .sprite-grid {
@@ -80,11 +206,30 @@
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #0d1714;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.sprite-card.is-profile-selected {
+  border-color: #527b6d;
+  background: #102019;
+}
+
+.sprite-card__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .sprite-card h2 {
   margin: 0;
   font-size: 1rem;
+}
+
+.sprite-tune-button {
+  min-height: 32px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.72rem;
 }
 
 .sprite-meta {
@@ -125,13 +270,33 @@
   font-size: 0.72rem;
 }
 
+@media (max-width: 900px) {
+  .profile-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 760px) {
-  .sprite-page > header {
+  .sprite-page > header,
+  .profile-lab__heading {
     align-items: start;
     flex-direction: column;
   }
 
+  .profile-fish-picker {
+    width: 100%;
+  }
+
+  .profile-fields,
   .sprite-trio {
     grid-template-columns: 1fr;
+  }
+
+  .profile-field {
+    grid-template-columns: minmax(0, 1fr) 86px;
+  }
+
+  .profile-number {
+    width: 86px;
   }
 }
