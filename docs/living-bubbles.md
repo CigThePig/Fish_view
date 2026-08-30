@@ -23,6 +23,6 @@ Fish View keeps bubbles procedural rather than turning them into persistent part
 
 The system does not allocate, integrate, serialize, or restore a particle simulation. Stable emitter, isolated, fish, and touch slots are evaluated directly from time. Each visible bubble is one scene object containing at most three bitmap glyphs, so the existing dirty-rectangle compositor can repaint a small local area instead of the framebuffer.
 
-The production renderer is wrapped by `src/render/aquarium-renderer.js`. It preserves every object produced by the mature fish/plant scene composer except the legacy `ambient:*` particles, then inserts the new `bubble:*` objects at the same ambient layer. Existing fish fill spans, plant bounds, signatures, ordering, and damage behavior therefore stay unchanged.
+`drawBubbles()` is called directly by the existing core scene composer at the ambient layer. There is no second scene pass and no copy of the fish, plant, or background objects. Existing fish fill spans, plant bounds, layering, signatures, and dirty-rectangle behavior therefore stay on the same rendering path used before the bubble upgrade.
 
 Regression tests cap the living system at 42 simultaneous bubble objects and 96 bubble glyphs while checking deterministic output, grounded emitters, speed, glyph/lifecycle variety, surface pops, fish exhalation, fish displacement, and substrate-touch bursts.
