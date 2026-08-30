@@ -10,7 +10,7 @@ function hashText(hash, value) {
   return result >>> 0;
 }
 
-function glyphSignature(glyphs, layer) {
+function glyphSignature(glyphs, layer, fill) {
   let hash = hashText(0x811c9dc5, layer);
   for (const glyph of glyphs) {
     hash = hashText(hash, glyph.char);
@@ -20,7 +20,14 @@ function glyphSignature(glyphs, layer) {
     hash = hashText(hash, Math.round(glyph.scaleY * 100));
     hash = hashText(hash, glyph.fg);
   }
-  return `${glyphs.length}:${hash >>> 0}`;
+  for (const rectangle of fill) {
+    hash = hashText(hash, Math.round(rectangle.x));
+    hash = hashText(hash, Math.round(rectangle.y));
+    hash = hashText(hash, Math.round(rectangle.width));
+    hash = hashText(hash, Math.round(rectangle.height));
+    hash = hashText(hash, rectangle.color);
+  }
+  return `${glyphs.length}:${fill.length}:${hash >>> 0}`;
 }
 
 export function glyphBounds(glyph) {
@@ -72,7 +79,7 @@ export function createSceneBuilder({
   };
 }
 
-export function addGlyphObject(builder, { id, layer, glyphs, padding = 1 }) {
+export function addGlyphObject(builder, { id, layer, glyphs, padding = 1, fill = [] }) {
   const visible = glyphs
     .filter((glyph) => glyph.char && glyph.char !== " ")
     .map((glyph) => ({ ...glyph, layer }));
@@ -84,8 +91,9 @@ export function addGlyphObject(builder, { id, layer, glyphs, padding = 1 }) {
     layer,
     glyphStart,
     glyphCount: visible.length,
+    fill,
     bounds: combinedBounds(visible, padding),
-    signature: glyphSignature(visible, layer),
+    signature: glyphSignature(visible, layer, fill),
   };
   builder.objects.push(object);
   return object;

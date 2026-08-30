@@ -6,14 +6,29 @@ const DAY_MASK = Object.freeze({
   g: "#4f8c65", G: "#75b986", m: "#8b638e", M: "#bc86ba", W: "#d9e7dc",
 });
 
+// Night keeps one warm hue family so silhouettes read as shape rather than as
+// competing colours. Only W stays bright: the eye is the single night accent.
 const NIGHT_MASK = Object.freeze({
-  c: "#13201c", C: "#192821", r: "#261c17", R: "#2e2119",
-  y: "#2b2419", Y: "#342a1c", b: "#15231f", B: "#1b2b25",
-  g: "#15231a", G: "#1b2a1e", m: "#241d1d", M: "#2d2421", W: "#4f4b3c",
+  c: "#1d1710", C: "#241d15", r: "#251a12", R: "#2c2016",
+  y: "#261e13", Y: "#2e2417", b: "#1c1811", B: "#231e16",
+  g: "#1d1a12", G: "#242017", m: "#231a14", M: "#2a2119", W: "#7d6642",
 });
 
 const DAY_WATER = Object.freeze(["#123f46", "#0e373f", "#0b3039", "#082933", "#07232d", "#061d27"]);
-const NIGHT_WATER = Object.freeze(["#514534", "#454239", "#39413a", "#303d38", "#293934", "#23332f"]);
+// A single amber ramp that only loses value with depth. The previous night
+// ramp drifted from warm brown to cold green, which read as muddy banding.
+const NIGHT_WATER = Object.freeze(["#5e4a33", "#54422d", "#493a28", "#3e3123", "#33281d", "#282017"]);
+// Day teal and night amber sit on opposite sides of the colour wheel, so
+// interpolating straight between them drains all the colour out of dusk. The
+// water is routed through an explicit green twilight instead: it is the short
+// way round the wheel, and it keeps every stage of the arc saturated.
+const TWILIGHT_WATER = Object.freeze(["#1c4a3d", "#193f35", "#16362e", "#132e28", "#112722", "#0e201c"]);
+
+// Fish bodies are opaque: each water band gets one pre-darkened companion so a
+// fish occludes whatever swims or grows behind it without a per-frame mix.
+const DAY_BODY_SHADOW = "#03161d";
+const NIGHT_BODY_SHADOW = "#171006";
+const BODY_SHADE = 0.44;
 
 export const MASK_SYMBOLS = Object.freeze(["c", "C", "r", "R", "y", "Y", "b", "B", "g", "G", "m", "M"]);
 export const PALETTE_STEPS = 12;
@@ -38,25 +53,38 @@ export function scenePalette(state) {
   const daylight = daylightFactor(state.timeOfDayHours);
   const paletteStage = Math.round((1 - daylight) * PALETTE_STEPS);
   const night = paletteStage / PALETTE_STEPS;
+  const waterBands = DAY_WATER.map((color, index) => (night < 0.5
+    ? mixColor(color, TWILIGHT_WATER[index], night * 2)
+    : mixColor(TWILIGHT_WATER[index], NIGHT_WATER[index], (night - 0.5) * 2)));
+  const bodyShadow = mixColor(DAY_BODY_SHADOW, NIGHT_BODY_SHADOW, night);
   return {
     daylight: 1 - night,
     night,
     paletteStage,
-    waterBands: DAY_WATER.map((color, index) => mixColor(color, NIGHT_WATER[index], night)),
-    waterline: mixColor("#58c3c4", "#2d3024", night),
+    waterBands,
+    bodyFills: waterBands.map((color) => mixColor(color, bodyShadow, BODY_SHADE)),
+    waterline: mixColor("#58c3c4", "#8a7048", night),
     school: [
-      mixColor("#6bd0ca", "#17251f", night),
-      mixColor("#d5b76a", "#2a2418", night),
-      mixColor("#78aeca", "#182620", night),
-      mixColor("#8abf96", "#1d291d", night),
+      mixColor("#6bd0ca", "#261d14", night),
+      mixColor("#d5b76a", "#2b2218", night),
+      mixColor("#78aeca", "#221b13", night),
+      mixColor("#8abf96", "#281f16", night),
     ],
-    plantBack: mixColor("#386d59", "#1b2920", night),
-    plantFront: mixColor("#64a47a", "#253126", night),
-    substrateBg: mixColor("#251b16", "#493d2f", night),
-    substrateFg: mixColor("#a37d52", "#2b251d", night),
-    ripple: mixColor("#e6d992", "#39301f", night),
-    ambient: mixColor("#74abae", "#2a342b", night),
+    plantBack: mixColor("#386d59", "#241c12", night),
+    plantFront: mixColor("#64a47a", "#2e2417", night),
+    // The floor stays the darkest, quietest band at night; its grain sits a
+    // few values above it so texture never becomes speckle.
+    substrateBg: mixColor("#251b16", "#241c13", night),
+    substrateFg: mixColor("#a37d52", "#342819", night),
+    ripple: mixColor("#e6d992", "#9a7d4e", night),
+    ambient: mixColor("#74abae", "#3c2f1e", night),
     masks: mixMap(DAY_MASK, NIGHT_MASK, night),
     recommendedBacklight: 0.2 + (1 - night) * 0.8,
   };
+}
+
+export function bodyFillForDepth(palette, depth) {
+  const span = palette.bodyFills.length;
+  const index = Math.floor(Math.max(0, Math.min(0.999, depth)) * span);
+  return palette.bodyFills[index];
 }

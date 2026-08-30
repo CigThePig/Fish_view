@@ -19,6 +19,12 @@ persistent simulation.
 - Slow plant growth as the long-horizon visual change signal.
 - A reliable day/night arc with a warm filled night wash, dark fish silhouettes,
   continuously moving fish, and scene colours that model the nightlight directly.
+  The night field is one warm hue that only loses value with depth, over a floor
+  quieter than the water above it, and the arc is routed through a green
+  twilight so dusk never drains to grey.
+- Opaque fish: each individual carries a body of horizontal spans behind its
+  strokes, so plants, water bands, and other fish stop reading straight through
+  it. Fins stay outside the body and keep their open ASCII silhouette.
 - Free-floating bitmap glyphs: individuals flex through a coherent body wave,
   school fish glide between former cells, plants bend as linked typographic
   stems, and sparse bubbles rise independently of text rows.
@@ -71,8 +77,11 @@ render(state) -> RenderScene { width, height, background, glyphs, objects }
 
 World positions remain floating point through scene composition. Each visible
 ASCII character becomes an independent glyph command with continuous physical
-coordinates, a bitmap scale, colour, and layer. The logical 40×33 and 66×20
-layouts remain useful for simulation and art authoring, but no longer snap
+coordinates, a bitmap scale, colour, and layer. A scene object may also carry
+`fill`: opaque spans painted under its own glyphs, which is how a fish occludes
+what swims behind it. Nine spans per fish keeps the whole school inside one
+filled-rectangle budget an ESP32 panel driver can meet. The logical 40×33 and
+66×20 layouts remain useful for simulation and art authoring, but no longer snap
 motion or limit the physical panel to cell multiples.
 
 The canvas backend uses the bundled 5×7 bitmap font, with lit-pixel runs
@@ -81,6 +90,8 @@ It compares stable scene objects, damages the previous and current bounds of
 changed objects, coalesces economical overlaps, restores the procedural
 background inside those rectangles, and recomposes intersecting layers. It
 does not clear and redraw the complete framebuffer during ordinary animation.
+Fish bodies sit inside the bounds their glyphs already damage, so opacity costs
+draw calls rather than repainted area.
 Day/night colours are part of the scene rather than a CSS brightness filter;
 12 quantized palette stages keep slow whole-field transitions infrequent.
 
