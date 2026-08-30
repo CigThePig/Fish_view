@@ -1,5 +1,5 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=opaque-bodies-20260830";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=opaque-bodies-20260830";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=pose-bodies-20260830";
 import { spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
