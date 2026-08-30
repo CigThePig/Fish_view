@@ -24,7 +24,9 @@ persistent simulation.
   twilight so dusk never drains to grey.
 - Opaque fish: each individual carries a body of horizontal spans behind its
   strokes, so plants, water bands, and other fish stop reading straight through
-  it. Fins stay outside the body and keep their open ASCII silhouette.
+  it. The body is fitted to each sprite's own artwork and to the real ink of the
+  glyphs that draw it, so it hugs the fish instead of its bounding box. Fins are
+  left outside and keep their open ASCII silhouette.
 - Free-floating bitmap glyphs: individuals flex through a coherent body wave,
   school fish glide between former cells, plants bend as linked typographic
   stems, and sparse bubbles rise independently of text rows.

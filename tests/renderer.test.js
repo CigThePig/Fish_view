@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { glyphFlip } from "../src/art/mirror.js";
 import { individualSprites } from "../src/art/sprites.js";
-import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { glyphPixels, isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { PALETTE_STEPS, scenePalette } from "../src/render/palette.js";
-import { LAYERS, poseSprite, render } from "../src/render/render.js";
+import { LAYERS, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { orientationConfig } from "../src/sim/config.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
@@ -18,6 +18,23 @@ function objectByPrefix(scene, prefix) {
   const object = scene.objects.find((candidate) => candidate.id.startsWith(prefix));
   assert.ok(object, "missing scene object " + prefix);
   return object;
+}
+
+function inkCentre(glyph) {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const pixel of glyphPixels(glyph.char)) {
+    minX = Math.min(minX, pixel.x);
+    maxX = Math.max(maxX, pixel.x + pixel.width);
+    minY = Math.min(minY, pixel.y);
+    maxY = Math.max(maxY, pixel.y + pixel.height);
+  }
+  return {
+    x: Math.round(glyph.x) + ((minX + maxX) / 2) * glyph.scaleX,
+    y: Math.round(glyph.y) + ((minY + maxY) / 2) * glyph.scaleY,
+  };
 }
 
 function channel(color, offset) {
@@ -188,6 +205,44 @@ test("every individual fish is opaque, through every pose it swims", () => {
     }
     assert.ok(checked > 1000);
   }
+});
+
+test("every stroke of a fish body sits on the opaque body", () => {
+  // The body is fitted to the artwork, so the check has to be against real ink:
+  // `_` draws along the bottom of its cell, which is what a body sized from
+  // cell centres got wrong at the roof and belly of the short sprites.
+  const fins = new Set(["/", "\\", "'"]);
+  let checked = 0;
+  for (const sprite of individualSprites) {
+    for (const facing of ["right", "left"]) {
+      for (const phase of [0, 1.1, 2.4, 4]) {
+        const scene = renderSpriteScene(sprite, { facing, phase });
+        const object = objectByPrefix(scene, "lab:");
+        for (const glyph of glyphsForObject(scene, object)) {
+          if (fins.has(glyph.char)) continue;
+          const centre = inkCentre(glyph);
+          const covered = object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
+            && centre.y >= span.y && centre.y <= span.y + span.height);
+          assert.ok(covered, sprite.id + " leaves '" + glyph.char + "' unbacked at phase " + phase);
+          checked += 1;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 200);
+});
+
+test("fins are left outside the body so they keep an open silhouette", () => {
+  // A body swollen to cover the fins reads as a blob with a fish drawn on it.
+  const scene = renderSpriteScene(individualSprites[1], { facing: "right", phase: 0 });
+  const object = objectByPrefix(scene, "lab:");
+  const strokes = glyphsForObject(scene, object).filter((glyph) => glyph.char === "/" || glyph.char === "\\");
+  const outside = strokes.filter((glyph) => {
+    const centre = inkCentre(glyph);
+    return !object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
+      && centre.y >= span.y && centre.y <= span.y + span.height);
+  });
+  assert.ok(outside.length > 0, "every stroke was swallowed by the body");
 });
 
 test("a fish body is shaded from the band it is actually swimming in", () => {
