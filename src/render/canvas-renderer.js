@@ -1,6 +1,6 @@
 import { glyphPixels } from "./bitmap-font.js";
 import { calculateDamage, coalesceDamage, rectanglesOverlap } from "./damage.js";
-import { glyphBounds } from "./scene.js";
+import { glyphBounds } from "./scene.js?v=opaque-bodies-20260830";
 
 function drawBackground(context, scene, region) {
   const background = scene.background;
@@ -126,7 +126,7 @@ export class CanvasSceneRenderer {
       if (!rectanglesOverlap(object.bounds, rectangle)) continue;
       // Opaque spans go down first so the object's own strokes stay on top of
       // its body instead of being erased by it.
-      for (const span of object.fill) {
+      for (const span of object.fill ?? []) {
         context.fillStyle = span.color;
         context.fillRect(span.x, span.y, span.width, span.height);
       }

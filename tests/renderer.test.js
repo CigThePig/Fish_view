@@ -190,6 +190,55 @@ test("every individual fish is opaque, through every pose it swims", () => {
   }
 });
 
+test("a fish body is shaded from the band it is actually swimming in", () => {
+  for (const orientation of ["portrait", "landscape"]) {
+    const base = createAquariumState({ orientation, seed: 3, wallClockHours: 12 });
+    const palette = scenePalette(base);
+    const cellHeight = orientationConfig(orientation).pixelHeight / base.rows;
+    let checked = 0;
+    for (let worldY = 2.5; worldY < base.rows - 4; worldY += 0.25) {
+      const scene = render({
+        ...base,
+        individuals: base.individuals.map((fish, index) => index === 0 ? { ...fish, y: worldY } : fish),
+      });
+      const bands = scene.background.bands;
+      const band = bands.findIndex((candidate) => worldY * cellHeight < candidate.y + candidate.height);
+      assert.ok(band >= 0);
+      for (const span of objectByPrefix(scene, "individual:0:").fill) {
+        assert.equal(span.color, palette.bodyFills[band], "wrong band companion at y " + worldY);
+      }
+      checked += 1;
+    }
+    assert.ok(checked > 20);
+  }
+});
+
+test("a fish body repaints whenever its painted pixels move", () => {
+  let state = createAquariumState({ orientation: "portrait", seed: 5, wallClockHours: 12 });
+  const previous = new Map();
+  let repaints = 0;
+  for (let frame = 0; frame < 300; frame += 1) {
+    state = tick(state, 0.1);
+    const scene = render(state);
+    for (const object of scene.objects.filter((candidate) => candidate.id.startsWith("individual:"))) {
+      for (const span of object.fill) {
+        // The renderer hands these straight to fillRect while the damage
+        // signature hashes them rounded, so a fractional edge could shift the
+        // painted coverage without the object ever being repainted.
+        assert.ok(Number.isInteger(span.x) && Number.isInteger(span.y), "fractional span origin");
+        assert.ok(Number.isInteger(span.width) && Number.isInteger(span.height), "fractional span size");
+      }
+      const before = previous.get(object.id);
+      if (before && before.signature === object.signature) {
+        assert.deepEqual(before.fill, object.fill, object.id + " moved its body without changing signature");
+      }
+      if (before && before.signature !== object.signature) repaints += 1;
+      previous.set(object.id, object);
+    }
+  }
+  assert.ok(repaints > 100, "expected the school to keep moving");
+});
+
 test("a moved fish repaints its body as well as its glyphs", () => {
   const base = createAquariumState({ orientation: "landscape", seed: 8, wallClockHours: 12 });
   const at = (x) => render({

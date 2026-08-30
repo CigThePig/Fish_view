@@ -80,7 +80,9 @@ ASCII character becomes an independent glyph command with continuous physical
 coordinates, a bitmap scale, colour, and layer. A scene object may also carry
 `fill`: opaque spans painted under its own glyphs, which is how a fish occludes
 what swims behind it. Nine spans per fish keeps the whole school inside one
-filled-rectangle budget an ESP32 panel driver can meet. The logical 40×33 and
+filled-rectangle budget an ESP32 panel driver can meet, and spans arrive snapped
+to whole pixels, at the same precision the damage signature hashes and the
+backend paints. The logical 40×33 and
 66×20 layouts remain useful for simulation and art authoring, but no longer snap
 motion or limit the physical panel to cell multiples.
 

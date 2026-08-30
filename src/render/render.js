@@ -9,14 +9,14 @@ import {
 import { orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { plantHeight, spriteForSeed } from "../sim/entities.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js";
+import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=opaque-bodies-20260830";
 import {
   addGlyphObject,
   createSceneBuilder,
   finalizeScene,
   positionedGlyph,
   sceneMetrics,
-} from "./scene.js";
+} from "./scene.js?v=opaque-bodies-20260830";
 
 const TAU = Math.PI * 2;
 const BAYER_4 = Object.freeze([
@@ -356,12 +356,20 @@ function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }
     // so the drawn body outline stays on the fill rather than beside it.
     const waist = Math.min(Math.abs(top), Math.abs(bottom)) / radiusY;
     const half = radiusX * Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
-    if (half < 1) continue;
+    // Spans are emitted already snapped to whole pixels. The damage signature
+    // hashes them at this precision, so anything finer would let a drifting
+    // fish change its painted coverage without being repainted, and a panel
+    // driver wants integer rectangles anyway.
+    const left = Math.round(centerX - half);
+    const right = Math.round(centerX + half);
+    const spanTop = Math.round(centerY + top);
+    const spanBottom = Math.round(centerY + bottom) + 1;
+    if (right - left < 1) continue;
     fill.push({
-      x: centerX - half,
-      y: centerY + top,
-      width: half * 2,
-      height: spanHeight + 1,
+      x: left,
+      y: spanTop,
+      width: right - left,
+      height: spanBottom - spanTop,
       color,
     });
   }
@@ -399,10 +407,18 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   return { glyphs, fill };
 }
 
+// createBackground spreads its six water bands from logical y = 0 down to the
+// substrate, so a body has to be normalised against that same extent and
+// origin. Measuring from the waterline instead put the band boundaries in
+// different places and picked the companion of a band the fish was not
+// actually swimming in.
+function waterBandDepth(state, worldY) {
+  return clamp(worldY / Math.max(1, state.rows - SUBSTRATE_ROWS), 0, 0.999);
+}
+
 function drawIndividuals(builder, state, palette, metrics, deformationStrength) {
-  const waterHeight = Math.max(1, state.rows - WATERLINE_ROWS - SUBSTRATE_ROWS);
   state.individuals.forEach((fish, index) => {
-    const depth = clamp((fish.y - WATERLINE_ROWS) / waterHeight, 0, 0.999);
+    const depth = waterBandDepth(state, fish.y);
     const parts = individualParts(fish, state, palette, metrics, deformationStrength, depth);
     addGlyphObject(builder, {
       id: `individual:${index}:${fish.seed}`,
