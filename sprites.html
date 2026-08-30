@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#07100f">
     <title>Fish View — Typographic motion lab</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="sprite-sheet.css">
+    <link rel="stylesheet" href="sprite-sheet.css?v=fish-profile-lab-20260830">
   </head>
   <body class="sprite-page">
     <header>
@@ -40,10 +40,37 @@
       <label class="check-control"><input id="damage-control" type="checkbox"> Damage rectangles</label>
     </section>
 
+    <section class="profile-lab" aria-labelledby="profile-lab-title">
+      <div class="profile-lab__heading">
+        <div>
+          <p class="eyebrow">Live opaque-body sculpting</p>
+          <h2 id="profile-lab-title">Fish-specific body profile</h2>
+          <p>Tune one fish at a time. Every slider redraws its static and animated views immediately; the aquarium's saved values are unchanged until you deliberately copy them into production code.</p>
+        </div>
+        <label class="profile-fish-picker">Fish
+          <select id="profile-fish-control"></select>
+        </label>
+      </div>
+
+      <div id="profile-fields" class="profile-fields"></div>
+
+      <div class="profile-actions">
+        <button type="button" id="profile-reset">Reset selected</button>
+        <button type="button" id="profile-reset-all">Reset all</button>
+        <button type="button" id="profile-copy" class="primary-action">Copy selected values</button>
+        <button type="button" id="profile-copy-all">Copy all values</button>
+      </div>
+
+      <label class="profile-copy-area">Exact values
+        <textarea id="profile-copy-output" rows="9" readonly spellcheck="false"></textarea>
+      </label>
+      <p id="profile-copy-status" class="profile-copy-status" role="status" aria-live="polite"></p>
+    </section>
+
     <main id="sprite-grid" class="sprite-grid"></main>
     <footer>
       Artwork from <em>asciiquarium 1.1</em> by Kirk Baucom; most ASCII art by Joan Stark. GPL v2 or later.
     </footer>
-    <script type="module" src="src/sprite-sheet.js?v=profile-bodies-20260830"></script>
+    <script type="module" src="src/sprite-sheet.js?v=fish-profile-lab-20260830"></script>
   </body>
 </html>
