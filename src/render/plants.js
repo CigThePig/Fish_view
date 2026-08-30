@@ -47,6 +47,36 @@ function colorForPoint(plant, pose, point, palette) {
   return palette.plants[species.layer][slot];
 }
 
+function placementForPoint(pose, point, baseScale) {
+  const parent = pose.points[point.parent];
+  if (!parent) {
+    return { worldX: point.x, worldY: point.y, scaleX: baseScale, scaleY: baseScale };
+  }
+
+  const endpointDecoration = point.isTip
+    || point.role === "tip"
+    || point.role === "lantern"
+    || point.role === "bell"
+    || point.role === "bead";
+  if (endpointDecoration) {
+    return { worldX: point.x, worldY: point.y, scaleX: baseScale, scaleY: baseScale };
+  }
+
+  // A joint is the end of a skeletal segment, but drawing every glyph only at
+  // those ends left the large portrait plants looking like dotted lines. Place
+  // ordinary segment glyphs halfway along their bone instead. Stretch only the
+  // structural glyphs, and keep the existing one-glyph-per-joint budget.
+  const spanX = Math.abs(point.x - parent.x);
+  const spanY = Math.abs(point.y - parent.y);
+  const structural = !point.glyph || point.role === "stem" || point.role === "fork";
+  return {
+    worldX: (parent.x + point.x) * 0.5,
+    worldY: (parent.y + point.y) * 0.5,
+    scaleX: structural ? Math.min(1.42, baseScale * (1 + spanX * 0.28)) : baseScale,
+    scaleY: structural ? Math.min(1.42, baseScale * (1 + spanY * 0.28)) : baseScale,
+  };
+}
+
 export function plantRenderRecord(plant, index, state, palette, metrics, {
   frameContext = createPlantFrameContext(state),
   ageDays = plant.ageDays,
@@ -61,14 +91,17 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
     disturbanceOverride,
   });
   const scale = glyphScale(plant, pose.species.layer);
-  const glyphs = pose.joints.map((point) => positionedGlyph(metrics, {
-    char: glyphForPlantJoint(plant, pose, point),
-    worldX: point.x,
-    worldY: point.y,
-    fg: colorForPoint(plant, pose, point, palette),
-    scaleX: scale,
-    scaleY: scale,
-  }));
+  const glyphs = pose.joints.map((point) => {
+    const placement = placementForPoint(pose, point, scale);
+    return positionedGlyph(metrics, {
+      char: glyphForPlantJoint(plant, pose, point),
+      worldX: placement.worldX,
+      worldY: placement.worldY,
+      fg: colorForPoint(plant, pose, point, palette),
+      scaleX: placement.scaleX,
+      scaleY: placement.scaleY,
+    });
+  });
   return {
     id,
     plant,
@@ -125,4 +158,3 @@ export function skeletonLinesForRecord(record, metrics) {
   }
   return lines;
 }
-
