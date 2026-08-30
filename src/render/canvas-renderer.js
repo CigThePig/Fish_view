@@ -59,7 +59,12 @@ function drawGlyph(context, glyph) {
 }
 
 function debugKey(debug) {
-  return [Boolean(debug?.anchors), Boolean(debug?.bounds), Boolean(debug?.damage)].join(":");
+  return [
+    Boolean(debug?.anchors),
+    Boolean(debug?.bounds),
+    Boolean(debug?.damage),
+    Boolean(debug?.skeleton),
+  ].join(":");
 }
 
 function expanded(rectangle, amount = 2) {
@@ -102,8 +107,16 @@ export class CanvasSceneRenderer {
     const paintRectangles = coalesceDamage([...damage.rects, ...cleanup]);
     for (const rectangle of paintRectangles) this.drawRegion(scene, rectangle);
 
-    if (debug.anchors || debug.bounds || debug.damage) this.drawDebug(scene, damage.rects, debug);
-    this.previousDebugRectangles = debug.damage ? damage.rects : [];
+    if (debug.anchors || debug.bounds || debug.damage || debug.skeleton) this.drawDebug(scene, damage.rects, debug);
+    this.previousDebugRectangles = [
+      ...(debug.damage ? damage.rects : []),
+      ...(debug.skeleton ? (scene.metadata.skeletonLines ?? []).map((line) => ({
+        x: Math.min(line.x1, line.x2),
+        y: Math.min(line.y1, line.y2),
+        width: Math.max(1, Math.abs(line.x2 - line.x1)),
+        height: Math.max(1, Math.abs(line.y2 - line.y1)),
+      })) : []),
+    ];
     this.previousDebugKey = nextDebugKey;
     this.previous = scene;
     return {
@@ -156,6 +169,17 @@ export class CanvasSceneRenderer {
       for (const glyph of scene.glyphs) {
         const bounds = glyphBounds(glyph);
         context.fillRect(Math.round(bounds.x + bounds.width / 2) - 1, Math.round(bounds.y + bounds.height / 2) - 1, 3, 3);
+      }
+    }
+    if (debug.skeleton) {
+      context.strokeStyle = "#ff7693";
+      context.fillStyle = "#ffd4dd";
+      for (const line of scene.metadata.skeletonLines ?? []) {
+        context.beginPath();
+        context.moveTo(Math.round(line.x1) + 0.5, Math.round(line.y1) + 0.5);
+        context.lineTo(Math.round(line.x2) + 0.5, Math.round(line.y2) + 0.5);
+        context.stroke();
+        context.fillRect(Math.round(line.x2) - 1, Math.round(line.y2) - 1, 3, 3);
       }
     }
     if (debug.damage) {

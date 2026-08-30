@@ -1,17 +1,24 @@
 import { glyphFlip, mirrorRows, normalizeRows } from "../art/mirror.js";
+import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import {
   individualSprites,
-  plantArt,
   schoolGlyphs,
   spriteDimensions,
   substrateArt,
 } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
-import { plantHeight, spriteForSeed } from "../sim/entities.js";
+import { spriteForSeed } from "../sim/entities.js";
+import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=opaque-bodies-20260830";
+import {
+  addPlantRecord,
+  createPlantRenderRecords,
+  plantRenderRecord,
+  skeletonLinesForRecord,
+} from "./plants.js";
 import {
   addGlyphObject,
   createSceneBuilder,
@@ -31,6 +38,7 @@ const BAYER_4 = Object.freeze([
 export const LAYERS = Object.freeze({
   waterline: 10,
   backgroundPlants: 20,
+  midgroundPlants: 24,
   ambient: 25,
   school: 30,
   individuals: 40,
@@ -249,44 +257,6 @@ function drawWaterline(builder, state, palette, metrics) {
   for (const [chunk, glyphs] of chunks) {
     addGlyphObject(builder, { id: `waterline:${chunk}`, layer: LAYERS.waterline, glyphs });
   }
-}
-
-function plantGlyph(plant, offset, height) {
-  if (offset === height) return plantArt.tip;
-  if (offset % 4 === 0) {
-    const variants = (plant.seed + offset) % 2 ? plantArt.left : plantArt.right;
-    return variants[(plant.seed + offset) % variants.length];
-  }
-  return plantArt.stem;
-}
-
-function drawPlant(builder, plant, index, state, palette, metrics, foreground) {
-  const height = plantHeight(plant);
-  const rootY = state.rows - SUBSTRATE_ROWS + 0.18;
-  const phase = sampleRange(plant.seed, 80, 0, TAU);
-  const amplitude = sampleRange(plant.seed, 81, 0.18, 0.34);
-  const staticLean = sampleSigned(plant.seed, 82) * 0.13;
-  const glyphs = [];
-  for (let offset = 1; offset <= height; offset += 1) {
-    const progress = offset / Math.max(1, height);
-    const sway = Math.sin(state.elapsedRealSeconds * 0.36 + phase + progress * 0.82)
-      * amplitude
-      * Math.pow(progress, 1.75);
-    const curl = Math.sin(phase * 0.7 + progress * 2.2) * 0.035 * progress;
-    glyphs.push(positionedGlyph(metrics, {
-      char: plantGlyph(plant, offset, height),
-      worldX: plant.x + staticLean * progress + sway + curl,
-      worldY: rootY - offset * 0.83 + Math.abs(sway) * 0.018,
-      fg: foreground ? palette.plantFront : palette.plantBack,
-      scaleX: foreground ? 0.96 : 0.88,
-      scaleY: foreground ? 0.96 : 0.9,
-    }));
-  }
-  addGlyphObject(builder, {
-    id: `plant:${index}`,
-    layer: foreground ? LAYERS.foregroundPlants : LAYERS.backgroundPlants,
-    glyphs,
-  });
 }
 
 function drawAmbient(builder, state, palette, metrics) {
@@ -648,18 +618,21 @@ export function render(state, { deformationStrength = 1 } = {}) {
   const palette = scenePalette(state);
   const builder = builderForState(state, palette);
   const metrics = sceneMetrics(builder);
+  const plantFrame = createPlantRenderRecords(state, palette, metrics);
+  builder.metadata.plants = plantFrame.diagnostics;
 
   drawWaterline(builder, state, palette, metrics);
-  state.plants.forEach((plant, index) => {
-    if ((plant.seed & 1) === 0) drawPlant(builder, plant, index, state, palette, metrics, false);
-  });
+  for (const record of plantFrame.records) {
+    if (record.layerName === "background") addPlantRecord(builder, record, LAYERS.backgroundPlants);
+    if (record.layerName === "midground") addPlantRecord(builder, record, LAYERS.midgroundPlants);
+  }
   drawAmbient(builder, state, palette, metrics);
   drawSchool(builder, state, palette, metrics);
   drawIndividuals(builder, state, palette, metrics, deformationStrength);
   drawReaction(builder, state.reaction, palette, metrics);
-  state.plants.forEach((plant, index) => {
-    if ((plant.seed & 1) === 1) drawPlant(builder, plant, index, state, palette, metrics, true);
-  });
+  for (const record of plantFrame.records) {
+    if (record.layerName === "foreground") addPlantRecord(builder, record, LAYERS.foregroundPlants);
+  }
   drawSubstrate(builder, state, palette, metrics);
   return finalizeScene(builder);
 }
@@ -720,6 +693,113 @@ export function renderSpriteScene(sprite, {
     }),
     padding: 3,
   });
+  return finalizeScene(builder);
+}
+
+export function renderPlantLabScene(speciesId, {
+  orientation = "landscape",
+  paletteMode = "day",
+  elapsedRealSeconds = 0,
+  seed = 0x51a7,
+  size = "typical",
+  currentMultiplier = 1,
+  still = false,
+  disturbance = "none",
+  quality = 1,
+} = {}) {
+  const target = orientationConfig(orientation);
+  const cellWidth = target.pixelWidth / target.cols;
+  const logicalWidth = 18;
+  const dimensions = {
+    width: Math.round(logicalWidth * cellWidth),
+    height: target.pixelHeight,
+    logicalWidth,
+    logicalHeight: target.rows,
+  };
+  const timeOfDayHours = paletteMode === "night" ? 2 : 12;
+  const rootY = target.rows - SUBSTRATE_ROWS + 0.18;
+  const specimenSeed = seed >>> 0;
+  const species = PLANT_SPECIES_BY_ID[speciesId];
+  if (!species) throw new Error(`Unknown plant species: ${speciesId}`);
+  const seedling = createPlantSpecimen({
+    speciesId,
+    seed: specimenSeed,
+    x: 5.1,
+    ageDays: species.growthStepDays * 0.72,
+    rows: target.rows,
+    size,
+  });
+  const mature = createPlantSpecimen({
+    speciesId,
+    seed: specimenSeed,
+    x: 12.9,
+    ageDays: (species.maximumStage + 1) * species.growthStepDays + 2,
+    rows: target.rows,
+    size,
+  });
+  const plants = [seedling, mature];
+  const state = {
+    version: 2,
+    seed: specimenSeed,
+    orientation,
+    cols: logicalWidth,
+    rows: target.rows,
+    elapsedRealSeconds,
+    elapsedSimSeconds: elapsedRealSeconds,
+    totalDays: mature.ageDays,
+    timeOfDayHours,
+    plants,
+    individuals: disturbance === "fish"
+      ? [
+        { x: 4.1, y: rootY - seedling.matureHeight * 0.52, vx: 0.62, vy: 0 },
+        { x: 11.9, y: rootY - mature.matureHeight * 0.52, vx: 0.62, vy: 0 },
+      ]
+      : [],
+    reaction: disturbance === "touch"
+      ? { x: 9, y: rootY - mature.matureHeight * 0.35, ageSeconds: 0.9, durationSeconds: 3.2 }
+      : null,
+  };
+  const palette = scenePalette(state);
+  const builder = createSceneBuilder({
+    ...dimensions,
+    background: createBackground(dimensions, palette, specimenSeed),
+    metadata: {
+      lab: true,
+      plantLab: true,
+      speciesId,
+      paletteStage: palette.paletteStage,
+      orientation,
+      seed: specimenSeed,
+    },
+  });
+  const metrics = sceneMetrics(builder);
+  const frameContext = createPlantFrameContext(state, {
+    currentMultiplier,
+    still,
+    interactions: disturbance !== "none",
+  });
+  const records = plants.map((plant, index) => plantRenderRecord(
+    plant,
+    index,
+    state,
+    palette,
+    metrics,
+    { frameContext, quality, id: `plant-lab:${speciesId}:${index}` },
+  ));
+  const layerByName = {
+    background: LAYERS.backgroundPlants,
+    midground: LAYERS.midgroundPlants,
+    foreground: LAYERS.foregroundPlants,
+  };
+  for (const record of records) addPlantRecord(builder, record, layerByName[record.layerName]);
+  builder.metadata.plants = {
+    instances: records.length,
+    activeJoints: records.reduce((sum, record) => sum + record.pose.activeJointCount, 0),
+    glyphs: records.reduce((sum, record) => sum + record.glyphs.length, 0),
+    maximumActiveJoints: Math.max(...records.map((record) => record.pose.activeJointCount)),
+    maximumGlyphs: Math.max(...records.map((record) => record.glyphs.length)),
+  };
+  builder.metadata.skeletonLines = records.flatMap((record) => skeletonLinesForRecord(record, metrics));
   return finalizeScene(builder);
 }
 

@@ -24,6 +24,24 @@ const NIGHT_WATER = Object.freeze(["#5e4a33", "#54422d", "#493a28", "#3e3123", "
 // way round the wheel, and it keeps every stage of the arc saturated.
 const TWILIGHT_WATER = Object.freeze(["#1c4a3d", "#193f35", "#16362e", "#132e28", "#112722", "#0e201c"]);
 
+const DAY_PLANTS = Object.freeze({
+  background: Object.freeze(["#315f54", "#3a6757", "#456b51"]),
+  midground: Object.freeze(["#417b66", "#538567", "#637f50"]),
+  foreground: Object.freeze(["#568f6c", "#6b9c70", "#82975d"]),
+  growthTip: "#91b08a",
+  glowTip: "#a5b879",
+});
+
+// Vegetation becomes low-contrast moving shadow at night. The two special tip
+// colours are still subdued; only rare species can request glowTip.
+const NIGHT_PLANTS = Object.freeze({
+  background: Object.freeze(["#211a12", "#251e14", "#271f15"]),
+  midground: Object.freeze(["#271f15", "#2a2217", "#2d2318"]),
+  foreground: Object.freeze(["#2c2317", "#302619", "#33291b"]),
+  growthTip: "#382c1d",
+  glowTip: "#493821",
+});
+
 // Fish bodies are opaque: each water band gets one pre-darkened companion so a
 // fish occludes whatever swims or grows behind it without a per-frame mix.
 const DAY_BODY_SHADOW = "#03161d";
@@ -49,6 +67,10 @@ function mixMap(day, night, amount) {
   return Object.fromEntries(Object.keys(day).map((key) => [key, mixColor(day[key], night[key], amount)]));
 }
 
+function mixList(day, night, amount) {
+  return day.map((color, index) => mixColor(color, night[index], amount));
+}
+
 export function scenePalette(state) {
   const daylight = daylightFactor(state.timeOfDayHours);
   const paletteStage = Math.round((1 - daylight) * PALETTE_STEPS);
@@ -57,6 +79,13 @@ export function scenePalette(state) {
     ? mixColor(color, TWILIGHT_WATER[index], night * 2)
     : mixColor(TWILIGHT_WATER[index], NIGHT_WATER[index], (night - 0.5) * 2)));
   const bodyShadow = mixColor(DAY_BODY_SHADOW, NIGHT_BODY_SHADOW, night);
+  const plants = {
+    background: mixList(DAY_PLANTS.background, NIGHT_PLANTS.background, night),
+    midground: mixList(DAY_PLANTS.midground, NIGHT_PLANTS.midground, night),
+    foreground: mixList(DAY_PLANTS.foreground, NIGHT_PLANTS.foreground, night),
+    growthTip: mixColor(DAY_PLANTS.growthTip, NIGHT_PLANTS.growthTip, night),
+    glowTip: mixColor(DAY_PLANTS.glowTip, NIGHT_PLANTS.glowTip, night),
+  };
   return {
     daylight: 1 - night,
     night,
@@ -70,8 +99,9 @@ export function scenePalette(state) {
       mixColor("#78aeca", "#221b13", night),
       mixColor("#8abf96", "#281f16", night),
     ],
-    plantBack: mixColor("#386d59", "#241c12", night),
-    plantFront: mixColor("#64a47a", "#2e2417", night),
+    plants,
+    plantBack: plants.background[0],
+    plantFront: plants.foreground[0],
     // The floor stays the darkest, quietest band at night; its grain sits a
     // few values above it so texture never becomes speckle.
     substrateBg: mixColor("#251b16", "#241c13", night),

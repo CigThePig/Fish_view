@@ -1,5 +1,5 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=opaque-bodies-20260830";
-import { render } from "./render/render.js?v=final-body-profiles-20260830";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=living-skeletal-plants-20260830";
+import { render } from "./render/render.js?v=living-skeletal-plants-20260830";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { DEFAULT_SEED } from "./sim/config.js";
 import { hashSeed } from "./sim/prng.js";
@@ -40,6 +40,10 @@ let sampledFrames = 0;
 let sampledDamage = 0;
 let sampledTotal = 0;
 let sampledRectangles = 0;
+let sampledPlantChanges = 0;
+let sampledPlantFrames = 0;
+const previousPlantSignatures = { portrait: new Map(), landscape: new Map() };
+const latestPlantMetrics = { portrait: null, landscape: null };
 
 function visibleOrientations() {
   return currentMode === "compare" ? ["portrait", "landscape"] : [currentMode];
@@ -48,7 +52,23 @@ function visibleOrientations() {
 function drawVisible() {
   visibleOrientations().forEach((orientation) => {
     const state = states[orientation];
-    const result = renderers[orientation].draw(render(state));
+    const scene = render(state);
+    const result = renderers[orientation].draw(scene);
+    latestPlantMetrics[orientation] = scene.metadata.plants;
+    const previous = previousPlantSignatures[orientation];
+    const next = new Map(scene.objects
+      .filter((object) => object.id.startsWith("plant:"))
+      .map((object) => [object.id, object.signature]));
+    let changed = 0;
+    for (const [id, signature] of next) {
+      if (previous.get(id) !== signature) changed += 1;
+    }
+    for (const id of previous.keys()) {
+      if (!next.has(id)) changed += 1;
+    }
+    previousPlantSignatures[orientation] = next;
+    sampledPlantChanges += changed;
+    sampledPlantFrames += 1;
     sampledDamage += result.damagedPixels;
     sampledTotal += result.totalPixels;
     sampledRectangles += result.damageRectangles;
@@ -66,11 +86,20 @@ function updateMetrics(timestamp) {
     ? (sampledRectangles / sampledFrames).toFixed(1)
     : "0";
   const state = states[currentMode === "portrait" ? "portrait" : "landscape"];
+  const metrics = latestPlantMetrics[state.orientation];
   document.querySelector("#age-output").textContent = `${state.totalDays.toFixed(1)} days`;
+  document.querySelector("#plant-output").textContent = metrics ? String(metrics.instances) : "—";
+  document.querySelector("#plant-joints-output").textContent = metrics ? String(metrics.activeJoints) : "—";
+  document.querySelector("#plant-glyphs-output").textContent = metrics ? String(metrics.glyphs) : "—";
+  document.querySelector("#plant-changed-output").textContent = sampledPlantFrames
+    ? (sampledPlantChanges / sampledPlantFrames).toFixed(1)
+    : "0";
   sampledFrames = 0;
   sampledDamage = 0;
   sampledTotal = 0;
   sampledRectangles = 0;
+  sampledPlantChanges = 0;
+  sampledPlantFrames = 0;
   sampleStartedAt = timestamp;
 }
 

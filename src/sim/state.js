@@ -1,12 +1,10 @@
+import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import { DEFAULT_SEED, DEFAULT_SETTINGS, orientationConfig } from "./config.js";
-import { clamp, createIndividual, createPlant, createSchoolFish } from "./entities.js";
+import { clamp, createIndividual, createSchoolFish } from "./entities.js";
+import { createPlant, plantCountFor } from "./plants.js";
 import { hashSeed, mix32 } from "./prng.js";
 
-export const PERSISTENCE_VERSION = 1;
-
-function entityCountFor(cols) {
-  return cols < 50 ? 8 : 12;
-}
+export const PERSISTENCE_VERSION = 2;
 
 export function createAquariumState({
   orientation = "landscape",
@@ -23,12 +21,12 @@ export function createAquariumState({
   const individuals = Array.from({ length: 6 }, (_, index) =>
     createIndividual(numericSeed, index, dimensions.cols, dimensions.rows),
   );
-  const plants = Array.from({ length: entityCountFor(dimensions.cols) }, (_, index) =>
-    createPlant(numericSeed, index, dimensions.cols, dimensions.rows),
+  const plants = Array.from({ length: plantCountFor(orientation) }, (_, index) =>
+    createPlant(numericSeed, index, dimensions.cols, dimensions.rows, orientation),
   );
 
   return {
-    version: 1,
+    version: 2,
     seed: numericSeed,
     rngState: mix32(numericSeed ^ 0x27d4eb2f),
     orientation,
@@ -132,7 +130,24 @@ export function serializePersistentState(state) {
       behavior: { ...fish.behavior },
       visual: { ...fish.visual },
     })),
-    plants: state.plants.map((plant) => ({ ...plant })),
+    // Animated joints are reconstructed from this compact biological record.
+    // Keeping the fields explicit prevents transient render data from leaking
+    // into long-lived saves as the plant renderer evolves.
+    plants: state.plants.map((plant) => ({
+      seed: plant.seed,
+      speciesId: plant.speciesId,
+      x: plant.x,
+      ageDays: plant.ageDays,
+      matureHeight: plant.matureHeight,
+      layer: plant.layer,
+      phase: plant.phase,
+      frequency: plant.frequency,
+      sway: plant.sway,
+      lean: plant.lean,
+      stiffness: plant.stiffness,
+      secondaryPhase: plant.secondaryPhase,
+      paletteSlot: plant.paletteSlot,
+    })),
   };
 }
 
@@ -141,7 +156,7 @@ function finite(value, fallback) {
 }
 
 export function restorePersistentState(baseState, saved) {
-  if (!saved || saved.persistenceVersion !== PERSISTENCE_VERSION) return baseState;
+  if (!saved || (saved.persistenceVersion !== 1 && saved.persistenceVersion !== PERSISTENCE_VERSION)) return baseState;
   if (saved.seed !== baseState.seed || saved.orientation !== baseState.orientation) return baseState;
   if (!Array.isArray(saved.individuals) || !Array.isArray(saved.plants)) return baseState;
 
@@ -183,6 +198,39 @@ export function restorePersistentState(baseState, saved) {
 
   if (individuals.length < 5) return baseState;
 
+  const plants = baseState.plants.map((fallback, index) => {
+    const plant = saved.plants[index];
+    if (!plant || typeof plant !== "object") return fallback;
+    const speciesId = typeof plant.speciesId === "string" && PLANT_SPECIES_BY_ID[plant.speciesId]
+      ? plant.speciesId
+      : fallback.speciesId;
+    const species = PLANT_SPECIES_BY_ID[speciesId];
+    // Version 1 stored maxHeight and no species/motion traits. Its positions
+    // and ages are retained while the missing compact traits come from the
+    // deterministic version-2 specimen occupying the same layout slot.
+    const legacyHeight = saved.persistenceVersion === 1 ? plant.maxHeight : undefined;
+    return {
+      ...fallback,
+      seed: finite(plant.seed, fallback.seed) >>> 0,
+      speciesId,
+      x: clamp(finite(plant.x, fallback.x), 0.35, baseState.cols - 0.35),
+      ageDays: Math.max(0, finite(plant.ageDays, fallback.ageDays)),
+      matureHeight: clamp(
+        finite(plant.matureHeight, finite(legacyHeight, fallback.matureHeight)),
+        1.2,
+        baseState.rows - 6.5,
+      ),
+      layer: species.layer,
+      phase: finite(plant.phase, fallback.phase),
+      frequency: clamp(finite(plant.frequency, fallback.frequency), 0.15, 0.55),
+      sway: clamp(finite(plant.sway, fallback.sway), 0.55, 1.45),
+      lean: clamp(finite(plant.lean, fallback.lean), -0.4, 0.4),
+      stiffness: clamp(finite(plant.stiffness, fallback.stiffness), 0.65, 1.35),
+      secondaryPhase: finite(plant.secondaryPhase, fallback.secondaryPhase),
+      paletteSlot: Math.round(clamp(finite(plant.paletteSlot, fallback.paletteSlot), 0, 2)),
+    };
+  });
+
   return {
     ...baseState,
     rngState: finite(saved.rngState, baseState.rngState) >>> 0,
@@ -191,14 +239,7 @@ export function restorePersistentState(baseState, saved) {
     timeOfDayHours: ((finite(saved.timeOfDayHours, baseState.timeOfDayHours) % 24) + 24) % 24,
     settings: { ...baseState.settings, ...(saved.settings ?? {}) },
     individuals,
-    plants: saved.plants.map((plant, index) => ({
-      ...(baseState.plants[index % baseState.plants.length] ?? baseState.plants[0]),
-      ...plant,
-      seed: finite(plant.seed, baseState.seed) >>> 0,
-      x: finite(plant.x, index + 1),
-      ageDays: Math.max(0, finite(plant.ageDays, 1)),
-      maxHeight: Math.max(2, finite(plant.maxHeight, 4)),
-    })),
+    plants,
   };
 }
 

@@ -184,6 +184,16 @@ signal** — the main reason month six looks different from month one. Tune the
 growth curve so it cannot be watched happening but is unmistakable across
 weeks.
 
+**Implemented vegetation revision (August 2026):** 28 static species
+descriptors share one bounded parent-index skeleton pass. A specimen persists
+identity, root, age, mature size, depth, and seeded variation—not animated
+geometry. Growth reveals joints, leaves, and shallow branches in stages.
+Landscape uses 22 clustered specimens and portrait 16; mature plants use 5–12
+joints/glyphs each. Shared low-frequency current, one coarse touch influence,
+and optional nearest-individual disturbance replace per-glyph physics.
+Background plants update at 5 Hz, nearer plants at 10 Hz, and every plant is a
+stable dirty-rectangle scene object rendered through the bundled bitmap font.
+
 ### 5.5 Timescales
 
 Every one of these must be present:

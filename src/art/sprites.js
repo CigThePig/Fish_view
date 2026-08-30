@@ -63,13 +63,6 @@ export const waterlineArt = Object.freeze([
   "^^^^ ^^^  ^^^   ^^^    ^^^^",
 ]);
 
-export const plantArt = Object.freeze({
-  left: Object.freeze(["(", "{", "/"]),
-  right: Object.freeze([")", "}", "\\"]),
-  stem: "|",
-  tip: "'",
-});
-
 export const substrateArt = Object.freeze([".", ",", ":", ";", "_"]);
 
 export function spriteDimensions(sprite) {
@@ -78,4 +71,3 @@ export function spriteDimensions(sprite) {
     height: sprite.shape.length,
   };
 }
-

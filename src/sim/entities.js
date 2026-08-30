@@ -74,19 +74,3 @@ export function createIndividual(baseSeed, index, cols, rows) {
     },
   };
 }
-
-export function createPlant(baseSeed, index, cols, rows) {
-  const seed = mix32(baseSeed ^ Math.imul(index + 31, 0xc2b2ae35));
-  const waterHeight = rows - WATERLINE_ROWS - SUBSTRATE_ROWS;
-  return {
-    seed,
-    x: Math.round(sampleRange(seed, 1, 1, cols - 2)),
-    ageDays: sampleRange(seed, 2, 1, 16),
-    maxHeight: Math.max(3, Math.round(sampleRange(seed, 3, waterHeight * 0.24, waterHeight * 0.42))),
-  };
-}
-
-export function plantHeight(plant) {
-  const growth = 1 - Math.exp(-plant.ageDays / 24);
-  return Math.max(1, Math.round(1 + (plant.maxHeight - 1) * growth));
-}
