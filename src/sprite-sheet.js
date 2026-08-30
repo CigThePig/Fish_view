@@ -2,8 +2,8 @@ import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=opaque-bodies
 import {
   applyBodyProfileToSpriteScene,
   bodyProfileForSprite,
-} from "./render/body-profile-lab.js?v=fish-profile-lab-20260830";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=profile-bodies-20260830";
+} from "./render/body-profile-lab.js?v=final-body-profiles-20260830";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=final-body-profiles-20260830";
 import { spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
