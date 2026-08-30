@@ -33,3 +33,27 @@ export function glyphBitmap(glyph) {
   return BITMAP_FONT[glyph] ?? BITMAP_FONT["?"];
 }
 
+export const GLYPH_PIXEL_WIDTH = 10;
+export const GLYPH_PIXEL_HEIGHT = 21;
+
+const GLYPH_PIXELS = Object.freeze(Object.fromEntries(
+  Object.entries(BITMAP_FONT).map(([glyph, bitmap]) => {
+    const pixels = [];
+    for (let row = 0; row < bitmap.length; row += 1) {
+      for (let column = 0; column < 5; column += 1) {
+        if (bitmap[row] & (1 << (4 - column))) {
+          pixels.push(Object.freeze({ x: 1 + column * 2, y: 1 + row * 3, width: 2, height: 3 }));
+        }
+      }
+    }
+    return [glyph, Object.freeze(pixels)];
+  }),
+));
+
+export function glyphPixels(glyph) {
+  return GLYPH_PIXELS[glyph] ?? GLYPH_PIXELS["?"];
+}
+
+export function isSupportedGlyph(glyph) {
+  return Object.hasOwn(BITMAP_FONT, glyph);
+}

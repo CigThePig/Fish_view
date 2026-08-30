@@ -45,6 +45,28 @@ test("touch response is immediate, reproducible, and not probabilistic", () => {
   assert.equal(first.individuals.reduce((sum, fish) => sum + fish.history.touches, 0), 1);
 });
 
+test("individual facing uses hysteresis and a deterministic turn pose", () => {
+  const base = createAquariumState({ orientation: "landscape", seed: 71, wallClockHours: 12 });
+  const withVelocity = (vx) => ({
+    ...base,
+    individuals: base.individuals.map((fish, index) => index === 0
+      ? {
+        ...fish,
+        vx,
+        visual: { facing: 1, targetFacing: 1, turnProgress: 1 },
+      }
+      : fish),
+  });
+
+  const indecisive = tick(withVelocity(-0.05), 0.01).individuals[0];
+  assert.deepEqual(indecisive.visual, { facing: 1, targetFacing: 1, turnProgress: 1 });
+
+  const turning = tick(withVelocity(-0.7), 0.01).individuals[0];
+  assert.equal(turning.visual.facing, 1);
+  assert.equal(turning.visual.targetFacing, -1);
+  assert.ok(turning.visual.turnProgress > 0 && turning.visual.turnProgress < 0.1);
+});
+
 test("bounded emergence keeps fish visible and drives away from extremes", () => {
   const state = createAquariumState({ orientation: "portrait", seed: 9001, wallClockHours: 2 });
   const result = run(state, 2000);
@@ -84,4 +106,3 @@ test("offline time advances the long horizon without simulating loss", () => {
   assert.ok(advanced.totalDays >= 14);
   assert.ok(advanced.plants[0].ageDays >= state.plants[0].ageDays + 14);
 });
-

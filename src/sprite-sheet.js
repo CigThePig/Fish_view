@@ -1,54 +1,129 @@
-import { CanvasCellRenderer } from "./render/canvas-renderer.js";
-import { createCellGrid } from "./render/cell-grid.js";
-import { individualSprites, renderSpritePreview } from "./render/render.js";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
+import { individualSprites, renderSpriteScene } from "./render/render.js";
+import { spriteDimensions } from "./art/sprites.js";
 
-const colors = ["#61e7df", "#ff716e", "#ffd76a", "#63bff2", "#72d68f", "#dd82df"];
+const TAU = Math.PI * 2;
+const UPDATE_INTERVAL_MS = 100;
+const CYCLE_SECONDS = 3.4;
+const views = [];
+const controls = {
+  freeze: document.querySelector("#freeze-toggle"),
+  phase: document.querySelector("#phase-control"),
+  phaseOutput: document.querySelector("#phase-output"),
+  palette: document.querySelector("#palette-control"),
+  deformation: document.querySelector("#deformation-control"),
+  deformationOutput: document.querySelector("#deformation-output"),
+  zoom: document.querySelector("#zoom-control"),
+  zoomOutput: document.querySelector("#zoom-output"),
+  anchors: document.querySelector("#anchors-control"),
+  bounds: document.querySelector("#bounds-control"),
+  damage: document.querySelector("#damage-control"),
+};
 
-function previewGrid(sprite, facing) {
-  const preview = renderSpritePreview(sprite, facing);
-  const grid = createCellGrid(preview.width, preview.height, () => ({ char: " ", fg: colors[0], bg: "#000a0d" }));
-  for (let y = 0; y < preview.height; y += 1) {
-    const glyphs = [...preview.shape[y]];
-    const masks = [...preview.mask[y]];
-    for (let x = 0; x < preview.width; x += 1) {
-      const symbol = masks[x] ?? "1";
-      const colorIndex = symbol === "4" ? 0 : (Number(symbol) || 1) % colors.length;
-      grid.cells[y * preview.width + x] = {
-        char: glyphs[x] ?? " ",
-        fg: symbol === "4" ? "#f4fff9" : colors[colorIndex],
-        bg: "#000a0d",
-      };
-    }
-  }
-  return grid;
+let frozen = false;
+let currentPhase = 0;
+let lastDrawAt = 0;
+
+function makeFigure(label) {
+  const figure = document.createElement("figure");
+  figure.className = "sprite-facing";
+  const canvas = document.createElement("canvas");
+  const caption = document.createElement("figcaption");
+  caption.textContent = label;
+  figure.append(canvas, caption);
+  return { figure, canvas, renderer: new CanvasSceneRenderer(canvas) };
 }
 
 const container = document.querySelector("#sprite-grid");
 individualSprites.forEach((sprite) => {
-  const right = previewGrid(sprite, "right");
-  const left = previewGrid(sprite, "left");
+  const dimensions = spriteDimensions(sprite);
   const card = document.createElement("article");
   card.className = "sprite-card";
   const title = document.createElement("h2");
   title.textContent = sprite.id;
   const meta = document.createElement("p");
   meta.className = "sprite-meta";
-  meta.textContent = `${sprite.source} · ${right.cols} × ${right.rows}`;
-  const pair = document.createElement("div");
-  pair.className = "sprite-pair";
+  meta.textContent = sprite.source + " · " + dimensions.width + " × " + dimensions.height + " logical glyph layout";
+  const row = document.createElement("div");
+  row.className = "sprite-trio";
 
-  [["Source", right], ["Generated mirror", left]].forEach(([label, grid]) => {
-    const figure = document.createElement("div");
-    figure.className = "sprite-facing";
-    const canvas = document.createElement("canvas");
-    const caption = document.createElement("span");
-    caption.textContent = label;
-    figure.append(canvas, caption);
-    pair.append(figure);
-    new CanvasCellRenderer(canvas).draw(grid);
+  const definitions = [
+    { label: "Source / static", facing: "right", staticPose: true },
+    { label: "Animated right", facing: "right", staticPose: false },
+    { label: "Animated left", facing: "left", staticPose: false },
+  ];
+  definitions.forEach((definition) => {
+    const view = makeFigure(definition.label);
+    row.append(view.figure);
+    views.push({ ...view, ...definition, sprite });
   });
 
-  card.append(title, meta, pair);
+  card.append(title, meta, row);
   container.append(card);
 });
 
+function renderAll() {
+  const deformationStrength = Number(controls.deformation.value);
+  const zoom = Number(controls.zoom.value);
+  const debug = {
+    anchors: controls.anchors.checked,
+    bounds: controls.bounds.checked,
+    damage: controls.damage.checked,
+  };
+  for (const view of views) {
+    const scene = renderSpriteScene(view.sprite, {
+      facing: view.facing,
+      phase: currentPhase * TAU,
+      deformationStrength,
+      paletteMode: controls.palette.value,
+      staticPose: view.staticPose,
+    });
+    view.renderer.draw(scene, debug);
+    view.canvas.style.width = Math.round(scene.width * zoom) + "px";
+  }
+  controls.phase.value = String(currentPhase);
+  controls.phaseOutput.textContent = currentPhase.toFixed(2);
+  controls.deformationOutput.textContent = deformationStrength.toFixed(2);
+  controls.zoomOutput.textContent = zoom.toFixed(2) + "×";
+}
+
+function setFrozen(value) {
+  frozen = value;
+  controls.freeze.setAttribute("aria-pressed", String(frozen));
+  controls.freeze.textContent = frozen ? "Resume animation" : "Freeze animation";
+}
+
+controls.freeze.addEventListener("click", () => {
+  setFrozen(!frozen);
+  renderAll();
+});
+
+controls.phase.addEventListener("input", () => {
+  currentPhase = Number(controls.phase.value);
+  setFrozen(true);
+  renderAll();
+});
+
+for (const control of [
+  controls.palette,
+  controls.deformation,
+  controls.zoom,
+  controls.anchors,
+  controls.bounds,
+  controls.damage,
+]) {
+  control.addEventListener("input", renderAll);
+  control.addEventListener("change", renderAll);
+}
+
+function frame(timestamp) {
+  if (!frozen && timestamp - lastDrawAt >= UPDATE_INTERVAL_MS) {
+    currentPhase = (timestamp / 1000 / CYCLE_SECONDS) % 1;
+    lastDrawAt = timestamp;
+    renderAll();
+  }
+  requestAnimationFrame(frame);
+}
+
+renderAll();
+requestAnimationFrame(frame);

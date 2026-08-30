@@ -18,15 +18,19 @@ persistent simulation.
   utility-selected behavior, interaction history, and local persistence.
 - Slow plant growth as the long-horizon visual change signal.
 - A reliable day/night arc with a warm filled night wash, dark fish silhouettes,
-  continuously moving fish, and a smoothly ramped display brightness.
+  continuously moving fish, and scene colours that model the nightlight directly.
+- Free-floating bitmap glyphs: individuals flex through a coherent body wave,
+  school fish glide between former cells, plants bend as linked typographic
+  stems, and sparse bubbles rise independently of text rows.
 - An immediate deterministic touch response: every touch creates the same
-  visible ripple and turns the fish toward it.
-- Live portrait (`40 × 33`) and landscape (`66 × 20`) views, plus a comparison
+  continuously expanding typographic ripple and turns the fish toward it.
+- Exact portrait (`480 × 800`) and landscape (`800 × 480`) output, plus a comparison
   mode that keeps both simulations running at full school size.
 - A hideable tuning panel with time acceleration up to one simulated week per
   real second.
-- A visual [sprite-sheet test page](https://cigthepig.github.io/Fish_view/sprites.html)
-  showing each extracted source sprite beside its generated mirror.
+- A deterministic [typographic motion lab](https://cigthepig.github.io/Fish_view/sprites.html)
+  showing every static source sprite beside animated right- and left-facing
+  poses, with phase, palette, deformation, anchor, bounds, and damage controls.
 
 No fish can die, become ill, disappear as a penalty, or be lost through
 neglect. Phase 0 does not choose the final orientation, decide the Phase 1
@@ -53,7 +57,7 @@ test suite and deploys the repository through the Pages workflow in
 
 ## Architecture boundary
 
-`src/sim/` and the pure `render(state)` function have no DOM, canvas,
+`src/sim/` and the pure `render(state)` scene composer have no DOM, canvas,
 `localStorage`, clock, or other platform dependencies. The application injects
 wall-clock time at startup, while `src/platform/storage.js` owns browser
 persistence and offline elapsed-time calculation.
@@ -62,21 +66,30 @@ The core contracts are:
 
 ```text
 tick(state, dt) -> state
-render(state) -> CellGrid { char, fg, bg }
+render(state) -> RenderScene { width, height, background, glyphs, objects }
 ```
 
-World positions remain floating point until render time. The canvas renderer
-uses a bundled 5×7 bitmap font in 12×24 cells and compares consecutive cell
-grids so it only redraws changed cells. The night wash enters through a 4×4
-ordered pattern, spreading palette transitions across small cell batches
-instead of forcing a full-frame redraw.
+World positions remain floating point through scene composition. Each visible
+ASCII character becomes an independent glyph command with continuous physical
+coordinates, a bitmap scale, colour, and layer. The logical 40×33 and 66×20
+layouts remain useful for simulation and art authoring, but no longer snap
+motion or limit the physical panel to cell multiples.
+
+The canvas backend uses the bundled 5×7 bitmap font, with lit-pixel runs
+precomputed once and raster origins rounded to physical pixels for crisp output.
+It compares stable scene objects, damages the previous and current bounds of
+changed objects, coalesces economical overlaps, restores the procedural
+background inside those rectangles, and recomposes intersecting layers. It
+does not clear and redraw the complete framebuffer during ordinary animation.
+Day/night colours are part of the scene rather than a CSS brightness filter;
+12 quantized palette stages keep slow whole-field transitions infrequent.
 
 ## Source layout
 
 ```text
 src/art/       extracted art data and glyph-aware mirroring
 src/sim/       seeded state creation, behaviors, boids, growth, persistence model
-src/render/    pure cell-grid composition, palette, bitmap font, dirty renderer
+src/render/    continuous scene composition, palette, bitmap font, damage renderer
 src/platform/  browser-only persistence adapter
 tests/         deterministic simulation, art, persistence, and renderer checks
 ```
@@ -86,4 +99,3 @@ tests/         deterministic simulation, art, persistence, and renderer checks
 Fish artwork comes from `asciiquarium` 1.1 by Kirk Baucom, with most ASCII art
 credited to Joan Stark. See `THIRD_PARTY_NOTICES.md`. This repository is
 licensed under GPL v2 or later; see `LICENSE`.
-

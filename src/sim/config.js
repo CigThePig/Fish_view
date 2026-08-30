@@ -4,17 +4,19 @@ export const ORIENTATIONS = Object.freeze({
     cols: 40,
     rows: 33,
     pixelWidth: 480,
-    pixelHeight: 792,
+    pixelHeight: 800,
   }),
   landscape: Object.freeze({
     id: "landscape",
     cols: 66,
     rows: 20,
-    pixelWidth: 792,
+    pixelWidth: 800,
     pixelHeight: 480,
   }),
 });
 
+// Authoring metrics for the bundled bitmap glyphs. Physical scene dimensions
+// are mapped continuously and are not constrained to multiples of these values.
 export const CELL_WIDTH = 12;
 export const CELL_HEIGHT = 24;
 export const WATERLINE_ROWS = 2;
@@ -45,4 +47,3 @@ export function waterBounds(state) {
     height: state.rows - WATERLINE_ROWS - SUBSTRATE_ROWS,
   };
 }
-

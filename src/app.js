@@ -1,5 +1,4 @@
-import { CanvasCellRenderer } from "./render/canvas-renderer.js";
-import { scenePalette } from "./render/palette.js";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
 import { render } from "./render/render.js";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { DEFAULT_SEED } from "./sim/config.js";
@@ -24,8 +23,8 @@ const canvases = {
   landscape: document.querySelector("#landscape-canvas"),
 };
 const renderers = {
-  portrait: new CanvasCellRenderer(canvases.portrait),
-  landscape: new CanvasCellRenderer(canvases.landscape),
+  portrait: new CanvasSceneRenderer(canvases.portrait),
+  landscape: new CanvasSceneRenderer(canvases.landscape),
 };
 const stage = document.querySelector("#aquarium-stage");
 const debugPanel = document.querySelector("#debug-panel");
@@ -38,8 +37,9 @@ let lastFrameTime = performance.now();
 let accumulator = TICK_INTERVAL;
 let sampleStartedAt = lastFrameTime;
 let sampledFrames = 0;
-let sampledDirty = 0;
+let sampledDamage = 0;
 let sampledTotal = 0;
+let sampledRectangles = 0;
 
 function visibleOrientations() {
   return currentMode === "compare" ? ["portrait", "landscape"] : [currentMode];
@@ -49,10 +49,9 @@ function drawVisible() {
   visibleOrientations().forEach((orientation) => {
     const state = states[orientation];
     const result = renderers[orientation].draw(render(state));
-    sampledDirty += result.dirty;
-    sampledTotal += result.total;
-    const brightness = 0.48 + scenePalette(state).daylight * 0.52;
-    canvases[orientation].style.filter = `brightness(${brightness.toFixed(3)})`;
+    sampledDamage += result.damagedPixels;
+    sampledTotal += result.totalPixels;
+    sampledRectangles += result.damageRectangles;
   });
   sampledFrames += 1;
 }
@@ -61,13 +60,17 @@ function updateMetrics(timestamp) {
   if (timestamp - sampleStartedAt < 1000) return;
   const seconds = (timestamp - sampleStartedAt) / 1000;
   document.querySelector("#fps-output").textContent = `${(sampledFrames / seconds).toFixed(1)} fps`;
-  const dirtyPercent = sampledTotal ? (sampledDirty / sampledTotal) * 100 : 0;
-  document.querySelector("#dirty-output").textContent = `${dirtyPercent.toFixed(1)}%`;
+  const damagePercent = sampledTotal ? (sampledDamage / sampledTotal) * 100 : 0;
+  document.querySelector("#damage-output").textContent = `${damagePercent.toFixed(1)}%`;
+  document.querySelector("#rect-output").textContent = sampledFrames
+    ? (sampledRectangles / sampledFrames).toFixed(1)
+    : "0";
   const state = states[currentMode === "portrait" ? "portrait" : "landscape"];
   document.querySelector("#age-output").textContent = `${state.totalDays.toFixed(1)} days`;
   sampledFrames = 0;
-  sampledDirty = 0;
+  sampledDamage = 0;
   sampledTotal = 0;
+  sampledRectangles = 0;
   sampleStartedAt = timestamp;
 }
 
@@ -113,6 +116,7 @@ Object.entries(canvases).forEach(([orientation, canvas]) => {
       portrait: applyTouch(states.portrait, normalizedX * states.portrait.cols, normalizedY * states.portrait.rows),
       landscape: applyTouch(states.landscape, normalizedX * states.landscape.cols, normalizedY * states.landscape.rows),
     };
+    drawVisible();
     canvas.setPointerCapture?.(event.pointerId);
   });
 });

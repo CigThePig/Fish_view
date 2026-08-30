@@ -2,6 +2,13 @@
 
 **Status:** Phase 0 (web prototype). Architecture for Phase 1 deliberately unresolved — see Open Decisions.
 
+**Rendering revision (August 2026):** the original strict cell-grid output was
+useful for proving the simulation, but made the aquarium read as a terminal.
+The renderer now preserves floating-point positions through visual composition
+and places bundled bitmap glyphs independently in physical space. This revision
+supersedes only the old CellGrid/quantize-at-render contract; the deterministic
+simulation and hardware-conscious constraints remain in force.
+
 ---
 
 ## 1. What this is
@@ -43,9 +50,10 @@ Consequences that constrain the design:
 
 - The 750KB framebuffer lives in PSRAM and is DMA'd out continuously. PSRAM
   bandwidth is the ceiling. Waveshare's own LVGL benchmark reaches ~26fps.
-- A character-cell renderer with **dirty-cell tracking** touches ~2–5% of the
-  framebuffer per tick, so this workload is nowhere near that ceiling.
-  Full-frame redraw is forbidden; design for dirty cells from day one.
+- A continuous bitmap-glyph renderer uses **damage rectangles** around changed
+  scene objects. Representative ordinary 10fps frames are required to damage
+  less than 45% of either framebuffer, and commonly touch substantially less.
+  Full-frame redraw during ordinary animation remains forbidden.
 - Plan for ESP-IDF RGB bounce-buffer mode to avoid tearing.
 - No battery-backed RTC. Time comes from NTP over WiFi, with freewheel
   fallback from last known time.
@@ -70,13 +78,16 @@ These are decided. Do not relitigate them without an explicit gate.
 5. **All internal state must have a visible correlate.** No bars, no numbers,
    no text, no icons anywhere in the UI. If a variable cannot be expressed
    through position, motion, color, or posture, it should not exist.
-6. **Positions are floats, quantized to cells only at render time.**
-   Integer-grid positions make schooling stutter instead of flow.
+6. **Positions remain floats through visual composition.** Logical cell-sized
+   units remain useful for simulation and ASCII authoring, but glyph positions
+   are mapped continuously to physical pixels and never snapped to rows or
+   columns as part of scene creation.
 7. **Deterministic RNG throughout.** Seeded, reproducible, replayable. Store
    per-entity seeds, never derived traits.
-8. **The sim is pure.** No DOM, no canvas, no platform APIs inside simulation
-   code. `tick(state, dt) -> state` and `render(state) -> CellGrid`. This
-   keeps the Phase 1 language decision genuinely open.
+8. **The sim and scene composer are pure.** No DOM, canvas, localStorage,
+   browser timer, or CSS dependency enters simulation or composition code.
+   `tick(state, dt) -> state` and `render(state) -> RenderScene`. This keeps the
+   Phase 1 language decision genuinely open.
 
 ---
 
@@ -89,7 +100,7 @@ Build both. Make it a runtime toggle, not a build flag.
 | | Portrait | Landscape |
 |---|---|---|
 | Panel | 480 × 800 | 800 × 480 |
-| Cell (12×24) | **40 cols × 33 rows** | **66 cols × 20 rows** |
+| Logical authoring layout | **40 × 33** | **66 × 20** |
 | Waterline | 2 rows | 2 rows |
 | Substrate | 4 rows | 4 rows |
 | Water column | 27 rows | 14 rows |
@@ -114,14 +125,20 @@ It is designed to be removable without touching the school.
 
 ### 5.1 Renderer
 
-- Character grid, `CellGrid = { char, fg, bg }[rows][cols]`.
-- Z-sorted compositing. Depth bands: waterline, background plants, school,
-  individuals, foreground plants, substrate.
-- Dirty-cell tracking. Only changed cells are written.
-- Web target renders to canvas with a bitmap font, not DOM spans — this keeps
-  the rendering model close to what the ESP32 will do and prevents web-only
-  tricks from creeping into the design.
-- Runtime-switchable grid dimensions to support §4.1.
+- Pure scene, `RenderScene = { width, height, background, glyphs, objects }`.
+  Glyph commands carry continuous physical coordinates, bitmap scale, colour,
+  and layer; scene objects provide stable IDs and bounds for damage tracking.
+- Z-sorted compositing. Depth bands: waterline, background plants, ambient
+  marks, school, individuals, reaction, foreground plants, substrate.
+- Damage-region tracking. A changed object's previous and current bounds are
+  restored from the deterministic background recipe, then every intersecting
+  current layer is recomposed. Ordinary frames do not clear the canvas.
+- Web output is exactly 480×800 or 800×480 and uses the bundled bitmap font,
+  never canvas text or browser fonts. Glyph pixel runs are precomputed and
+  rasterized without smoothing.
+- Day/night colour belongs to the scene. Quantized palette stages and ordered
+  band transitions replace CSS brightness as an artwork dependency; physical
+  backlight control remains a separate eventual hardware responsibility.
 
 ### 5.2 Layer A — the school
 
@@ -193,8 +210,8 @@ theme, and it inverts the naive design.
   The night state must therefore invert or wash: a dim filled water field with
   fish rendered *darker against it*, or at minimum a background wash on all
   water cells. This means water cells are non-transparent at night, which
-  affects both the dirty-cell math and the color mask format. Design for it up
-  front.
+  affects both the background damage recipe and the color mask format. Design
+  for it up front.
 - **Warm night palette.** Cyan and blue — asciiquarium's entire palette — are
   the worst spectrum for sleep. Night shifts to dim amber and low-saturation
   deep teal. Cool blues are daytime only. This also makes day and night
@@ -243,8 +260,8 @@ Static site deployed to GitHub Pages, developable from a phone.
 
 1. Art extracted from the Perl into a structured data file, with mirror
    function and a visual sprite-sheet test page.
-2. Cell grid renderer with dirty-cell tracking and runtime-switchable
-   dimensions.
+2. Continuous glyph-scene renderer with damage rectangles and runtime-
+   switchable exact physical dimensions.
 3. Layer A schooling, 25–40 fish, tunable boids parameters exposed in a debug
    panel.
 4. Layer B individuals, 5–8, with traits, drives, utility selection, and
@@ -283,4 +300,6 @@ species not in the original art.
 - Do not optimize for first-impression spectacle at the cost of long-horizon
   interest.
 - Do not resolve §4 unilaterally. Surface the tradeoff and stop.
-- Do not let full-frame redraw creep in; it forecloses Phase 1.
+- Do not let full-frame redraw creep into ordinary animation; it forecloses
+  Phase 1. Slow global palette stages may deliberately invalidate the field,
+  but do not change every 100ms at real-time speed.

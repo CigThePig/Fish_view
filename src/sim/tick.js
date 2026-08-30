@@ -4,6 +4,7 @@ import { sampleRange } from "./prng.js";
 
 const TAU = Math.PI * 2;
 const BEHAVIORS = Object.freeze(["cruise", "explore", "social", "forage", "rest"]);
+const FACING_THRESHOLD = 0.11;
 
 function smoothstep(edge0, edge1, value) {
   const amount = clamp((value - edge0) / (edge1 - edge0), 0, 1);
@@ -187,6 +188,37 @@ function behaviorTarget(fish, state, traits, center, behavior) {
   };
 }
 
+function tickVisualFacing(fish, nextVx, realDelta) {
+  const initialFacing = fish.vx < 0 ? -1 : 1;
+  const source = fish.visual ?? {
+    facing: initialFacing,
+    targetFacing: initialFacing,
+    turnProgress: 1,
+  };
+  const desired = nextVx > FACING_THRESHOLD
+    ? 1
+    : nextVx < -FACING_THRESHOLD
+      ? -1
+      : source.targetFacing;
+  let facing = source.facing;
+  let targetFacing = source.targetFacing;
+  let turnProgress = source.turnProgress;
+
+  if (desired !== targetFacing) {
+    if (turnProgress >= 1) {
+      targetFacing = desired;
+      turnProgress = 0;
+    } else if (desired === facing) {
+      targetFacing = desired;
+      turnProgress = 1 - turnProgress;
+    }
+  }
+
+  turnProgress = clamp(turnProgress + realDelta / 0.68, 0, 1);
+  if (turnProgress >= 1) facing = targetFacing;
+  return { facing, targetFacing, turnProgress };
+}
+
 function tickIndividual(fish, index, state, school, realDelta, simDelta, motionScale) {
   const traits = traitsFromSeed(fish.seed, fish.history);
   const deltaHours = simDelta / 3600;
@@ -269,7 +301,17 @@ function tickIndividual(fish, index, state, school, realDelta, simDelta, motionS
     ),
   };
 
-  return { ...fish, x, y, vx, vy, drives, history, behavior };
+  return {
+    ...fish,
+    x,
+    y,
+    vx,
+    vy,
+    drives,
+    history,
+    behavior,
+    visual: tickVisualFacing(fish, vx, realDelta),
+  };
 }
 
 export function tick(state, dt) {
@@ -308,4 +350,3 @@ export function tick(state, dt) {
     plants,
   };
 }
-

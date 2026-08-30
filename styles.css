@@ -100,13 +100,12 @@ canvas {
   height: auto;
   max-width: 100%;
   max-height: calc(100svh - 6.4rem);
-  border: 1px solid #344841;
-  border-radius: 8px;
-  background: #000a0d;
-  box-shadow: 0 16px 55px rgb(0 0 0 / 52%), 0 0 34px rgb(73 109 92 / 11%);
+  border: 1px solid #3c514b;
+  border-radius: 14px;
+  background: #123f46;
+  box-shadow: 0 18px 58px rgb(0 0 0 / 46%);
   image-rendering: pixelated;
   touch-action: none;
-  transition: filter 1.2s linear;
 }
 
 .aquarium-stage[data-mode="compare"] .tank--portrait canvas {
@@ -162,7 +161,6 @@ figcaption {
   border-left: 1px solid var(--line);
   background: rgb(10 18 16 / 97%);
   box-shadow: -20px 0 60px rgb(0 0 0 / 45%);
-  backdrop-filter: blur(18px);
 }
 
 .debug-panel[hidden] {
@@ -270,11 +268,5 @@ a {
 
   figcaption {
     font-size: 0.62rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  canvas {
-    transition: none;
   }
 }

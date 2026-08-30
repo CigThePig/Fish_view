@@ -67,6 +67,11 @@ export function createIndividual(baseSeed, index, cols, rows) {
       blend: 1,
       ageSeconds: sampleRange(seed, 14, 0, 40),
     },
+    visual: {
+      facing: direction,
+      targetFacing: direction,
+      turnProgress: 1,
+    },
   };
 }
 
@@ -85,4 +90,3 @@ export function plantHeight(plant) {
   const growth = 1 - Math.exp(-plant.ageDays / 24);
   return Math.max(1, Math.round(1 + (plant.maxHeight - 1) * growth));
 }
-

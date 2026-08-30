@@ -4,19 +4,42 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#07100f">
-    <title>Fish View — Sprite sheet</title>
+    <title>Fish View — Typographic motion lab</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="sprite-sheet.css">
   </head>
   <body class="sprite-page">
     <header>
       <div>
-        <p class="eyebrow">Phase 0 visual test</p>
-        <h1>Extracted sprite sheet</h1>
-        <p>Right-facing source art and generated mirrors. Every fish is eight cells wide or less.</p>
+        <p class="eyebrow">Deterministic art validation</p>
+        <h1>Typographic motion lab</h1>
+        <p>Static source poses beside both animated facings. Animation is intentionally capped at 10 updates per second.</p>
       </div>
       <a href="index.html">Return to aquarium</a>
     </header>
+
+    <section class="lab-controls" aria-label="Motion lab controls">
+      <button type="button" id="freeze-toggle" aria-pressed="false">Freeze animation</button>
+      <label>Swim phase <output id="phase-output">0.00</output>
+        <input id="phase-control" type="range" min="0" max="1" step="0.005" value="0">
+      </label>
+      <label>Palette
+        <select id="palette-control">
+          <option value="day">Day</option>
+          <option value="night">Deep night</option>
+        </select>
+      </label>
+      <label>Deformation <output id="deformation-output">1.00</output>
+        <input id="deformation-control" type="range" min="0" max="1.5" step="0.05" value="1">
+      </label>
+      <label>Zoom <output id="zoom-output">1.00×</output>
+        <input id="zoom-control" type="range" min="0.65" max="1.45" step="0.05" value="1">
+      </label>
+      <label class="check-control"><input id="anchors-control" type="checkbox"> Glyph anchors</label>
+      <label class="check-control"><input id="bounds-control" type="checkbox"> Object bounds</label>
+      <label class="check-control"><input id="damage-control" type="checkbox"> Damage rectangles</label>
+    </section>
+
     <main id="sprite-grid" class="sprite-grid"></main>
     <footer>
       Artwork from <em>asciiquarium 1.1</em> by Kirk Baucom; most ASCII art by Joan Stark. GPL v2 or later.
@@ -24,4 +47,3 @@
     <script type="module" src="src/sprite-sheet.js"></script>
   </body>
 </html>
-

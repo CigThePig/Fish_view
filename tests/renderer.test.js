@@ -1,34 +1,139 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { diffCells } from "../src/render/cell-grid.js";
-import { render } from "../src/render/render.js";
-import { createAquariumState } from "../src/sim/state.js";
+import { glyphFlip } from "../src/art/mirror.js";
+import { individualSprites } from "../src/art/sprites.js";
+import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { calculateDamage } from "../src/render/damage.js";
+import { LAYERS, poseSprite, render } from "../src/render/render.js";
+import { glyphsForObject } from "../src/render/scene.js";
+import { applyTouch, createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
-test("renderer emits the exact locked orientation grids", () => {
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+function objectByPrefix(scene, prefix) {
+  const object = scene.objects.find((candidate) => candidate.id.startsWith(prefix));
+  assert.ok(object, "missing scene object " + prefix);
+  return object;
+}
+
+function colorLuminance(color) {
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const green = Number.parseInt(color.slice(3, 5), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+}
+
+function average(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+test("same state produces an exactly identical continuous glyph scene", () => {
+  const state = createAquariumState({ orientation: "landscape", seed: 1, wallClockHours: 14.5 });
+  assert.deepEqual(render(state), render(state));
+});
+
+test("renderer emits the exact physical panel dimensions", () => {
   const portrait = render(createAquariumState({ orientation: "portrait", seed: 1 }));
   const landscape = render(createAquariumState({ orientation: "landscape", seed: 1 }));
-  assert.deepEqual([portrait.cols, portrait.rows], [40, 33]);
-  assert.deepEqual([landscape.cols, landscape.rows], [66, 20]);
-  assert.equal(portrait.cells.length, 1320);
-  assert.equal(landscape.cells.length, 1320);
+  assert.deepEqual([portrait.width, portrait.height], [480, 800]);
+  assert.deepEqual([landscape.width, landscape.height], [800, 480]);
+  assert.deepEqual([portrait.logicalWidth, portrait.logicalHeight], [40, 33]);
+  assert.deepEqual([landscape.logicalWidth, landscape.logicalHeight], [66, 20]);
 });
 
-test("night water is a filled warm wash and fish become dark ink", () => {
+test("movement within one former character column changes physical glyph coordinates", () => {
+  const base = createAquariumState({ orientation: "landscape", seed: 8, wallClockHours: 12 });
+  const at = (x) => ({
+    ...base,
+    individuals: base.individuals.map((fish, index) => index === 0 ? { ...fish, x } : fish),
+  });
+  const left = render(at(24.18));
+  const right = render(at(24.72));
+  assert.equal(Math.floor(24.18), Math.floor(24.72));
+  const leftGlyph = glyphsForObject(left, objectByPrefix(left, "individual:0:"))[0];
+  const rightGlyph = glyphsForObject(right, objectByPrefix(right, "individual:0:"))[0];
+  assert.notEqual(leftGlyph.x, rightGlyph.x);
+  assert.ok(Math.abs(rightGlyph.x - leftGlyph.x) > 6);
+});
+
+test("every scene command uses a supported crisp glyph and sane values", () => {
+  for (const orientation of ["portrait", "landscape"]) {
+    const scene = render(createAquariumState({ orientation, seed: 33, wallClockHours: 7 }));
+    const ids = new Set();
+    for (const object of scene.objects) {
+      assert.equal(ids.has(object.id), false, "duplicate object id " + object.id);
+      ids.add(object.id);
+      assert.ok(Number.isFinite(object.layer) && object.layer >= LAYERS.waterline && object.layer <= LAYERS.substrate);
+      assert.ok(Number.isFinite(object.bounds.x) && Number.isFinite(object.bounds.y));
+      assert.ok(object.bounds.width > 0 && object.bounds.height > 0);
+      assert.ok(object.glyphStart >= 0 && object.glyphStart + object.glyphCount <= scene.glyphs.length);
+    }
+    for (const glyph of scene.glyphs) {
+      assert.ok(isSupportedGlyph(glyph.char), "unsupported glyph " + glyph.char);
+      assert.ok(Number.isFinite(glyph.x) && Number.isFinite(glyph.y));
+      assert.ok(Number.isFinite(glyph.scaleX) && glyph.scaleX >= 0.5 && glyph.scaleX <= 1.5);
+      assert.ok(Number.isFinite(glyph.scaleY) && glyph.scaleY >= 0.5 && glyph.scaleY <= 1.5);
+      assert.match(glyph.fg, HEX_COLOR);
+      assert.ok(Number.isFinite(glyph.layer) && glyph.layer >= LAYERS.waterline && glyph.layer <= LAYERS.substrate);
+      assert.ok(glyph.x > -scene.width && glyph.x < scene.width * 2);
+      assert.ok(glyph.y > -scene.height && glyph.y < scene.height * 2);
+    }
+  }
+});
+
+test("animated left poses preserve glyph-aware mirroring", () => {
+  for (const sprite of individualSprites) {
+    const right = poseSprite(sprite, { facing: 1, phase: 1.3, deformationStrength: 1 });
+    const left = poseSprite(sprite, { facing: -1, phase: 1.3, deformationStrength: 1 });
+    assert.equal(left.length, right.length);
+    for (let index = 0; index < right.length; index += 1) {
+      assert.equal(left[index].char, glyphFlip[right[index].char] ?? right[index].char);
+      assert.ok(Math.abs(left[index].x + right[index].x) < 1e-10);
+      assert.equal(left[index].y, right[index].y);
+    }
+  }
+});
+
+test("deep night is a filled warm field with dark typographic fish", () => {
   const state = createAquariumState({ orientation: "landscape", seed: 2, wallClockHours: 2 });
-  const grid = render(state);
-  const water = grid.cells.slice(grid.cols * 2, grid.cols * (grid.rows - 4));
-  assert.ok(water.every((cell) => typeof cell.bg === "string" && cell.bg !== "transparent"));
-  assert.ok(water.some((cell) => cell.bg === "#35534a"));
-  assert.ok(water.some((cell) => cell.bg === "#493e2d"));
+  const scene = render(state);
+  assert.equal(scene.metadata.night, 1);
+  assert.ok(scene.background.bands.every((band) => HEX_COLOR.test(band.color) && band.color !== "#000000"));
+  assert.equal(scene.background.bands[0].color, "#514534");
+  assert.equal(scene.background.bands.at(-1).color, "#23332f");
+  const individuals = scene.objects.filter((object) => object.id.startsWith("individual:"));
+  const fishGlyphs = individuals.flatMap((object) => glyphsForObject(scene, object));
+  const fishLuminance = average(fishGlyphs.map((glyph) => colorLuminance(glyph.fg)));
+  const waterLuminance = average(scene.background.bands.map((band) => colorLuminance(band.color)));
+  assert.ok(fishLuminance < waterLuminance, fishLuminance + " should be darker than " + waterLuminance);
 });
 
-test("ordinary animation dirties only a minority of cells", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 });
-  const before = render(state);
-  const after = render(tick(state, 0.1));
-  const dirty = diffCells(before, after);
-  assert.ok(dirty.length < before.cells.length * 0.2, `${dirty.length} cells were dirty`);
+test("ordinary 10 fps frames damage a minority of either framebuffer", () => {
+  for (const orientation of ["landscape", "portrait"]) {
+    let state = createAquariumState({ orientation, seed: 5, wallClockHours: 12 });
+    for (let index = 0; index < 100; index += 1) state = tick(state, 0.1);
+    const before = render(state);
+    const after = render(tick(state, 0.1));
+    const damage = calculateDamage(before, after);
+    assert.equal(damage.full, false);
+    assert.ok(damage.rects.length > 0);
+    assert.ok(damage.area < damage.total * 0.45, orientation + " damaged " + (damage.area / damage.total * 100).toFixed(1) + "%");
+  }
 });
 
+test("touch ripple is immediate, deterministic, and expands continuously", () => {
+  const state = createAquariumState({ orientation: "landscape", seed: 7, wallClockHours: 12 });
+  const first = render(applyTouch(state, 20.25, 9.4));
+  const second = render(applyTouch(state, 20.25, 9.4));
+  assert.deepEqual(first, second);
+  const initial = objectByPrefix(first, "reaction:ripple");
+  assert.equal(initial.glyphCount, 17);
+
+  const touched = applyTouch(state, 20.25, 9.4);
+  const expandedScene = render(tick(touched, 0.1));
+  const expanded = objectByPrefix(expandedScene, "reaction:ripple");
+  assert.ok(expanded.bounds.width > initial.bounds.width);
+  assert.ok(expanded.bounds.width - initial.bounds.width < 12);
+});

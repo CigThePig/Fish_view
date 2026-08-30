@@ -13,11 +13,11 @@
       <section class="aquarium-stage" id="aquarium-stage" data-mode="landscape" aria-label="Aquarium orientation preview">
         <figure class="tank tank--portrait" data-view="portrait">
           <canvas id="portrait-canvas" aria-label="Portrait ASCII aquarium. Touch the water and the fish will approach."></canvas>
-          <figcaption>Portrait · 40 × 33</figcaption>
+          <figcaption>Portrait · 480 × 800</figcaption>
         </figure>
         <figure class="tank tank--landscape" data-view="landscape">
           <canvas id="landscape-canvas" aria-label="Landscape ASCII aquarium. Touch the water and the fish will approach."></canvas>
-          <figcaption>Landscape · 66 × 20</figcaption>
+          <figcaption>Landscape · 800 × 480</figcaption>
         </figure>
       </section>
 
@@ -85,7 +85,8 @@
         <h2>Renderer</h2>
         <dl class="metrics">
           <div><dt>Update rate</dt><dd id="fps-output">—</dd></div>
-          <div><dt>Dirty cells</dt><dd id="dirty-output">—</dd></div>
+          <div><dt>Damage area</dt><dd id="damage-output">—</dd></div>
+          <div><dt>Damage rectangles</dt><dd id="rect-output">—</dd></div>
           <div><dt>Simulated age</dt><dd id="age-output">—</dd></div>
         </dl>
         <a href="sprites.html">Open sprite-sheet test page</a>
@@ -99,4 +100,3 @@
     <script type="module" src="src/app.js"></script>
   </body>
 </html>
-

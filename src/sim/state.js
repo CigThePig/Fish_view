@@ -80,6 +80,7 @@ export function applyTouch(state, x, y) {
       drives: { ...fish.drives },
       history: { ...fish.history },
       behavior: { ...fish.behavior },
+      visual: { ...fish.visual },
     };
   });
 
@@ -129,6 +130,7 @@ export function serializePersistentState(state) {
       drives: { ...fish.drives },
       history: { ...fish.history },
       behavior: { ...fish.behavior },
+      visual: { ...fish.visual },
     })),
     plants: state.plants.map((plant) => ({ ...plant })),
   };
@@ -168,6 +170,13 @@ export function restorePersistentState(baseState, saved) {
         previous: typeof fish.behavior?.previous === "string" ? fish.behavior.previous : "cruise",
         blend: clamp(finite(fish.behavior?.blend, 1), 0, 1),
         ageSeconds: Math.max(0, finite(fish.behavior?.ageSeconds, 0)),
+      },
+      visual: {
+        facing: fish.visual?.facing === -1 ? -1 : fish.visual?.facing === 1 ? 1 : (finite(fish.vx, fallback.vx) < 0 ? -1 : 1),
+        targetFacing: fish.visual?.targetFacing === -1 ? -1 : fish.visual?.targetFacing === 1
+          ? 1
+          : (finite(fish.vx, fallback.vx) < 0 ? -1 : 1),
+        turnProgress: clamp(finite(fish.visual?.turnProgress, 1), 0, 1),
       },
     };
   });
@@ -215,7 +224,7 @@ export function advanceOffline(state, realSeconds) {
       },
       history: { ...fish.history },
       behavior: { ...fish.behavior },
+      visual: { ...fish.visual },
     })),
   };
 }
-
