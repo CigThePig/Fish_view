@@ -1,5 +1,5 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
-import { individualSprites, renderSpriteScene } from "./render/render.js";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=gridless-20260830";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=gridless-20260830";
 import { spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
