@@ -72,8 +72,8 @@ function placementForPoint(pose, point, baseScale) {
   return {
     worldX: (parent.x + point.x) * 0.5,
     worldY: (parent.y + point.y) * 0.5,
-    scaleX: structural ? Math.min(1.42, baseScale * (1 + spanX * 0.28)) : baseScale,
-    scaleY: structural ? Math.min(1.42, baseScale * (1 + spanY * 0.28)) : baseScale,
+    scaleX: structural ? Math.min(1.45, baseScale * (1 + spanX * 0.34)) : baseScale,
+    scaleY: structural ? Math.min(1.45, baseScale * (1 + spanY * 0.34)) : baseScale,
   };
 }
 
