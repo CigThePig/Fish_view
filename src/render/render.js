@@ -6,17 +6,18 @@ import {
   spriteDimensions,
   substrateArt,
 } from "../art/sprites.js";
-import { orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
+import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { plantHeight, spriteForSeed } from "../sim/entities.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js";
+import { glyphPixels } from "./bitmap-font.js";
+import { bodyFillForDepth, MASK_SYMBOLS, scenePalette } from "./palette.js?v=opaque-bodies-20260830";
 import {
   addGlyphObject,
   createSceneBuilder,
   finalizeScene,
   positionedGlyph,
   sceneMetrics,
-} from "./scene.js";
+} from "./scene.js?v=opaque-bodies-20260830";
 
 const TAU = Math.PI * 2;
 const BAYER_4 = Object.freeze([
@@ -328,40 +329,140 @@ function drawSchool(builder, state, palette, metrics) {
 // ASCII fish used to be see-through: water bands, plants, and every other fish
 // read straight through the sprite, which is what made a crowded school look
 // like scattered line fragments. Each fish now gets one opaque body behind its
-// strokes, built as a short stack of horizontal spans across an ellipse. Fins
-// deliberately fall outside it and keep their open ASCII silhouette, and the
-// whole body costs BODY_SPANS filled rectangles, which is the one operation an
-// ESP32 panel driver is fastest at.
+// strokes, built as a short stack of horizontal spans across an ellipse fitted
+// to the sprite's own body. The whole body costs BODY_SPANS filled rectangles,
+// which is the one operation an ESP32 panel driver is fastest at.
 const BODY_SPANS = 9;
-const BODY_WIDTH = 0.95;
-const BODY_HEIGHT = 0.72;
+// How sharply the body narrows toward its roof and belly. This is the shape of
+// the fish, so it stays a soft ellipse: squaring it off backs a few more pixels
+// of the outermost strokes and turns every fish into a box.
 const BODY_SHOULDER = 3;
-const BODY_NOSE_BIAS = 0.1;
+// A little more height than the ink strictly occupies, in cell units. `_` draws
+// along the bottom of its cell, so the roof and belly sit right on the body's
+// edge, where an ellipse has no width left to put behind them. A small swell
+// gives them something to sit on while keeping the silhouette round.
+const BODY_SWELL = 0.2;
+
+const bodyBoxCache = new Map();
+const FIN_GLYPHS = new Set(["/", "\\"]);
+// The vocabulary asciiquarium draws a tail from: the fin itself, the stroke
+// pair that fans it, and the peduncle joining it to the body.
+const TAIL_GLYPHS = new Set([">", "<", "=", "/", "\\"]);
+
+// The body is fitted to the artwork rather than to the sprite's bounding box,
+// which is a good deal larger than the fish inside it. Two kinds of row are
+// fins, and fins stay outside the body so they keep their open ASCII
+// silhouette: a row carrying a single stroke, and an outermost row drawn only
+// from `/` and `\`. Everything else is fish and has to be backed - including
+// the `_` roof and belly of the short sprites, which any fixed fraction of the
+// sprite height leaves bare.
+// A glyph's lit pixels, as offsets in cell units from the cell's own centre.
+// Measuring the real ink matters: `_` draws along the bottom of its cell, so a
+// body sized from cell centres reaches most of a cell above the roof it backs
+// and leaves a tab sticking out over the fish. The horizontal extent is
+// symmetrised because the same body serves both facings, and a mirrored glyph
+// puts its ink on the other side of the cell.
+function inkExtent(char) {
+  const pixels = glyphPixels(char);
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let reach = 0;
+  for (const pixel of pixels) {
+    minY = Math.min(minY, pixel.y);
+    maxY = Math.max(maxY, pixel.y + pixel.height);
+    reach = Math.max(reach, Math.abs(pixel.x - CELL_WIDTH / 2), Math.abs(pixel.x + pixel.width - CELL_WIDTH / 2));
+  }
+  return {
+    reach: reach / CELL_WIDTH,
+    top: (minY - CELL_HEIGHT / 2) / CELL_HEIGHT,
+    bottom: (maxY - CELL_HEIGHT / 2) / CELL_HEIGHT,
+  };
+}
+
+// Sprites are authored facing right, so the tail is the run of columns at the
+// trailing edge drawn only from tail glyphs. It stops at the first column
+// carrying anything else, which is where the body proper starts. The tail is
+// left open like the fins: an opaque body behind it would read as one blunt
+// mass rather than as a fish.
+function tailColumns(source) {
+  const columns = new Map();
+  for (const point of source.points) {
+    columns.set(point.column, (columns.get(point.column) ?? true) && TAIL_GLYPHS.has(point.char));
+  }
+  let end = 0;
+  while (columns.get(end) === true) end += 1;
+  return end;
+}
+
+function spriteBodyBox(sprite) {
+  if (bodyBoxCache.has(sprite.id)) return bodyBoxCache.get(sprite.id);
+  const source = spritePoints(sprite);
+  const tail = tailColumns(source);
+  const rows = new Map();
+  for (const point of source.points) {
+    const row = rows.get(point.row) ?? { count: 0, points: [], strokesOnly: true };
+    row.count += 1;
+    row.points.push(point);
+    row.strokesOnly = row.strokesOnly && FIN_GLYPHS.has(point.char);
+    rows.set(point.row, row);
+  }
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  let left = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  for (const [index, row] of rows) {
+    const edge = index === 0 || index === source.height - 1;
+    if (row.count < 2 || (edge && row.strokesOnly)) continue;
+    for (const point of row.points) {
+      if (point.column < tail) continue;
+      const ink = inkExtent(point.char);
+      top = Math.min(top, index + ink.top);
+      bottom = Math.max(bottom, index + ink.bottom);
+      left = Math.min(left, point.column - ink.reach);
+      right = Math.max(right, point.column + ink.reach);
+    }
+  }
+  const box = Object.freeze({
+    // Cell units, measured from the sprite's own centre, so a body that sits
+    // off-centre inside its box travels with the fish.
+    offsetX: (left + right) / 2 - (source.width - 1) / 2,
+    offsetY: (top + bottom) / 2 - (source.height - 1) / 2,
+    radiusX: (right - left) / 2,
+    radiusY: (bottom - top) / 2,
+  });
+  bodyBoxCache.set(sprite.id, box);
+  return box;
+}
 
 function bodyFill(sprite, metrics, { worldX, worldY, widthScale, facing, color }) {
-  const { width, height } = spriteDimensions(sprite);
-  const radiusX = (width / 2) * BODY_WIDTH * widthScale * metrics.cellWidth;
-  const radiusY = (height / 2) * BODY_HEIGHT * metrics.cellHeight;
-  // Real fish carry their mass forward, and the sprite tails are all narrow
-  // punctuation, so the body sits slightly ahead of the glyph centre.
-  const centerX = (worldX + facing * BODY_NOSE_BIAS * widthScale) * metrics.cellWidth;
-  const centerY = worldY * metrics.cellHeight;
+  const box = spriteBodyBox(sprite);
+  const radiusX = box.radiusX * widthScale * metrics.cellWidth;
+  const radiusY = (box.radiusY + BODY_SWELL) * metrics.cellHeight;
+  const centerX = (worldX + facing * box.offsetX * widthScale) * metrics.cellWidth;
+  const centerY = (worldY + box.offsetY) * metrics.cellHeight;
   const spanHeight = (radiusY * 2) / BODY_SPANS;
   const fill = [];
   for (let index = 0; index < BODY_SPANS; index += 1) {
     const top = -radiusY + index * spanHeight;
     const bottom = top + spanHeight;
     // Measuring at whichever span edge is closer to the waist keeps the stepped
-    // silhouette convex, and the cubed falloff holds the flanks near full width
-    // so the drawn body outline stays on the fill rather than beside it.
+    // silhouette convex, so no span pinches in behind the ink it has to back.
     const waist = Math.min(Math.abs(top), Math.abs(bottom)) / radiusY;
     const half = radiusX * Math.sqrt(Math.max(0, 1 - waist ** BODY_SHOULDER));
-    if (half < 1) continue;
+    // Spans are emitted already snapped to whole pixels. The damage signature
+    // hashes them at this precision, so anything finer would let a drifting
+    // fish change its painted coverage without being repainted, and a panel
+    // driver wants integer rectangles anyway.
+    const left = Math.round(centerX - half);
+    const right = Math.round(centerX + half);
+    const spanTop = Math.round(centerY + top);
+    const spanBottom = Math.round(centerY + bottom) + 1;
+    if (right - left < 1) continue;
     fill.push({
-      x: centerX - half,
-      y: centerY + top,
-      width: half * 2,
-      height: spanHeight + 1,
+      x: left,
+      y: spanTop,
+      width: right - left,
+      height: spanBottom - spanTop,
       color,
     });
   }
@@ -399,10 +500,18 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   return { glyphs, fill };
 }
 
+// createBackground spreads its six water bands from logical y = 0 down to the
+// substrate, so a body has to be normalised against that same extent and
+// origin. Measuring from the waterline instead put the band boundaries in
+// different places and picked the companion of a band the fish was not
+// actually swimming in.
+function waterBandDepth(state, worldY) {
+  return clamp(worldY / Math.max(1, state.rows - SUBSTRATE_ROWS), 0, 0.999);
+}
+
 function drawIndividuals(builder, state, palette, metrics, deformationStrength) {
-  const waterHeight = Math.max(1, state.rows - WATERLINE_ROWS - SUBSTRATE_ROWS);
   state.individuals.forEach((fish, index) => {
-    const depth = clamp((fish.y - WATERLINE_ROWS) / waterHeight, 0, 0.999);
+    const depth = waterBandDepth(state, fish.y);
     const parts = individualParts(fish, state, palette, metrics, deformationStrength, depth);
     addGlyphObject(builder, {
       id: `individual:${index}:${fish.seed}`,

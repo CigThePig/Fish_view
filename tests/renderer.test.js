@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { glyphFlip } from "../src/art/mirror.js";
 import { individualSprites } from "../src/art/sprites.js";
-import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { glyphPixels, isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { PALETTE_STEPS, scenePalette } from "../src/render/palette.js";
-import { LAYERS, poseSprite, render } from "../src/render/render.js";
+import { LAYERS, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { orientationConfig } from "../src/sim/config.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
@@ -18,6 +18,29 @@ function objectByPrefix(scene, prefix) {
   const object = scene.objects.find((candidate) => candidate.id.startsWith(prefix));
   assert.ok(object, "missing scene object " + prefix);
   return object;
+}
+
+function backsGlyph(object, glyph) {
+  const centre = inkCentre(glyph);
+  return object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
+    && centre.y >= span.y && centre.y <= span.y + span.height);
+}
+
+function inkCentre(glyph) {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const pixel of glyphPixels(glyph.char)) {
+    minX = Math.min(minX, pixel.x);
+    maxX = Math.max(maxX, pixel.x + pixel.width);
+    minY = Math.min(minY, pixel.y);
+    maxY = Math.max(maxY, pixel.y + pixel.height);
+  }
+  return {
+    x: Math.round(glyph.x) + ((minX + maxX) / 2) * glyph.scaleX,
+    y: Math.round(glyph.y) + ((minY + maxY) / 2) * glyph.scaleY,
+  };
 }
 
 function channel(color, offset) {
@@ -188,6 +211,130 @@ test("every individual fish is opaque, through every pose it swims", () => {
     }
     assert.ok(checked > 1000);
   }
+});
+
+test("a fish is opaque where it encloses, and mostly opaque at its rim", () => {
+  const interior = new Set(["(", ")", "o", "O"]);
+  const rim = new Set(["_", "-"]);
+  for (const sprite of individualSprites) {
+    let rimGlyphs = 0;
+    let rimBacked = 0;
+    for (const facing of ["right", "left"]) {
+      for (const phase of [0, 1.1, 2.4, 4]) {
+        const scene = renderSpriteScene(sprite, { facing, phase });
+        const object = objectByPrefix(scene, "lab:");
+        for (const glyph of glyphsForObject(scene, object)) {
+          if (!interior.has(glyph.char) && !rim.has(glyph.char)) continue;
+          const covered = backsGlyph(object, glyph);
+          // Nothing may read through the middle of a fish. This is the whole
+          // point of the body, and it is checked against real ink because `_`
+          // draws along the bottom of its cell rather than across its centre.
+          if (interior.has(glyph.char)) {
+            assert.ok(covered, sprite.id + " is see-through at '" + glyph.char + "'");
+          }
+          if (rim.has(glyph.char)) {
+            rimGlyphs += 1;
+            if (covered) rimBacked += 1;
+          }
+        }
+      }
+    }
+    // The roof and belly sit on the body's own edge, so most of each has to be
+    // backed - but not all of it. Chasing the last few pixels there is what
+    // squares the silhouette into a box, and the fish have to look like fish.
+    if (rimGlyphs > 0) {
+      assert.ok(rimBacked / rimGlyphs >= 0.7,
+        sprite.id + " backs only " + rimBacked + " of " + rimGlyphs + " roof and belly strokes");
+    }
+  }
+});
+
+test("a fish body stays rounded rather than squaring off into a block", () => {
+  for (const sprite of individualSprites) {
+    const object = objectByPrefix(renderSpriteScene(sprite, { facing: "right", phase: 0 }), "lab:");
+    const widths = object.fill.map((span) => span.width);
+    const narrowest = Math.min(...widths);
+    const widest = Math.max(...widths);
+    // A body that never narrows is a rectangle. It backs a few more pixels of
+    // the outermost strokes and it looks it, so the taper is a requirement.
+    assert.ok(narrowest <= widest * 0.85,
+      sprite.id + " tapers from " + widest + " only to " + narrowest);
+  }
+});
+
+test("the tail is left open at the trailing edge of every sprite", () => {
+  for (const sprite of individualSprites) {
+    for (const facing of ["right", "left"]) {
+      const scene = renderSpriteScene(sprite, { facing, phase: 0 });
+      const object = objectByPrefix(scene, "lab:");
+      const glyphs = glyphsForObject(scene, object);
+      // Sprites are authored facing right, so the tail trails the direction of
+      // travel. Its outermost glyph must have bare water behind it: a body
+      // reaching into the tail reads as one blunt mass rather than as a fish.
+      const trailing = glyphs.reduce((furthest, glyph) => (facing === "right"
+        ? (glyph.x < furthest.x ? glyph : furthest)
+        : (glyph.x > furthest.x ? glyph : furthest)), glyphs[0]);
+      assert.equal(backsGlyph(object, trailing), false, sprite.id + " backs its tail glyph '" + trailing.char + "'");
+    }
+  }
+});
+
+test("fins are left outside the body so they keep an open silhouette", () => {
+  // A body swollen to cover the fins reads as a blob with a fish drawn on it.
+  const scene = renderSpriteScene(individualSprites[1], { facing: "right", phase: 0 });
+  const object = objectByPrefix(scene, "lab:");
+  const strokes = glyphsForObject(scene, object).filter((glyph) => glyph.char === "/" || glyph.char === "\\");
+  const outside = strokes.filter((glyph) => !backsGlyph(object, glyph));
+  assert.ok(outside.length > 0, "every stroke was swallowed by the body");
+});
+
+test("a fish body is shaded from the band it is actually swimming in", () => {
+  for (const orientation of ["portrait", "landscape"]) {
+    const base = createAquariumState({ orientation, seed: 3, wallClockHours: 12 });
+    const palette = scenePalette(base);
+    const cellHeight = orientationConfig(orientation).pixelHeight / base.rows;
+    let checked = 0;
+    for (let worldY = 2.5; worldY < base.rows - 4; worldY += 0.25) {
+      const scene = render({
+        ...base,
+        individuals: base.individuals.map((fish, index) => index === 0 ? { ...fish, y: worldY } : fish),
+      });
+      const bands = scene.background.bands;
+      const band = bands.findIndex((candidate) => worldY * cellHeight < candidate.y + candidate.height);
+      assert.ok(band >= 0);
+      for (const span of objectByPrefix(scene, "individual:0:").fill) {
+        assert.equal(span.color, palette.bodyFills[band], "wrong band companion at y " + worldY);
+      }
+      checked += 1;
+    }
+    assert.ok(checked > 20);
+  }
+});
+
+test("a fish body repaints whenever its painted pixels move", () => {
+  let state = createAquariumState({ orientation: "portrait", seed: 5, wallClockHours: 12 });
+  const previous = new Map();
+  let repaints = 0;
+  for (let frame = 0; frame < 300; frame += 1) {
+    state = tick(state, 0.1);
+    const scene = render(state);
+    for (const object of scene.objects.filter((candidate) => candidate.id.startsWith("individual:"))) {
+      for (const span of object.fill) {
+        // The renderer hands these straight to fillRect while the damage
+        // signature hashes them rounded, so a fractional edge could shift the
+        // painted coverage without the object ever being repainted.
+        assert.ok(Number.isInteger(span.x) && Number.isInteger(span.y), "fractional span origin");
+        assert.ok(Number.isInteger(span.width) && Number.isInteger(span.height), "fractional span size");
+      }
+      const before = previous.get(object.id);
+      if (before && before.signature === object.signature) {
+        assert.deepEqual(before.fill, object.fill, object.id + " moved its body without changing signature");
+      }
+      if (before && before.signature !== object.signature) repaints += 1;
+      previous.set(object.id, object);
+    }
+  }
+  assert.ok(repaints > 100, "expected the school to keep moving");
 });
 
 test("a moved fish repaints its body as well as its glyphs", () => {

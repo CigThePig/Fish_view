@@ -24,7 +24,12 @@ persistent simulation.
   twilight so dusk never drains to grey.
 - Opaque fish: each individual carries a body of horizontal spans behind its
   strokes, so plants, water bands, and other fish stop reading straight through
-  it. Fins stay outside the body and keep their open ASCII silhouette.
+  it. The body is fitted to each sprite's own artwork and to the real ink of the
+  glyphs that draw it, so it hugs the fish instead of its bounding box. It covers
+  the main body only: fins and the tail are left outside and keep their open
+  ASCII silhouette. The silhouette stays a soft ellipse rather than squaring off
+  to catch the last few pixels of a roof stroke, because the fish have to look
+  like fish.
 - Free-floating bitmap glyphs: individuals flex through a coherent body wave,
   school fish glide between former cells, plants bend as linked typographic
   stems, and sparse bubbles rise independently of text rows.
@@ -80,7 +85,9 @@ ASCII character becomes an independent glyph command with continuous physical
 coordinates, a bitmap scale, colour, and layer. A scene object may also carry
 `fill`: opaque spans painted under its own glyphs, which is how a fish occludes
 what swims behind it. Nine spans per fish keeps the whole school inside one
-filled-rectangle budget an ESP32 panel driver can meet. The logical 40×33 and
+filled-rectangle budget an ESP32 panel driver can meet, and spans arrive snapped
+to whole pixels, at the same precision the damage signature hashes and the
+backend paints. The logical 40×33 and
 66×20 layouts remain useful for simulation and art authoring, but no longer snap
 motion or limit the physical panel to cell multiples.
 
