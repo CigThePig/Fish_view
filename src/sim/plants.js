@@ -4,6 +4,7 @@ import {
   RARE_PLANT_IDS,
 } from "../art/plants.js";
 import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
+import { plantRootY } from "./environment.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 const TAU = Math.PI * 2;
@@ -242,7 +243,7 @@ function touchDisturbance(plant, state) {
 
 function fishDisturbance(plant, state, species) {
   if (species.layer === "background" || !Array.isArray(state.individuals)) return 0;
-  const rootY = state.rows - SUBSTRATE_ROWS + 0.18;
+  const rootY = plantRootY(state, plant.x);
   const canopyY = rootY - plant.matureHeight * 0.52;
   const radius = 2.8 + plant.matureHeight * 0.16;
   let influence = 0;
@@ -274,7 +275,7 @@ export function posePlant(plant, state, {
   const species = plantSpecies(plant);
   const posedPlant = ageDays === plant.ageDays ? plant : { ...plant, ageDays };
   const growth = plantGrowthState(posedPlant, species);
-  const rootY = state.rows - SUBSTRATE_ROWS + 0.18;
+  const rootY = plantRootY(state, plant.x);
   const points = new Array(species.joints.length).fill(null);
   points[0] = {
     index: 0,
