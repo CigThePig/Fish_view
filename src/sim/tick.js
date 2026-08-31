@@ -1,4 +1,12 @@
-import { DRIVE_MAXIMUM, DRIVE_MINIMUM, SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
+import {
+  DRIVE_MAXIMUM,
+  DRIVE_MINIMUM,
+  MAX_DRIVE_HOURS_PER_REAL_SECOND,
+  MIN_BEHAVIOR_REAL_SECONDS,
+  MIN_BEHAVIOR_SIM_SECONDS,
+  SUBSTRATE_ROWS,
+  WATERLINE_ROWS,
+} from "./config.js";
 import { clamp, createSchoolFish, spriteForSeed, traitsFromSeed } from "./entities.js";
 import { createBubbleWorldRecords } from "./bubbles.js";
 import {
@@ -68,7 +76,7 @@ function tickSchool(state, realDelta, motionScale) {
   const source = reconcileSchool(state);
   const top = WATERLINE_ROWS + 0.65;
   const bottom = state.rows - SUBSTRATE_ROWS - 0.65;
-  const centerY = top + (bottom - top) * (0.5 + Math.sin(state.elapsedSimSeconds / 94) * 0.055);
+  const centerY = top + (bottom - top) * (0.5 + Math.sin(state.elapsedRealSeconds / 94) * 0.055);
   const maxSpeed = state.settings.schoolSpeed * motionScale;
   const minimumSpeed = Math.max(0.24, maxSpeed * 0.42);
   const reactionStrength = state.reaction ? 1.8 * (1 - state.reaction.ageSeconds / state.reaction.durationSeconds) : 0;
@@ -269,7 +277,9 @@ function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0) {
 function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta, motionScale) {
   const traits = traitsFromSeed(fish.seed, fish.history);
   const affinities = affinitiesFromSeed(fish.seed);
-  const deltaHours = simDelta / 3600;
+  // See MAX_DRIVE_HOURS_PER_REAL_SECOND: appetite may not outrun the swimming
+  // the fish has to do about it.
+  const deltaHours = Math.min(simDelta / 3600, realDelta * MAX_DRIVE_HOURS_PER_REAL_SECOND);
   const daylight = daylightFactor(state.timeOfDayHours);
   const currentForage = forageActivity(fish, index, state);
   const hungerRelief = currentForage.searching
@@ -294,15 +304,25 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   let behavior = {
     ...fish.behavior,
     ageSeconds: fish.behavior.ageSeconds + simDelta,
+    ageRealSeconds: (fish.behavior.ageRealSeconds ?? 0) + realDelta,
     blend: clamp(fish.behavior.blend + realDelta / 1.8, 0, 1),
   };
   const allowForage = forageEligible(index);
   if (!allowForage && behavior.current === "forage") {
-    behavior = { current: "cruise", previous: "forage", blend: 0, ageSeconds: 0 };
+    behavior = { current: "cruise", previous: "forage", blend: 0, ageSeconds: 0, ageRealSeconds: 0 };
   }
   const candidate = selectBehavior({ ...fish, drives, behavior }, state, traits, allowForage);
-  if (candidate !== behavior.current && behavior.ageSeconds >= 38 && behavior.blend >= 1) {
-    behavior = { current: candidate, previous: behavior.current, blend: 0, ageSeconds: 0 };
+  const settled = behavior.ageSeconds >= MIN_BEHAVIOR_SIM_SECONDS
+    && behavior.ageRealSeconds >= MIN_BEHAVIOR_REAL_SECONDS
+    && behavior.blend >= 1;
+  if (candidate !== behavior.current && settled) {
+    behavior = {
+      current: candidate,
+      previous: behavior.current,
+      blend: 0,
+      ageSeconds: 0,
+      ageRealSeconds: 0,
+    };
   }
 
   const fishWithBehavior = { ...fish, drives, behavior };

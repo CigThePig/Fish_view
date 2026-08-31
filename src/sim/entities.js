@@ -1,5 +1,5 @@
 import { individualSprites } from "../art/sprites.js";
-import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
+import { MIN_BEHAVIOR_REAL_SECONDS, SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 export function clamp(value, minimum, maximum) {
@@ -67,6 +67,7 @@ export function createIndividual(baseSeed, index, cols, rows) {
       previous: "cruise",
       blend: 1,
       ageSeconds: sampleRange(seed, 14, 0, 40),
+      ageRealSeconds: sampleRange(seed, 16, 0, MIN_BEHAVIOR_REAL_SECONDS),
     },
     activity: {
       current: "cruise",

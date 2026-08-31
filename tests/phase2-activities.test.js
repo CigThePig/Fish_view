@@ -94,7 +94,9 @@ test("surface affinity modifies the existing eligible surface opportunity", () =
   for (let seconds = 0; seconds < 240; seconds += 0.5) {
     const state = {
       ...base,
+      // The surface opportunity window is a locomotion cycle on real seconds.
       elapsedSimSeconds: seconds,
+      elapsedRealSeconds: seconds,
       individuals: base.individuals.map((value, index) => index === 4 ? fish : value),
     };
     const low = activityUtilities(fish, 4, state, { affinities: affinities({ surface: 0.15 }) });

@@ -274,7 +274,8 @@ test("active forage pecks emit one tiny deterministic debris object and approach
     const candidate = {
       ...original,
       x: 25,
-      behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: age },
+      // The peck cadence is an animation, so it advances on real seconds.
+      behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: age, ageRealSeconds: age },
     };
     candidate.y = substrateSafeY(candidate, base, candidate.x);
     const activity = forageActivity(candidate, index, base);

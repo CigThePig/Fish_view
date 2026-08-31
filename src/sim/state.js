@@ -227,6 +227,7 @@ export function restorePersistentState(baseState, saved) {
         previous: previousBehavior,
         blend: clamp(finite(fish.behavior?.blend, 1), 0, 1),
         ageSeconds: Math.max(0, finite(fish.behavior?.ageSeconds, 0)),
+        ageRealSeconds: Math.max(0, finite(fish.behavior?.ageRealSeconds, 0)),
       },
       // Activity targets are visual intentions, not durable biology. Rebuild a
       // safe broad-behavior default instead of resuming yesterday's bubble or

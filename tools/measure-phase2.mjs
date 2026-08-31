@@ -46,7 +46,7 @@ function forceBubbleHeavy(state) {
         ...fish,
         x: Math.max(4, Math.min(state.cols - 4, target.worldX + (index % 2 ? 0.7 : -0.7))),
         y: Math.max(3, Math.min(state.rows - 5, target.worldY + (index % 3 - 1) * 0.35)),
-        behavior: { current: "explore", previous: fish.behavior.current, blend: 0, ageSeconds: 0 },
+        behavior: { current: "explore", previous: fish.behavior.current, blend: 0, ageSeconds: 0, ageRealSeconds: 0 },
         activity: {
           current: "bubble-investigate",
           previous: fish.activity?.current ?? "open-water-wander",
@@ -74,7 +74,7 @@ function forcePlantSocialHeavy(state) {
         ? state.cols * 0.42 + index * 0.7
         : plant.x + (index % 2 ? 0.8 : -0.8))),
       y: social ? state.rows * 0.48 : Math.max(4, state.rows - 6 - (index % 2) * 0.6),
-      behavior: { current: social ? "social" : "rest", previous: fish.behavior.current, blend: 0, ageSeconds: 0 },
+      behavior: { current: social ? "social" : "rest", previous: fish.behavior.current, blend: 0, ageSeconds: 0, ageRealSeconds: 0 },
       activity: social
         ? {
           current: "companion-cruise",

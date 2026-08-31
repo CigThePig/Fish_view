@@ -30,7 +30,7 @@ function forceForage(state) {
   const source = state.individuals[index];
   const fish = {
     ...source,
-    behavior: { current: "forage", previous: source.behavior.current, blend: 0, ageSeconds: 0 },
+    behavior: { current: "forage", previous: source.behavior.current, blend: 0, ageSeconds: 0, ageRealSeconds: 0 },
     visual: { ...source.visual, pitch: 0, targetPitch: 0 },
   };
   fish.y = fishMotion.substrateSafeY(fish, state, fish.x);
