@@ -96,7 +96,10 @@ export function addGlyphObject(builder, { id, layer, glyphs, padding = 1, fill =
   const visible = glyphs
     .filter((glyph) => glyph.char && glyph.char !== " ")
     .map((glyph) => ({ ...glyph, layer }));
-  if (!visible.length) return null;
+  // An object may be pure fill. The water surface is painted as spans that cut
+  // the air/water edge along the swell, and a stretch of it carrying no ripple
+  // glyph still has to reach the framebuffer.
+  if (!visible.length && !fill.length) return null;
   const glyphStart = builder.glyphs.length;
   builder.glyphs.push(...visible);
   const object = {

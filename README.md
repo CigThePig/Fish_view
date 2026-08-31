@@ -34,6 +34,13 @@ persistent simulation.
   through the water in tilted shafts that lean with the sun, the floor recedes
   towards the water it meets, and the left and right edges fall away so the
   water reads as a volume with a front pane.
+- A real water surface. The air/water boundary used to be the straight top edge
+  of the first water band with a handful of `~` glyphs floating above it. It is
+  now a travelling swell of three unrelated wavelengths, painted as narrow
+  columns that carry water up over every crest and open the air behind every
+  trough, with a lit meniscus riding the cut that brightens where the crest
+  stands highest. The ripple glyphs sit on that same swell and drift along it,
+  so the top of the tank reads as moving water rather than as a ruled line.
 - Opaque fish: each individual carries a body of horizontal spans behind its
   strokes, so plants, water bands, and other fish stop reading straight through
   it. The body is fitted to each sprite's own artwork and to the real ink of the
@@ -140,8 +147,12 @@ and 139 - well under the dithered band transitions, which remain the most
 expensive thing in the background. The shafts lean with the sun on their own
 two-hour stage clock, so they add 12 whole-field repaints a simulated day beside
 the 12 the palette already spends, and none during ordinary animation. Measured
-over 200 frames at 10 fps, damage is 22.7% of the landscape framebuffer and
-35.1% of portrait, which is where it was before the depth axis existed.
+over 200 frames at 10 fps, damage is 25.2% of the landscape framebuffer and
+37.2% of portrait, against 20.9% and 34.7% for the same run before the water
+surface started moving. That strip is the whole difference: the surface is
+re-cut across the full width every frame, and about 15 rows of pixels have to
+be repainted for it, which is the price of the boundary being water instead of
+the edge of a band.
 
 ## Skeletal plants and ESP32 portability
 

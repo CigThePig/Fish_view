@@ -7,7 +7,13 @@ import {
   substrateArt,
 } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
-import { SUBSTRATE_RELIEF_ROWS, SURFACE_Y_ROWS, substrateSurfaceY } from "../sim/environment.js";
+import {
+  SUBSTRATE_RELIEF_ROWS,
+  SURFACE_WAVE_ROWS,
+  SURFACE_Y_ROWS,
+  substrateSurfaceY,
+  surfaceWaveOffset,
+} from "../sim/environment.js";
 import { spriteForSeed } from "../sim/entities.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
@@ -87,6 +93,29 @@ const FLOOR_LIFT = 0.5;
 const EDGE_STEPS = 3;
 const EDGE_FRACTION = 0.12;
 const EDGE_STRENGTH = 0.3;
+// The water surface is re-cut along the swell one narrow column at a time, the
+// same trick the terrain crest uses at the other end of the tank. Four pixels
+// is fine enough that the crest never steps visibly and coarse enough that a
+// whole surface costs about as many rectangles as the floor does.
+const SURFACE_SAMPLE_PX = 4;
+// Damage granularity along the surface. The swell moves every frame, so this
+// only decides how few, how wide the repainted strips are.
+const SURFACE_CHUNK_PX = 120;
+// The lit meniscus and the sunlit water immediately under it.
+const SURFACE_INK_PX = 2;
+const SURFACE_SKIN_PX = 3;
+const SURFACE_SHEEN_FLOOR = 0.16;
+const SURFACE_SHEEN_GAIN = 0.52;
+const SURFACE_SKIN_FLOOR = 0.05;
+const SURFACE_SKIN_GAIN = 0.13;
+// A slow travelling brightness that breaks the meniscus into glints instead of
+// leaving it an even ribbon.
+const SURFACE_GLINT_SPAN = 6.7;
+const SURFACE_GLINT_DRIFT = 0.38;
+// Surface chop, in glyphs. Spaced closely enough to read as one broken line.
+const SURFACE_RIPPLE_SPACING = 3.6;
+const SURFACE_RIPPLE_DRIFT = 0.18;
+const SURFACE_RIPPLE_DROP = 0.5;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -431,31 +460,103 @@ function builderForState(state, palette) {
   });
 }
 
-function drawWaterline(builder, state, palette, metrics) {
+// The water surface is painted, not merely decorated. The background stops the
+// water band at a straight edge because a rectangle is all a panel driver
+// understands cheaply; this pass then re-cuts that edge along the swell,
+// carrying water above the line at every crest and uncovering air below it in
+// every trough. A lit meniscus rides the cut, brightest where the crest stands
+// highest, so the boundary reads as a moving surface rather than a ruled line.
+function drawSurface(builder, state, palette, metrics) {
+  const width = builder.width;
+  const baseTop = Math.round(SURFACE_Y_ROWS * metrics.cellHeight);
+  const bandColor = palette.waterBands[0];
+  const sampleCount = Math.max(1, Math.round(width / SURFACE_SAMPLE_PX));
+  const chunkCount = Math.max(1, Math.round(width / SURFACE_CHUNK_PX));
   const chunks = new Map();
-  const spacing = 2.25;
-  const count = Math.ceil(state.cols / spacing);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const left = Math.round((index * width) / sampleCount);
+    const right = Math.round(((index + 1) * width) / sampleCount);
+    if (right <= left) continue;
+    const centerX = (left + right) / 2;
+    const worldX = centerX / metrics.cellWidth;
+    const offset = surfaceWaveOffset(state, worldX);
+    const top = Math.round((SURFACE_Y_ROWS + offset) * metrics.cellHeight);
+    // 1 on the highest crest, 0 in the deepest trough. Light collects on the
+    // crests, which is the whole reason the swell is visible at all.
+    const crest = clamp(-offset / SURFACE_WAVE_ROWS, -1, 1) * 0.5 + 0.5;
+    const glint = 0.5 + 0.5 * Math.sin(
+      ((worldX - state.elapsedRealSeconds * SURFACE_GLINT_DRIFT) / SURFACE_GLINT_SPAN) * TAU,
+    );
+    // The side falloff is already painted into the band underneath, so the
+    // columns that replace it have to carry the same dimming.
+    const dim = edgeAmount(centerX, width);
+    const water = mixColor(bandColor, palette.edge, dim);
+    const ink = mixColor(palette.waterline, palette.edge, dim);
+    const key = Math.min(chunkCount - 1, Math.floor((centerX / width) * chunkCount));
+    if (!chunks.has(key)) chunks.set(key, []);
+    const fill = chunks.get(key);
+    const span = { x: left, width: right - left };
+
+    if (top < baseTop) {
+      // A crest stands up into the air strip, so the water follows it up.
+      fill.push({ ...span, y: top, height: baseTop - top, color: water });
+    } else if (top > baseTop) {
+      // A trough drops below where the band begins, uncovering the air behind.
+      fill.push({ ...span, y: baseTop, height: top - baseTop, color: palette.airBg });
+    }
+    // Light reaches a little way into the water it enters. Without this the
+    // meniscus sits on the band like a decal instead of belonging to it.
+    fill.push({
+      ...span,
+      y: top + SURFACE_INK_PX,
+      height: SURFACE_SKIN_PX,
+      color: mixColor(water, ink, SURFACE_SKIN_FLOOR + SURFACE_SKIN_GAIN * crest),
+    });
+    fill.push({
+      ...span,
+      y: top,
+      height: SURFACE_INK_PX,
+      color: mixColor(water, ink, SURFACE_SHEEN_FLOOR + SURFACE_SHEEN_GAIN * crest * (0.4 + 0.6 * glint)),
+    });
+  }
+
+  for (const [key, fill] of chunks) {
+    addGlyphObject(builder, { id: `surface:${key}`, layer: LAYERS.waterline, glyphs: [], fill });
+  }
+}
+
+// Ripple marks are the ASCII half of the surface. They ride the same swell the
+// meniscus is cut from and drift along with the water, so they read as chop on
+// one surface instead of as glyphs scattered near the top of the field. Each
+// is its own object: they are sparse, and a shared chunk would make every one
+// of them repaint a band the full width of that chunk.
+function drawSurfaceRipples(builder, state, palette, metrics) {
+  const count = Math.ceil(state.cols / SURFACE_RIPPLE_SPACING);
+  const span = count * SURFACE_RIPPLE_SPACING;
   for (let index = 0; index < count; index += 1) {
     if (sample01(state.seed, 1050 + index) > 0.74) continue;
-    const worldX = 0.45 + index * spacing + sampleSigned(state.seed, 1100 + index) * 0.26;
+    const drift = sampleRange(state.seed, 1150 + index, 0.7, 1.3) * SURFACE_RIPPLE_DRIFT;
+    const anchor = index * SURFACE_RIPPLE_SPACING
+      + sampleRange(state.seed, 1100 + index, 0.3, SURFACE_RIPPLE_SPACING - 0.3);
+    const worldX = positiveModulo(anchor + state.elapsedRealSeconds * drift, span);
     if (worldX >= state.cols) continue;
-    const wave = Math.sin(state.elapsedRealSeconds * 0.38 + worldX * 0.29 + sampleRange(state.seed, 1200 + index, 0, TAU));
-    const worldY = SURFACE_Y_ROWS + wave * 0.055 + sampleSigned(state.seed, 1300 + index) * 0.025;
+    const offset = surfaceWaveOffset(state, worldX);
     const shape = sample01(state.seed, 1350 + index);
-    const char = shape < 0.12 ? "'" : shape < 0.27 ? "_" : shape < 0.35 ? "^" : "~";
-    const chunk = Math.floor(worldX / 9);
-    if (!chunks.has(chunk)) chunks.set(chunk, []);
-    chunks.get(chunk).push(positionedGlyph(metrics, {
-      char,
-      worldX,
-      worldY: char === "'" ? worldY + 0.22 : worldY,
-      fg: palette.waterline,
-      scaleX: char === "'" ? 0.7 : char === "_" ? 0.86 : 0.9,
-      scaleY: char === "'" ? 0.7 : 0.84,
-    }));
-  }
-  for (const [chunk, glyphs] of chunks) {
-    addGlyphObject(builder, { id: `waterline:${chunk}`, layer: LAYERS.waterline, glyphs });
+    const char = shape < 0.52 ? "~" : shape < 0.84 ? "-" : "_";
+    addGlyphObject(builder, {
+      id: `waterline:${index}`,
+      layer: LAYERS.waterline,
+      glyphs: [positionedGlyph(metrics, {
+        char,
+        worldX,
+        worldY: SURFACE_Y_ROWS + offset + SURFACE_RIPPLE_DROP,
+        // Dimmer than the meniscus above it: the chop is texture, not the edge.
+        fg: mixColor(palette.waterBands[0], palette.waterline, 0.52 + 0.32 * clamp(-offset / SURFACE_WAVE_ROWS, 0, 1)),
+        scaleX: char === "~" ? 0.95 : 0.78,
+        scaleY: 0.84,
+      })],
+    });
   }
 }
 
@@ -862,7 +963,8 @@ export function render(state, { deformationStrength = 1 } = {}) {
   const plantFrame = createPlantRenderRecords(state, palette, metrics);
   builder.metadata.plants = plantFrame.diagnostics;
 
-  drawWaterline(builder, state, palette, metrics);
+  drawSurface(builder, state, palette, metrics);
+  drawSurfaceRipples(builder, state, palette, metrics);
   for (const record of plantFrame.records) {
     if (record.layerName === "background") addPlantRecord(builder, record, LAYERS.backgroundPlants);
     if (record.layerName === "midground") addPlantRecord(builder, record, LAYERS.midgroundPlants);
