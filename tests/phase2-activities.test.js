@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
+import { DRIVE_MAXIMUM } from "../src/sim/config.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
 import {
   ACTIVITIES,
@@ -93,7 +94,9 @@ test("surface affinity modifies the existing eligible surface opportunity", () =
   for (let seconds = 0; seconds < 240; seconds += 0.5) {
     const state = {
       ...base,
+      // The surface opportunity window is a locomotion cycle on real seconds.
       elapsedSimSeconds: seconds,
+      elapsedRealSeconds: seconds,
       individuals: base.individuals.map((value, index) => index === 4 ? fish : value),
     };
     const low = activityUtilities(fish, 4, state, { affinities: affinities({ surface: 0.15 }) });
@@ -443,4 +446,60 @@ test("a valid live bubble target remains stable while its world position moves",
   const next = tick(state, 0.1).individuals[index];
   assert.equal(next.activity.current, ACTIVITIES.bubbleInvestigate);
   assert.equal(next.activity.targetId, target.id);
+});
+
+test("a starving fish suppresses company and curiosity but never its need to rest", () => {
+  const state = createAquariumState({ orientation: "landscape", seed: 52, wallClockHours: 12 });
+  const template = state.individuals[4];
+  const traits = traitsFromSeed(template.seed, template.history);
+  const withHunger = (hunger) => ({
+    ...template,
+    drives: { ...template.drives, hunger, energy: 0.5 },
+    behavior: { ...template.behavior, current: "cruise" },
+  });
+
+  const comfortable = behaviorUtilities(withHunger(0.55), state, traits, true);
+  const starving = behaviorUtilities(withHunger(DRIVE_MAXIMUM), state, traits, true);
+  assert.ok(starving.social < comfortable.social);
+  assert.ok(starving.explore < comfortable.explore);
+  // Rest is exempt: a fish that cannot feed must still be able to settle rather
+  // than swim itself to exhaustion.
+  assert.ok(starving.rest >= comfortable.rest);
+
+  // The mid-water cast can never reach the substrate, so hunger must not damp
+  // it at all - suppressing its alternatives would only park it in rest. Its
+  // explore utility still carries the plain hunger term every fish has, so the
+  // comparison is against the same fish with damping applied.
+  const ineligible = behaviorUtilities(withHunger(DRIVE_MAXIMUM), state, traits, false);
+  assert.equal(ineligible.social, comfortable.social);
+  assert.ok(ineligible.social > starving.social);
+  assert.ok(ineligible.explore > starving.explore);
+});
+
+test("forage-eligible fish still feed once hunger reaches its ceiling", () => {
+  // Regression guard: hunger stops rising at DRIVE_MAXIMUM, so a fish whose
+  // saturated social drive permanently outbids forage stops eating for good.
+  let state = withSettings(
+    createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
+    { timeScale: 3600 },
+  );
+  const eligible = [3, 4, 5];
+  const fed = new Map(eligible.map((index) => [index, false]));
+  const starved = new Map(eligible.map((index) => [index, 0]));
+  const steps = 14400;
+
+  for (let step = 0; step < steps; step += 1) {
+    state = tick(state, 0.1);
+    for (const index of eligible) {
+      const hunger = state.individuals[index].drives.hunger;
+      if (hunger >= DRIVE_MAXIMUM - 1e-6) starved.set(index, starved.get(index) + 1);
+      else if (hunger < DRIVE_MAXIMUM - 0.05) fed.set(index, true);
+    }
+  }
+
+  for (const index of eligible) {
+    assert.ok(fed.get(index), `fish ${index} never fed across 60 simulated days`);
+    const pinned = starved.get(index) / steps;
+    assert.ok(pinned < 0.6, `fish ${index} sat at maximum hunger for ${(pinned * 100).toFixed(1)}% of the run`);
+  }
 });

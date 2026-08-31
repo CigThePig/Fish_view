@@ -474,7 +474,7 @@ function activityChoices(fish, index, state, {
     if (index >= 3) {
       const period = sampleRange(fish.seed, 2400, 72, 112);
       const offset = sampleRange(fish.seed, 2401, 0, period);
-      const cycle = positiveModulo(state.elapsedSimSeconds + offset, period) / period;
+      const cycle = positiveModulo(state.elapsedRealSeconds + offset, period) / period;
       const window = 0.06 + traits.curiosity * 0.07 + affinities.surface * 0.06;
       if (cycle <= window) {
         const point = waypointFor(fish, index, state, traits, affinities, "surface");
@@ -659,10 +659,10 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const forage = forageActivity(fish, index, state);
     const halfWidth = spriteHalfWidth(fish);
     const searchSpan = Math.min(6.8, state.cols * (0.065 + affinities.substrate * 0.055));
-    const searchPhase = fish.behavior.ageSeconds * (0.15 + traits.activity * 0.075)
+    const searchPhase = (fish.behavior.ageRealSeconds ?? 0) * (0.15 + traits.activity * 0.075)
       + sampleRange(fish.seed, 25, 0, TAU);
     const patchCenter = state.cols * (
-      0.5 + 0.34 * Math.sin(state.elapsedSimSeconds / 97 + sampleRange(fish.seed, 26, 0, TAU))
+      0.5 + 0.34 * Math.sin(state.elapsedRealSeconds / 97 + sampleRange(fish.seed, 26, 0, TAU))
     );
     const x = clamp(patchCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
     const dip = forage.searching ? forage.peck * 0.14 : 0;
@@ -693,7 +693,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
   const preferredY = top + Math.max(0, bottom - top) * traits.preferredDepth;
   return {
     x: fish.vx < 0 ? 0 : state.cols,
-    y: preferredY + Math.sin(state.elapsedSimSeconds / 33 + sampleRange(fish.seed, 23, 0, TAU)) * 0.8,
+    y: preferredY + Math.sin(state.elapsedRealSeconds / 33 + sampleRange(fish.seed, 23, 0, TAU)) * 0.8,
     speed: 0.2 + traits.activity * 0.32,
     postureBias: 0,
   };

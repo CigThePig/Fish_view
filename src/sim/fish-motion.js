@@ -79,7 +79,7 @@ export function forageActivity(fish, index, state) {
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 4.2, 6.6) * (1.08 - substrateAffinity * 0.24);
   const offset = sampleRange(fish.seed, 4601, 0, period);
-  const cycle = positiveModulo((fish.behavior?.ageSeconds ?? 0) + offset, period) / period;
+  const cycle = positiveModulo((fish.behavior?.ageRealSeconds ?? 0) + offset, period) / period;
   const peckPhase = searching && cycle < PECK_WINDOW ? cycle / PECK_WINDOW : null;
   const peck = peckPhase === null ? 0 : Math.sin(Math.PI * clamp(peckPhase, 0, 1));
 

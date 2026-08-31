@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { WATERLINE_ROWS } from "../src/sim/config.js";
+import { DRIVE_MAXIMUM, WATERLINE_ROWS } from "../src/sim/config.js";
+import { forageActivity } from "../src/sim/fish-motion.js";
 import {
   advanceOffline,
   applyTouch,
@@ -117,4 +118,55 @@ test("offline time advances the long horizon without simulating loss", () => {
   assert.equal(advanced.plants.length, state.plants.length);
   assert.ok(advanced.totalDays >= 14);
   assert.ok(advanced.plants[0].ageDays >= state.plants[0].ageDays + 14);
+});
+
+test("simulated speed does not change how a fish behaves in real time", () => {
+  // Hunger accrues on simulated time while answering it - swimming down to the
+  // substrate - costs real time. If the two are allowed to diverge, raising the
+  // time scale starves the cast and shreds the pace of behavior change, so the
+  // same real-time budget must produce the same life at any speed.
+  const sample = (timeScale) => {
+    let state = withSettings(
+      createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
+      { timeScale },
+    );
+    let previous = state.individuals.map((fish) => fish.behavior.current);
+    let switches = 0;
+    let searching = 0;
+    let starving = 0;
+    let samples = 0;
+
+    for (let step = 0; step < 6000; step += 1) {
+      state = tick(state, 0.1);
+      state.individuals.forEach((fish, index) => {
+        if (fish.behavior.current !== previous[index]) {
+          switches += 1;
+          previous[index] = fish.behavior.current;
+        }
+        if (index < 3) return;
+        samples += 1;
+        if (forageActivity(fish, index, state).searching) searching += 1;
+        if (fish.drives.hunger >= DRIVE_MAXIMUM - 1e-6) starving += 1;
+      });
+    }
+    return { switches, searching: searching / samples, starving: starving / samples };
+  };
+
+  const hourPerSecond = sample(3600);
+  for (const timeScale of [86400, 604800]) {
+    const fast = sample(timeScale);
+    assert.ok(
+      Math.abs(fast.searching - hourPerSecond.searching) < 0.03,
+      `feeding at ${timeScale}x drifted to ${(fast.searching * 100).toFixed(1)}% `
+        + `from ${(hourPerSecond.searching * 100).toFixed(1)}%`,
+    );
+    assert.ok(
+      Math.abs(fast.switches - hourPerSecond.switches) / hourPerSecond.switches < 0.3,
+      `behavior changed ${fast.switches} times at ${timeScale}x against ${hourPerSecond.switches} at 3600x`,
+    );
+    assert.ok(
+      fast.starving < 0.4,
+      `fish sat at maximum hunger ${(fast.starving * 100).toFixed(1)}% of the run at ${timeScale}x`,
+    );
+  }
 });

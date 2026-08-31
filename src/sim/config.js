@@ -31,6 +31,30 @@ export const SUBSTRATE_ROWS = 2;
 export const INDIVIDUAL_VISUAL_SCALE_MAX = 1.26;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
+// Drives never reach 0 or 1: a fish is never perfectly satisfied and never
+// starves to death. Behaviour selection has to account for the ceiling, because
+// a drive resting against it can no longer express that its need is still
+// growing.
+export const DRIVE_MINIMUM = 0.15;
+export const DRIVE_MAXIMUM = 0.85;
+
+// Biology only counts while a fish can still act on it. Hunger accrues on
+// simulated time, but answering it costs real time: reaching the substrate is a
+// swim, not a calculation. Left uncapped, an hour of appetite per rendered
+// frame outruns any amount of foraging and the whole cast starves at the fast
+// time scales. Drives therefore track simulated time up to this rate and no
+// faster, the same concession relationship learning already makes.
+export const MAX_DRIVE_HOURS_PER_REAL_SECOND = 1;
+
+// A behavior has to be held long enough for the fish to actually carry it out.
+// The simulated-seconds floor is the original commitment and still governs at
+// real time; the real-seconds floor keeps that commitment meaningful once
+// simulated time runs faster, where 38 simulated seconds elapse inside a single
+// frame and a fish would abandon foraging long before it finished descending.
+// Together they keep the pace of behavior change readable at every time scale.
+export const MIN_BEHAVIOR_SIM_SECONDS = 38;
+export const MIN_BEHAVIOR_REAL_SECONDS = 12;
+
 export const DEFAULT_SETTINGS = Object.freeze({
   timeScale: 1,
   schoolCount: 32,

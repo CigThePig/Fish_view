@@ -186,6 +186,35 @@ substrate affinity only changes the breadth and rhythm of its real terrain searc
 A tired bubble lover still rests. Touch remains an unconditional, immediate
 override for every fish and only uses glass affinity to vary speed and standoff.
 
+Drives are clamped to a band (`DRIVE_MINIMUM`/`DRIVE_MAXIMUM`) so a fish is never
+perfectly satisfied and never starves to death, which means a drive resting
+against the ceiling can no longer express that its need is still growing. Once
+hunger reaches that ceiling, forage utility plateaus, and an equally saturated
+social drive can outbid it indefinitely — the fish keeps choosing company and
+never eats again. Hunger past a comfort point therefore damps the behaviors that
+compete with feeding for the same active time (cruise, explore, social) rather
+than inflating forage past everything, which would also outrank rest and leave
+the fish exhausted. The damping applies only where foraging is reachable: the
+protected mid-water cast never forages, so suppressing its alternatives would
+buy nothing and simply park it in a permanent rest.
+
+Simulated and real time are deliberately separated. The world runs on simulated
+time: plants age, the clock advances, and daylight turns at whatever rate the
+time scale asks for. Everything a fish physically *does* runs on real time,
+because a fish answers hunger by swimming to the substrate, not by calculating.
+Locomotion phases — the foraging sweep and its patch drift, the cruise bob, the
+peck cadence, the surface-inspection window, the school's depth drift — are all
+driven by real seconds, matching the bubble world, and the minimum time a broad
+behavior is held has a real-seconds floor alongside its original simulated one.
+Drives themselves track simulated time only up to
+`MAX_DRIVE_HOURS_PER_REAL_SECOND`. Without that ceiling the two clocks diverge
+without bound: at a day or a week per second, appetite outruns any amount of
+foraging and the whole cast starves permanently while behavior changes several
+times a second. The trade is that the fast time scales advance the aquarium
+faster than they advance its inhabitants' bodies, which is the same concession
+relationship learning already makes — accelerated biology cannot manufacture
+hours of friendship, or hours of feeding, from a single rendered frame.
+
 Broad traits (`boldness`, `sociability`, `activity`, `preferredDepth`, and
 `curiosity`) remain the temperament model. The specific bubble, plant, school,
 glass, wander, surface, shelter, and substrate affinities are regenerated from
