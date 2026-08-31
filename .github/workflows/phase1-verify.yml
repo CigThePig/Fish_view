@@ -27,6 +27,13 @@ jobs:
             echo 'Renderer integration already present.'
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
+            python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tools/apply-phase1.mjs")
+          text = path.read_text()
+          text = text.replace("\\\\`", "\\`")
+          path.write_text(text)
+          PY
             sed -i 's#    // Using a separate front shoulder lets pointed fish close around .*#    // Using a separate front shoulder lets pointed fish close around the nose instead#' tools/apply-phase1.mjs
             node --check tools/apply-phase1.mjs
             node tools/apply-phase1.mjs
