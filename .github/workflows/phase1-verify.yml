@@ -1,8 +1,6 @@
-name: Verify Phase 1 fish behavior
+name: Finalize Phase 1 fish behavior
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [feat/phase1-readable-fish-behavior]
 
@@ -10,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  verify:
+  finalize:
     runs-on: ubuntu-latest
     steps:
       - name: Check out Phase 1 branch
@@ -19,59 +17,74 @@ jobs:
           ref: feat/phase1-readable-fish-behavior
           fetch-depth: 0
 
-      - name: Integrate authored typographic pitch poses once
+      - name: Finalize authored-pitch docs and remove staging helpers
         shell: bash
         run: |
-          if grep -q 'spriteId: source.id' src/render/render.js && grep -q 'authored pitch keeps the ASCII drawing compact' tests/phase1-pitch-render.test.js; then
-            echo 'Authored pitch integration already present.'
-          else
-            python3 - <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
 
           for filename in ['src/render/render.js', 'src/render/body-profile-lab.js']:
               path = Path(filename)
               text = path.read_text()
-              old_result = 'const result = Object.freeze({ width, height, points: Object.freeze(points) });'
-              new_result = 'const result = Object.freeze({ id: sprite.id, width, height, points: Object.freeze(points) });'
-              if old_result in text:
-                  text = text.replace(old_result, new_result, 1)
-              elif new_result not in text:
-                  raise SystemExit(f'missing spritePoints result in {filename}')
-
-              old_options = '''    facing,\n    pitch,\n    cellAspect,\n  });'''
-              new_options = '''    facing,\n    pitch,\n    cellAspect,\n    spriteId: source.id,\n    column,\n    row,\n    width: source.width,\n    height: source.height,\n  });'''
-              if old_options in text:
-                  text = text.replace(old_options, new_options, 1)
-              elif 'spriteId: source.id' not in text:
-                  raise SystemExit(f'missing pitch options in {filename}')
+              text = text.replace(
+                  '''      // A pitched vertical source slice becomes a small quadrilateral. Keep the\n      // production primitive axis-aligned by bounding those four posed corners\n      // with one fillRect. Nine source slices still means nine rectangles.''',
+                  '''      // An authored pitch pose gives the top and bottom of a source slice tiny\n      // different horizontal offsets, so the slice is still a small quadrilateral.\n      // Bound those four posed corners with one axis-aligned fillRect: nine source\n      // slices still means nine rectangles on the target device.''',
+                  1,
+              )
+              text = text.replace(
+                  '''      // Bounding a rotated vertical slice as a rectangle adds empty\n      // triangular corners. At the rear of the fish those corners can\n      // reach into the authored tail even though the ideal slice does\n      // not. Keep the full expansion through the body, but taper only\n      // the trailing-side AABB excess across the two rear slices.''',
+                  '''      // Bounding the slightly skewed authored slice as a rectangle still adds\n      // tiny empty corners. At the rear those corners can reach into the open\n      // ASCII tail, so taper only that trailing-side excess across the two rear\n      // slices while retaining full coverage through the enclosed body.''',
+                  1,
+              )
               path.write_text(text)
 
-          test_path = Path('tests/phase1-pitch-render.test.js')
-          tests = test_path.read_text()
-          old_test = '''test("physical pitch is stable across landscape, portrait, and motion-lab cell aspects", () => {\n  const sprite = individualSprites.find((candidate) => candidate.id === "round-fin");\n  assert.ok(sprite);\n  const lab = renderSpriteScene(sprite, { staticPose: true });\n  const modes = [\n    { name: "landscape", cellWidth: 800 / 66, cellHeight: 480 / 20 },\n    { name: "portrait", cellWidth: 480 / 40, cellHeight: 800 / 33 },\n    { name: "lab", cellWidth: lab.width / lab.logicalWidth, cellHeight: lab.height / lab.logicalHeight },\n  ];\n  for (const mode of modes) {\n    for (const facing of [1, -1]) {\n      const aspect = mode.cellHeight / mode.cellWidth;\n      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: aspect });\n      const pitched = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: aspect });\n      const levelAngle = angleDegrees(noseTailAxis(sprite, level, facing, mode.cellWidth, mode.cellHeight));\n      const pitchedAngle = angleDegrees(noseTailAxis(sprite, pitched, facing, mode.cellWidth, mode.cellHeight));\n      const delta = wrappedDelta(levelAngle, pitchedAngle);\n      const expected = facing > 0 ? 30 : -30;\n      assert.ok(Math.abs(delta - expected) < 0.75, `${mode.name}/${facing} rotated ${delta.toFixed(2)}° instead of ${expected}°`);\n    }\n  }\n});'''
-          new_test = '''test("authored pitch is aspect-stable without literally rotating the ASCII drawing", () => {\n  const sprite = individualSprites.find((candidate) => candidate.id === "round-fin");\n  assert.ok(sprite);\n  const lab = renderSpriteScene(sprite, { staticPose: true });\n  const modes = [\n    { name: "landscape", cellWidth: 800 / 66, cellHeight: 480 / 20 },\n    { name: "portrait", cellWidth: 480 / 40, cellHeight: 800 / 33 },\n    { name: "lab", cellWidth: lab.width / lab.logicalWidth, cellHeight: lab.height / lab.logicalHeight },\n  ];\n  const magnitudes = [];\n  for (const mode of modes) {\n    for (const facing of [1, -1]) {\n      const aspect = mode.cellHeight / mode.cellWidth;\n      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: aspect });\n      const pitched = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: aspect });\n      const levelAngle = angleDegrees(noseTailAxis(sprite, level, facing, mode.cellWidth, mode.cellHeight));\n      const pitchedAngle = angleDegrees(noseTailAxis(sprite, pitched, facing, mode.cellWidth, mode.cellHeight));\n      const delta = wrappedDelta(levelAngle, pitchedAngle);\n      assert.ok(delta * facing > 0, `${mode.name}/${facing} pitched in the wrong semantic direction`);\n      const magnitude = Math.abs(delta);\n      assert.ok(magnitude >= 11 && magnitude <= 17, `${mode.name}/${facing} authored pose was ${magnitude.toFixed(2)}°`);\n      magnitudes.push(magnitude);\n    }\n  }\n  assert.ok(Math.max(...magnitudes) - Math.min(...magnitudes) < 0.75);\n});\n\ntest("authored pitch keeps the ASCII drawing compact instead of scattering upright glyphs", () => {\n  for (const sprite of individualSprites) {\n    for (const facing of [1, -1]) {\n      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: 2 });\n      const strong = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: 2 });\n      assert.equal(level.length, strong.length);\n      for (let index = 0; index < level.length; index += 1) {\n        assert.ok(Math.abs(strong[index].y - level[index].y) <= 0.4, `${sprite.id} displaced a glyph by more than 0.4 rows`);\n        assert.ok(Math.abs(strong[index].x - level[index].x) <= 0.11, `${sprite.id} displaced a glyph sideways by more than 0.11 columns`);\n      }\n    }\n  }\n});'''
-          if old_test in tests:
-              tests = tests.replace(old_test, new_test, 1)
-          elif 'authored pitch keeps the ASCII drawing compact' not in tests:
-              raise SystemExit('missing old physical pitch regression')
-          test_path.write_text(tests)
-          PY
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add src/render/render.js src/render/body-profile-lab.js tests/phase1-pitch-render.test.js
-            git commit -m 'Integrate authored typographic pitch poses'
-            git push origin HEAD:feat/phase1-readable-fish-behavior
-          fi
+          sprites = Path('sprites.html')
+          sprite_text = sprites.read_text()
+          sprite_text = sprite_text.replace(
+              '<label>Pitch <output id="pitch-output">0°</output>',
+              '<label>Pitch intent <output id="pitch-output">0°</output>',
+              1,
+          )
+          sprites.write_text(sprite_text)
 
-      - name: Run full test suite
+          readme = Path('README.md')
+          text = readme.read_text()
+          old = '''World positions remain floating point through scene composition. Each visible\nASCII character becomes an independent glyph command with continuous physical\ncoordinates, a bitmap scale, colour, and layer. Individual glyph bitmaps remain\nupright and crisp when a fish pitches; the shared fish pose rotates only their\nanchors after facing, body wave, and turn compression. The transform first\nnormalizes logical X/Y by the current physical cell aspect, so the 12x24\nart-authoring proportions do not double the apparent angle in portrait,\nlandscape, or the motion lab. Positive simulation pitch always means nose-down,\nincluding after a fish mirrors to face left.\n\nThe opaque body passes through that exact same pose. Its nine calibrated source\nslices become nine axis-aligned bounding rectangles around the pitched slice\nquadrilaterals, preserving the ESP32-friendly fillRect budget instead of adding\npolygon rotation or a per-pixel mask. A level pitch takes the original integer\ngeometry path exactly, so existing profile calibration remains unchanged.'''
+          new = '''World positions remain floating point through scene composition. Each visible\nASCII character becomes an independent glyph command with continuous physical\ncoordinates, a bitmap scale, colour, and layer. Fish pitch deliberately does not\nrotate that whole coordinate plane: doing so left every bitmap glyph upright while\nscattering the authored drawing diagonally. Instead each of the six fish has a\ntiny strong-pitch pose table. The table supplies a hand-tuned rise for each source\ncolumn and a much smaller opposing lean for each source row, expressed in physical\ncell-width units. Continuous simulation pitch interpolates from the exact level art\ntowards those poses; a +/-30 degree intent reads as roughly a 14 degree typographic\nclimb or dive, and the renderer saturates there even though simulation state remains\nbounded to +/-32 degrees. This keeps neighbouring marks knitted together while\nstill making vertical travel obvious. Glyph bitmaps themselves remain upright and\ncrisp, positive pitch always means nose-down after either facing is applied, and\nphysical cell-aspect conversion keeps the cue consistent in portrait, landscape,\nand the motion lab.\n\nThe opaque body passes through that exact authored pose. Its nine calibrated source\nslices become nine axis-aligned bounding rectangles around the gently skewed slice\nquadrilaterals, preserving the ESP32-friendly fillRect budget instead of adding\npolygon rotation or a per-pixel mask. A level pitch takes the original integer\ngeometry path exactly, so existing profile calibration remains unchanged. The two\nrear slices trim only their trailing-side bounding-box excess during pitch so the\nopen ASCII tail is not swallowed at the most compressed turn pose.\n\nPhase 1 keeps the dirty-rectangle cost effectively flat. Over the repeatable 200-frame\n10 fps measurement, current `main` averaged 27.45% framebuffer damage in landscape\nand 37.74% in portrait; this branch averages 27.51% and 37.94% respectively. The\nlandscape maxima are 44.61% on `main` and 47.02% here, while portrait remains 75.24%\non both. Forced forage measures 27.44% average / 52.50% max in landscape and 34.63%\naverage / 56.46% max in portrait. Every scenario records zero full-frame redraws,\nand the maximum individual body fill count remains exactly nine rectangles before\nand after the change.'''
+          if old not in text:
+              raise SystemExit('README pitch architecture block not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              'with phase, pitch (-35°..+35°), turn compression, palette, deformation,',
+              'with phase, pitch intent (-35°..+35°), turn compression, palette, deformation,',
+              1,
+          )
+          readme.write_text(text)
+          PY
+
+          rm -f tools/apply-phase1.mjs
+          rm -f .github/workflows/phase1-verify.yml
+
+      - name: Run final full test suite
         run: npm test
 
-      - name: Measure current main baseline
+      - name: Recheck final Phase 1 damage budget
+        run: node tools/measure-phase1.mjs .
+
+      - name: Validate static Pages entry points and diff hygiene
         shell: bash
         run: |
-          rm -rf /tmp/fish-view-main
-          git worktree add --detach /tmp/fish-view-main origin/main
-          node tools/measure-phase1.mjs /tmp/fish-view-main
+          test -f index.html
+          test -f sprites.html
+          test -f plants.html
+          test -f src/app.js
+          git diff --check
 
-      - name: Measure Phase 1 branch
-        run: node tools/measure-phase1.mjs .
+      - name: Commit final cleanup
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Finalize Phase 1 authored pitch implementation'
+          git push origin HEAD:feat/phase1-readable-fish-behavior
