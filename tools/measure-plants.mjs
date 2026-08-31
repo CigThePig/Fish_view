@@ -4,6 +4,7 @@ import { createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
 const SEEDS = [5, 29, 83, 147, 818];
+const DAMAGE_REGRESSION_SEEDS = [5, 83, 147];
 const FRAMES = 200;
 const DT = 0.1;
 
@@ -21,6 +22,21 @@ function summarize(values) {
     maximum: Math.max(...values),
     average: values.reduce((sum, value) => sum + value, 0) / values.length,
   };
+}
+
+function regressionDamagePercent(orientation) {
+  return DAMAGE_REGRESSION_SEEDS.map((seed) => {
+    let state = matureState(orientation, seed);
+    for (let frame = 0; frame < 20; frame += 1) state = tick(state, DT);
+    const before = render(state);
+    const damage = calculateDamage(before, render(tick(state, DT)));
+    return {
+      seed,
+      percent: damage.area / damage.total * 100,
+      dirtyRectangles: damage.rects.length,
+      full: damage.full,
+    };
+  });
 }
 
 function measureOrientation(orientation) {
@@ -59,6 +75,7 @@ function measureOrientation(orientation) {
     },
     dirtyRectangles: summarize(dirtyRectangles),
     fullRedraws,
+    regressionDamageSample: regressionDamagePercent(orientation),
   };
 }
 
