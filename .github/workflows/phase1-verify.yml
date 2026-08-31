@@ -1,6 +1,8 @@
 name: Verify Phase 1 fish behavior
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [feat/phase1-readable-fish-behavior]
 
@@ -14,6 +16,7 @@ jobs:
       - name: Check out Phase 1 branch
         uses: actions/checkout@v6
         with:
+          ref: feat/phase1-readable-fish-behavior
           fetch-depth: 0
 
       - name: Apply staged renderer and lab integration once
