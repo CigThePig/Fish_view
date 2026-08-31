@@ -18,6 +18,7 @@ const BIN_X = 8;
 const BIN_Y = 16;
 
 function plot(canvas, x, y, char) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   const row = Math.max(0, Math.min(canvas.length - 1, Math.floor(y / BIN_Y)));
   const column = Math.max(0, Math.min(canvas[0].length - 1, Math.floor(x / BIN_X)));
   canvas[row][column] = char;
@@ -49,7 +50,7 @@ function snapshot(speciesId, orientation = "landscape") {
   const objects = scene.objects.filter((object) => object.id.startsWith("plant-lab:"));
   for (const object of objects) {
     for (const glyph of glyphsForObject(scene, object)) {
-      plot(canvas, glyph.x + glyph.width / 2, glyph.y + glyph.height / 2, glyph.char);
+      plot(canvas, glyph.x, glyph.y, glyph.char);
     }
   }
 
