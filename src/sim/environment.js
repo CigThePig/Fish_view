@@ -24,8 +24,19 @@ const SURFACE_WAVES = Object.freeze([
 ]);
 
 // The whole swell has to fit inside the air strip above SURFACE_Y_ROWS, so the
-// renderer sizes its crest fills from the same total the waves can reach.
+// renderer sizes its crest fills from the same total the waves can reach. The
+// slope and curvature ceilings normalize the refraction the sun shafts take
+// from the surface, so a tuning change to the waves cannot quietly rescale how
+// hard the light bends.
 export const SURFACE_WAVE_ROWS = SURFACE_WAVES.reduce((sum, wave) => sum + wave.amplitude, 0);
+export const SURFACE_WAVE_SLOPE = SURFACE_WAVES.reduce(
+  (sum, wave) => sum + wave.amplitude * (TAU / wave.wavelength),
+  0,
+);
+export const SURFACE_WAVE_CURVATURE = SURFACE_WAVES.reduce(
+  (sum, wave) => sum + wave.amplitude * ((TAU / wave.wavelength) ** 2),
+  0,
+);
 
 function smoothstep(value) {
   const amount = Math.max(0, Math.min(1, value));
@@ -54,17 +65,38 @@ export function substrateSurfaceY(state, worldX) {
 // the elapsed clock, so every consumer of the surface agrees frame by frame
 // without any of them keeping wave state of their own.
 export function surfaceWaveOffset(state, worldX) {
+  return surfaceWaveTerm(state, worldX, 0);
+}
+
+// First and second derivatives of the same swell, in rows per column and rows
+// per column squared. They are taken analytically rather than by sampling the
+// offset twice: the renderer needs the slope of a surface it only ever draws
+// as whole pixels, and a finite difference across those would quantize the
+// tilt into steps long before the crest itself stepped.
+export function surfaceWaveSlope(state, worldX) {
+  return surfaceWaveTerm(state, worldX, 1);
+}
+
+export function surfaceWaveCurvature(state, worldX) {
+  return surfaceWaveTerm(state, worldX, 2);
+}
+
+// `order` selects the offset, its slope, or its curvature. Differentiating a
+// sine only advances its phase by a quarter turn and scales it by the angular
+// frequency, so all three come out of one loop.
+function surfaceWaveTerm(state, worldX, order) {
   if (!Number.isFinite(worldX)) return 0;
   const seconds = Number.isFinite(state?.elapsedRealSeconds) ? state.elapsedRealSeconds : 0;
   const seed = Number.isFinite(state?.seed) ? state.seed : 0;
-  let offset = 0;
+  let total = 0;
   for (let index = 0; index < SURFACE_WAVES.length; index += 1) {
     const wave = SURFACE_WAVES[index];
+    const frequency = TAU / wave.wavelength;
     const phase = sampleRange(seed, SURFACE_SALT + index, 0, TAU);
-    offset += wave.amplitude
-      * Math.sin(((worldX - seconds * wave.speed) / wave.wavelength) * TAU + phase);
+    total += wave.amplitude * (frequency ** order)
+      * Math.sin((worldX - seconds * wave.speed) * frequency + phase + order * (Math.PI / 2));
   }
-  return offset;
+  return total;
 }
 
 // Where the water actually stops, as opposed to where its band happens to be
