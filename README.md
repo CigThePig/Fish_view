@@ -80,7 +80,7 @@ persistent simulation.
   real second.
 - A deterministic [typographic motion lab](https://cigthepig.github.io/Fish_view/sprites.html)
   showing every static source sprite beside animated right- and left-facing
-  poses, with phase, pitch (-35°..+35°), turn compression, palette, deformation,
+  poses, with phase, pitch intent (-35°..+35°), turn compression, palette, deformation,
   anchor, bounds, damage, and live body-profile controls.
 - A deterministic [skeletal plant lab](https://cigthepig.github.io/Fish_view/plants.html)
   showing all 28 species as seedlings and mature specimens, with day/night,
@@ -126,19 +126,36 @@ render(state) -> RenderScene { width, height, background, glyphs, objects }
 
 World positions remain floating point through scene composition. Each visible
 ASCII character becomes an independent glyph command with continuous physical
-coordinates, a bitmap scale, colour, and layer. Individual glyph bitmaps remain
-upright and crisp when a fish pitches; the shared fish pose rotates only their
-anchors after facing, body wave, and turn compression. The transform first
-normalizes logical X/Y by the current physical cell aspect, so the 12x24
-art-authoring proportions do not double the apparent angle in portrait,
-landscape, or the motion lab. Positive simulation pitch always means nose-down,
-including after a fish mirrors to face left.
+coordinates, a bitmap scale, colour, and layer. Fish pitch deliberately does not
+rotate that whole coordinate plane: doing so left every bitmap glyph upright while
+scattering the authored drawing diagonally. Instead each of the six fish has a
+tiny strong-pitch pose table. The table supplies a hand-tuned rise for each source
+column and a much smaller opposing lean for each source row, expressed in physical
+cell-width units. Continuous simulation pitch interpolates from the exact level art
+towards those poses; a +/-30 degree intent reads as roughly a 14 degree typographic
+climb or dive, and the renderer saturates there even though simulation state remains
+bounded to +/-32 degrees. This keeps neighbouring marks knitted together while
+still making vertical travel obvious. Glyph bitmaps themselves remain upright and
+crisp, positive pitch always means nose-down after either facing is applied, and
+physical cell-aspect conversion keeps the cue consistent in portrait, landscape,
+and the motion lab.
 
-The opaque body passes through that exact same pose. Its nine calibrated source
-slices become nine axis-aligned bounding rectangles around the pitched slice
+The opaque body passes through that exact authored pose. Its nine calibrated source
+slices become nine axis-aligned bounding rectangles around the gently skewed slice
 quadrilaterals, preserving the ESP32-friendly fillRect budget instead of adding
 polygon rotation or a per-pixel mask. A level pitch takes the original integer
-geometry path exactly, so existing profile calibration remains unchanged.
+geometry path exactly, so existing profile calibration remains unchanged. The two
+rear slices trim only their trailing-side bounding-box excess during pitch so the
+open ASCII tail is not swallowed at the most compressed turn pose.
+
+Phase 1 keeps the dirty-rectangle cost effectively flat. Over the repeatable 200-frame
+10 fps measurement, current `main` averaged 27.45% framebuffer damage in landscape
+and 37.74% in portrait; this branch averages 27.51% and 37.94% respectively. The
+landscape maxima are 44.61% on `main` and 47.02% here, while portrait remains 75.24%
+on both. Forced forage measures 27.44% average / 52.50% max in landscape and 34.63%
+average / 56.46% max in portrait. Every scenario records zero full-frame redraws,
+and the maximum individual body fill count remains exactly nine rectangles before
+and after the change.
 
 Fish/substrate clearance stays on the simulation side. A single shared maximum
 individual visual scale is exposed from sim/config.js and the simulation uses a

@@ -928,9 +928,10 @@ function bodyFill(sprite, metrics, {
       spanTop = Math.round((worldY + Math.min(top.y, bottom.y) * scale) * metrics.cellHeight);
       spanBottom = Math.round((worldY + Math.max(top.y, bottom.y) * scale) * metrics.cellHeight) + 1;
     } else {
-      // A pitched vertical source slice becomes a small quadrilateral. Keep the
-      // production primitive axis-aligned by bounding those four posed corners
-      // with one fillRect. Nine source slices still means nine rectangles.
+      // An authored pitch pose gives the top and bottom of a source slice tiny
+      // different horizontal offsets, so the slice is still a small quadrilateral.
+      // Bound those four posed corners with one axis-aligned fillRect: nine source
+      // slices still means nine rectangles on the target device.
       const corners = [
         poseCoordinate(source, centerColumn + localLeft, centerRow - halfHeight, pose),
         poseCoordinate(source, centerColumn + localLeft, centerRow + halfHeight, pose),
@@ -957,11 +958,10 @@ function bodyFill(sprite, metrics, {
       else baseLeft += rearBaseInset;
       const fullLeft = Math.min(cornerLeft, baseLeft);
       const fullRight = Math.max(cornerRight, baseRight);
-      // Bounding a rotated vertical slice as a rectangle adds empty
-      // triangular corners. At the rear of the fish those corners can
-      // reach into the authored tail even though the ideal slice does
-      // not. Keep the full expansion through the body, but taper only
-      // the trailing-side AABB excess across the two rear slices.
+      // Bounding the slightly skewed authored slice as a rectangle still adds
+      // tiny empty corners. At the rear those corners can reach into the open
+      // ASCII tail, so taper only that trailing-side excess across the two rear
+      // slices while retaining full coverage through the enclosed body.
       const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
       if (facing < 0) {
         left = Math.round(fullLeft);

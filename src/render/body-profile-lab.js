@@ -242,11 +242,10 @@ function bodyFill(sprite, metrics, profile, {
       else baseLeft += rearBaseInset;
       const fullLeft = Math.min(cornerLeft, baseLeft);
       const fullRight = Math.max(cornerRight, baseRight);
-      // Bounding a rotated vertical slice as a rectangle adds empty
-      // triangular corners. At the rear of the fish those corners can
-      // reach into the authored tail even though the ideal slice does
-      // not. Keep the full expansion through the body, but taper only
-      // the trailing-side AABB excess across the two rear slices.
+      // Bounding the slightly skewed authored slice as a rectangle still adds
+      // tiny empty corners. At the rear those corners can reach into the open
+      // ASCII tail, so taper only that trailing-side excess across the two rear
+      // slices while retaining full coverage through the enclosed body.
       const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
       if (facing < 0) {
         left = Math.round(fullLeft);
