@@ -152,11 +152,14 @@ export function plantAttachmentLayout(pose, point, metrics, baseScale) {
     scaleX,
     scaleY,
   );
-  const safeCoverage = Math.max(1, projectedCoveragePixels + MAX_STRUCTURAL_GAP_PX);
-  const sampleCount = Math.max(
-    1,
-    Math.min(MAX_STRUCTURAL_SAMPLES_PER_SEGMENT, Math.ceil(segmentLengthPixels / safeCoverage)),
-  );
+  // One centred glyph has an allowable uncovered interval on each side. Count
+  // both edge allowances before subdividing, otherwise tall portrait plants
+  // needlessly double every ordinary bone even when no visual hole exceeds the
+  // continuity budget.
+  const oneGlyphReach = Math.max(1, projectedCoveragePixels + MAX_STRUCTURAL_GAP_PX * 2);
+  const sampleCount = segmentLengthPixels <= oneGlyphReach
+    ? 1
+    : MAX_STRUCTURAL_SAMPLES_PER_SEGMENT;
 
   return {
     structural: true,
