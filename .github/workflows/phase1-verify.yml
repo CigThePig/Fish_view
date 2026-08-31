@@ -25,44 +25,64 @@ jobs:
           if grep -q 'rearExpansionFactor' src/render/render.js; then
             echo 'Tail-safe pitched body approximation already present.'
           else
+            echo 'Expected tail-safe body approximation is missing.' >&2
+            exit 1
+          fi
+
+      - name: Upgrade pitched tail regression to raster ink once
+        shell: bash
+        run: |
+          if grep -q 'hasUnbackedInk' tests/phase1-pitch-render.test.js; then
+            echo 'Raster tail regression already present.'
+          else
             python3 - <<'PY'
           from pathlib import Path
-
-          old = '''      left = Math.round(Math.min(cornerLeft, centerX - sliceWidth / 2));
-                right = Math.round(Math.max(cornerRight, centerX + sliceWidth / 2)) + 1;
-                spanTop = Math.round(cornerTop);
-                spanBottom = Math.round(cornerBottom) + 1;'''
-          new = '''      const baseLeft = centerX - sliceWidth / 2;
-                const baseRight = centerX + sliceWidth / 2;
-                const fullLeft = Math.min(cornerLeft, baseLeft);
-                const fullRight = Math.max(cornerRight, baseRight);
-                // Bounding a rotated vertical slice as a rectangle adds empty
-                // triangular corners. At the rear of the fish those corners can
-                // reach into the authored tail even though the ideal slice does
-                // not. Keep the full expansion through the body, but taper only
-                // the trailing-side AABB excess across the two rear slices.
-                const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
-                if (facing < 0) {
-                  left = Math.round(fullLeft);
-                  right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
-                } else {
-                  left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
-                  right = Math.round(fullRight) + 1;
+          path = Path('tests/phase1-pitch-render.test.js')
+          text = path.read_text()
+          text = text.replace(
+              'import { glyphPixels } from "../src/render/bitmap-font.js";',
+              'import { glyphPixelRects, glyphPixels } from "../src/render/bitmap-font.js";',
+              1,
+          )
+          anchor = '''function backsGlyph(object, glyph) {
+            const centre = inkCentre(glyph);
+            return object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
+              && centre.y >= span.y && centre.y <= span.y + span.height);
+          }
+          '''
+          helper = anchor + '''
+          function hasUnbackedInk(object, glyph) {
+            for (const rect of glyphPixelRects(glyph)) {
+              for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+                for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+                  const covered = object.fill.some((span) => x >= span.x && x < span.x + span.width
+                    && y >= span.y && y < span.y + span.height);
+                  if (!covered) return true;
                 }
-                spanTop = Math.round(cornerTop);
-                spanBottom = Math.round(cornerBottom) + 1;'''
-
-          for filename in ['src/render/render.js', 'src/render/body-profile-lab.js']:
-              path = Path(filename)
-              text = path.read_text()
-              if old not in text:
-                  raise SystemExit(f'missing pitched body block in {filename}')
-              path.write_text(text.replace(old, new, 1))
+              }
+            }
+            return false;
+          }
+          '''
+          if anchor not in text:
+              raise SystemExit('missing backsGlyph anchor')
+          text = text.replace(anchor, helper, 1)
+          old = '''            assert.ok(
+              tailGlyphs.some((glyph) => !backsGlyph(object, glyph)),
+              `${sprite.id} swallowed its authored pitched tail at ${pitch}° ${facing}`,
+            );'''
+          new = '''            assert.ok(
+              tailGlyphs.some((glyph) => hasUnbackedInk(object, glyph)),
+              `${sprite.id} swallowed all authored pitched tail ink at ${pitch}° ${facing}`,
+            );'''
+          if old not in text:
+              raise SystemExit('missing tail assertion anchor')
+          path.write_text(text.replace(old, new, 1))
           PY
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add src/render/render.js src/render/body-profile-lab.js
-            git commit -m 'Keep pitched body clear of authored tail'
+            git add tests/phase1-pitch-render.test.js
+            git commit -m 'Measure pitched tail openness from raster ink'
             git push origin HEAD:feat/phase1-readable-fish-behavior
           fi
 
