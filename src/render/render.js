@@ -18,9 +18,11 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForSeed } from "../sim/entities.js";
+import { forageActivity } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
+import { pitchCoordinate } from "./fish-pitch.js?v=phase1-pitch-20260830";
 import { drawBubbles } from "./bubbles.js?v=visual-depth-20260830";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import {
@@ -70,6 +72,7 @@ export const LAYERS = Object.freeze({
   // foreground vegetation at every distance: they are the characters, and an
   // opaque fish disappearing behind a weed reads as a bug rather than as depth.
   school: 30,
+  forageDebris: 39,
   individuals: 40,
   reaction: 45,
   foregroundPlants: 50,
@@ -215,6 +218,8 @@ function poseCoordinate(source, column, row, {
   phase = 0,
   deformationStrength = 1,
   turnScale = 1,
+  pitch = 0,
+  cellAspect = CELL_HEIGHT / CELL_WIDTH,
 } = {}) {
   const tail = source.width <= 1
     ? 0
@@ -227,9 +232,14 @@ function poseCoordinate(source, column, row, {
   const tailWeight = 0.1 + Math.pow(tail, 1.65) * 0.9;
   const bodyWave = Math.sin(phase - column * 0.22) * 0.145 * tailWeight * deformationStrength;
   const tailBeat = Math.sin(phase * 1.04 + 0.45) * 0.065 * Math.pow(tail, 3) * deformationStrength;
+  const pitched = pitchCoordinate(localX, localY + bodyWave + tailBeat, {
+    facing,
+    pitch,
+    cellAspect,
+  });
   return {
-    x: localX,
-    y: localY + bodyWave + tailBeat,
+    x: pitched.x,
+    y: pitched.y,
     tail,
   };
 }
@@ -239,6 +249,8 @@ export function poseSprite(sprite, {
   phase = 0,
   deformationStrength = 1,
   turnScale = 1,
+  pitch = 0,
+  cellAspect = CELL_HEIGHT / CELL_WIDTH,
 } = {}) {
   const source = spritePoints(sprite);
   return source.points.map((point) => {
@@ -247,6 +259,8 @@ export function poseSprite(sprite, {
       phase,
       deformationStrength,
       turnScale,
+      pitch,
+      cellAspect,
     });
     return {
       char: facing < 0 ? (glyphFlip[point.char] ?? point.char) : point.char,
@@ -843,6 +857,7 @@ function bodyFill(sprite, metrics, {
   facing,
   phase,
   deformationStrength,
+  pitch = 0,
   color,
   // Distance scale. It multiplies the posed offsets rather than the pose
   // itself, so the body keeps travelling with the same wave as the ink above
@@ -861,7 +876,8 @@ function bodyFill(sprite, metrics, {
   // readable. Preserve that local ink width around each compressed slice so the
   // body does not collapse to 32% while the characters remain about 93% wide.
   const glyphScaleX = (0.9 + turnScale * 0.1) * scale;
-  const pose = { facing, phase, deformationStrength, turnScale };
+  const cellAspect = metrics.cellHeight / metrics.cellWidth;
+  const pose = { facing, phase, deformationStrength, turnScale, pitch, cellAspect };
   const fill = [];
 
   for (let index = 0; index < BODY_SPANS; index += 1) {
@@ -870,7 +886,7 @@ function bodyFill(sprite, metrics, {
     const localCenter = (localLeft + localRight) / 2;
     const waist = radiusX > 0 ? Math.abs(localCenter) / radiusX : 0;
     // Positive source-space X is the nose because all source sprites face right.
-    // Using a separate front shoulder lets pointed fish close around `>` instead
+    // Using a separate front shoulder lets pointed fish close around the nose instead
     // of carrying a round bubble beyond it, while the rear half stays unchanged.
     const shoulder = localCenter >= 0 ? profile.frontShoulder : profile.rearShoulder;
     const taper = Math.sqrt(Math.max(0, 1 - waist ** shoulder));
@@ -894,10 +910,37 @@ function bodyFill(sprite, metrics, {
       Math.max(geometricWidth, localInkWidth) * (0.6 + taper * 0.4) + BODY_SLICE_OVERLAP,
     );
     const centerX = (worldX + center.x * scale) * metrics.cellWidth;
-    const left = Math.round(centerX - sliceWidth / 2);
-    const right = Math.round(centerX + sliceWidth / 2) + 1;
-    const spanTop = Math.round((worldY + Math.min(top.y, bottom.y) * scale) * metrics.cellHeight);
-    const spanBottom = Math.round((worldY + Math.max(top.y, bottom.y) * scale) * metrics.cellHeight) + 1;
+
+    let left;
+    let right;
+    let spanTop;
+    let spanBottom;
+    if (Math.abs(pitch) < 1e-12) {
+      // Preserve the calibrated level pose exactly. Existing body profiles and
+      // their registration regressions were tuned against these integer edges.
+      left = Math.round(centerX - sliceWidth / 2);
+      right = Math.round(centerX + sliceWidth / 2) + 1;
+      spanTop = Math.round((worldY + Math.min(top.y, bottom.y) * scale) * metrics.cellHeight);
+      spanBottom = Math.round((worldY + Math.max(top.y, bottom.y) * scale) * metrics.cellHeight) + 1;
+    } else {
+      // A pitched vertical source slice becomes a small quadrilateral. Keep the
+      // production primitive axis-aligned by bounding those four posed corners
+      // with one fillRect. Nine source slices still means nine rectangles.
+      const corners = [
+        poseCoordinate(source, centerColumn + localLeft, centerRow - halfHeight, pose),
+        poseCoordinate(source, centerColumn + localLeft, centerRow + halfHeight, pose),
+        poseCoordinate(source, centerColumn + localRight, centerRow - halfHeight, pose),
+        poseCoordinate(source, centerColumn + localRight, centerRow + halfHeight, pose),
+      ];
+      const cornerLeft = (worldX + Math.min(...corners.map((point) => point.x)) * scale) * metrics.cellWidth;
+      const cornerRight = (worldX + Math.max(...corners.map((point) => point.x)) * scale) * metrics.cellWidth;
+      const cornerTop = (worldY + Math.min(...corners.map((point) => point.y)) * scale) * metrics.cellHeight;
+      const cornerBottom = (worldY + Math.max(...corners.map((point) => point.y)) * scale) * metrics.cellHeight;
+      left = Math.round(Math.min(cornerLeft, centerX - sliceWidth / 2));
+      right = Math.round(Math.max(cornerRight, centerX + sliceWidth / 2)) + 1;
+      spanTop = Math.round(cornerTop);
+      spanBottom = Math.round(cornerBottom) + 1;
+    }
     if (right - left < 1 || spanBottom - spanTop < 1) continue;
 
     fill.push({
@@ -927,11 +970,15 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   const phase = state.elapsedRealSeconds * TAU * frequency + sampleRange(fish.seed, 101, 0, TAU);
   const bob = Math.sin(state.elapsedRealSeconds * TAU * sampleRange(fish.seed, 102, 0.12, 0.19)
     + sampleRange(fish.seed, 103, 0, TAU)) * sampleRange(fish.seed, 104, 0.045, 0.085);
+  const pitch = Number.isFinite(fish.visual?.pitch) ? fish.visual.pitch : 0;
+  const cellAspect = metrics.cellHeight / metrics.cellWidth;
   const points = poseSprite(sprite, {
     facing: turning.facing,
     phase,
     deformationStrength,
     turnScale: turning.widthScale,
+    pitch,
+    cellAspect,
   });
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
@@ -948,6 +995,7 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     facing: turning.facing,
     phase,
     deformationStrength,
+    pitch,
     scale,
     color: bodyFillForDepth(palette, verticalDepth, lane),
   });
@@ -983,6 +1031,36 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
       glyphs: parts.glyphs,
       fill: parts.fill,
       padding: 2,
+    });
+  });
+}
+
+function drawForageDebris(builder, state, palette, metrics) {
+  state.individuals.forEach((fish, index) => {
+    const activity = forageActivity(fish, index, state);
+    if (activity.peckPhase === null) return;
+    const progress = activity.peckPhase;
+    const count = 1 + Math.floor(sample01(fish.seed, 4700) * 4);
+    const glyphs = [];
+    for (let particle = 0; particle < count; particle += 1) {
+      const rise = progress * sampleRange(fish.seed, 4710 + particle, 0.24, 0.62);
+      const spread = sampleSigned(fish.seed, 4720 + particle) * (0.12 + progress * 0.34);
+      const charChoice = sample01(fish.seed, 4730 + particle);
+      const char = charChoice < 0.5 ? "." : charChoice < 0.78 ? "," : "'";
+      glyphs.push(positionedGlyph(metrics, {
+        char,
+        worldX: fish.x + spread,
+        worldY: activity.surfaceY - 0.04 - rise,
+        fg: mixColor(palette.substrateBg, palette.substrateFg, 0.72),
+        scaleX: sampleRange(fish.seed, 4740 + particle, 0.42, 0.58),
+        scaleY: sampleRange(fish.seed, 4750 + particle, 0.42, 0.58),
+      }));
+    }
+    addGlyphObject(builder, {
+      id: `forage-debris:${index}:${fish.seed}`,
+      layer: LAYERS.forageDebris,
+      glyphs,
+      padding: 1,
     });
   });
 }
@@ -1068,6 +1146,7 @@ export function render(state, { deformationStrength = 1 } = {}) {
   }
   drawBubbles(builder, state, palette, metrics, LAYERS.ambient);
   drawSchool(builder, state, palette, metrics);
+  drawForageDebris(builder, state, palette, metrics);
   drawIndividuals(builder, state, palette, metrics, deformationStrength);
   drawReaction(builder, state.reaction, palette, metrics);
   for (const record of plantFrame.records) {
@@ -1084,6 +1163,7 @@ export function renderSpriteScene(sprite, {
   paletteMode = "day",
   staticPose = false,
   turnScale = 1,
+  pitch = 0,
 } = {}) {
   const { width: spriteWidth, height: spriteHeight } = spriteDimensions(sprite);
   const logicalWidth = spriteWidth + 4;
@@ -1098,16 +1178,19 @@ export function renderSpriteScene(sprite, {
   const builder = createSceneBuilder({
     ...dimensions,
     background: createBackground(dimensions, palette, 0x51a7, { withSubstrate: false, tankDepth: false }),
-    metadata: { paletteStage: palette.paletteStage, lab: true },
+    metadata: { paletteStage: palette.paletteStage, lab: true, pitch },
   });
   const metrics = sceneMetrics(builder);
   const effectiveDeformation = staticPose ? 0 : deformationStrength;
   const facingValue = facing === "left" ? -1 : 1;
+  const cellAspect = metrics.cellHeight / metrics.cellWidth;
   const points = poseSprite(sprite, {
     facing: facingValue,
     phase,
     deformationStrength: effectiveDeformation,
     turnScale,
+    pitch,
+    cellAspect,
   });
   const spriteSeed = individualSprites.indexOf(sprite) + 1;
   const glyphs = points.map((point) => positionedGlyph(metrics, {
@@ -1129,6 +1212,7 @@ export function renderSpriteScene(sprite, {
       facing: facingValue,
       phase,
       deformationStrength: effectiveDeformation,
+      pitch,
       color: bodyFillForDepth(palette, 0.5),
     }),
     padding: 3,

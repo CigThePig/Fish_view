@@ -156,7 +156,7 @@ function patchRender() {
     const localCenter = (localLeft + localRight) / 2;
     const waist = radiusX > 0 ? Math.abs(localCenter) / radiusX : 0;
     // Positive source-space X is the nose because all source sprites face right.
-    // Using a separate front shoulder lets pointed fish close around \\`>\\` instead
+    // Using a separate front shoulder lets pointed fish close around the nose instead
     // of carrying a round bubble beyond it, while the rear half stays unchanged.
     const shoulder = localCenter >= 0 ? profile.frontShoulder : profile.rearShoulder;
     const taper = Math.sqrt(Math.max(0, 1 - waist ** shoulder));
@@ -308,7 +308,7 @@ function patchRender() {
       }));
     }
     addGlyphObject(builder, {
-      id: \\`forage-debris:\${index}:\${fish.seed}\\`,
+      id: \`forage-debris:\${index}:\${fish.seed}\`,
       layer: LAYERS.forageDebris,
       glyphs,
       padding: 1,
@@ -376,7 +376,7 @@ function patchRender() {
     scaleY: 1,
   }));
   addGlyphObject(builder, {
-    id: \\`lab:\${sprite.id}:\${facing}\\`,
+    id: \`lab:\${sprite.id}:\${facing}\`,
     layer: LAYERS.individuals,
     glyphs,
     fill: bodyFill(sprite, metrics, {
@@ -539,7 +539,7 @@ function patchBodyProfileLab() {
   turnScale = 1,
   pitch = 0,
 } = {}) {
-  const object = scene.objects.find((candidate) => candidate.id.startsWith(\\`lab:\${sprite.id}:\\`));
+  const object = scene.objects.find((candidate) => candidate.id.startsWith(\`lab:\${sprite.id}:\`));
   if (!object) return scene;
 
   const normalized = normalizeTunableBodyProfile(profile, bodyProfileForSprite(sprite));
@@ -562,7 +562,7 @@ function patchBodyProfileLab() {
 
   object.fill = fill;
   object.bounds = boundsForObject(scene, object, fill);
-  object.signature += \\`:lab-profile:\${[
+  object.signature += \`:lab-profile:\${[
     normalized.offsetX,
     normalized.offsetY,
     normalized.radiusXScale,
@@ -570,7 +570,7 @@ function patchBodyProfileLab() {
     normalized.rearShoulder,
     normalized.frontShoulder,
     pitch,
-  ].join(":")}\\`;
+  ].join(":")}\`;
   return scene;
 }
 `;

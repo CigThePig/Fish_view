@@ -1,9 +1,9 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=visual-depth-20260830";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
 import {
   applyBodyProfileToSpriteScene,
   bodyProfileForSprite,
-} from "./render/body-profile-lab.js?v=final-body-profiles-20260830";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=visual-depth-20260830";
+} from "./render/body-profile-lab.js?v=phase1-pitch-20260830";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=phase1-pitch-20260830";
 import { spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
@@ -66,6 +66,10 @@ const controls = {
   freeze: document.querySelector("#freeze-toggle"),
   phase: document.querySelector("#phase-control"),
   phaseOutput: document.querySelector("#phase-output"),
+  pitch: document.querySelector("#pitch-control"),
+  pitchOutput: document.querySelector("#pitch-output"),
+  turn: document.querySelector("#turn-control"),
+  turnOutput: document.querySelector("#turn-output"),
   palette: document.querySelector("#palette-control"),
   deformation: document.querySelector("#deformation-control"),
   deformationOutput: document.querySelector("#deformation-output"),
@@ -287,6 +291,8 @@ async function copyText(text, label) {
 
 function renderAll() {
   const deformationStrength = Number(controls.deformation.value);
+  const pitch = Number(controls.pitch.value);
+  const turnScale = Number(controls.turn.value);
   const zoom = Number(controls.zoom.value);
   const debug = {
     anchors: controls.anchors.checked,
@@ -301,18 +307,24 @@ function renderAll() {
       deformationStrength,
       paletteMode: controls.palette.value,
       staticPose: view.staticPose,
+      pitch,
+      turnScale,
     });
     applyBodyProfileToSpriteScene(scene, view.sprite, profileState.get(view.sprite.id), {
       facing: view.facing,
       phase,
       deformationStrength,
       staticPose: view.staticPose,
+      pitch,
+      turnScale,
     });
     view.renderer.draw(scene, debug);
     view.canvas.style.width = Math.round(scene.width * zoom) + "px";
   }
   controls.phase.value = String(currentPhase);
   controls.phaseOutput.textContent = currentPhase.toFixed(2);
+  controls.pitchOutput.textContent = pitch.toFixed(0) + "°";
+  controls.turnOutput.textContent = turnScale.toFixed(2);
   controls.deformationOutput.textContent = deformationStrength.toFixed(2);
   controls.zoomOutput.textContent = zoom.toFixed(2) + "×";
 }
@@ -352,6 +364,8 @@ controls.profileCopyAll.addEventListener("click", () => copyText(allProfilesText
 
 for (const control of [
   controls.palette,
+  controls.pitch,
+  controls.turn,
   controls.deformation,
   controls.zoom,
   controls.anchors,

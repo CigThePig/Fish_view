@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#07100f">
     <title>Fish View — Typographic motion lab</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="sprite-sheet.css?v=fish-profile-lab-20260830">
+    <link rel="stylesheet" href="sprite-sheet.css?v=phase1-pitch-20260830">
   </head>
   <body class="sprite-page">
     <header>
@@ -22,6 +22,12 @@
       <button type="button" id="freeze-toggle" aria-pressed="false">Freeze animation</button>
       <label>Swim phase <output id="phase-output">0.00</output>
         <input id="phase-control" type="range" min="0" max="1" step="0.005" value="0">
+      </label>
+      <label>Pitch <output id="pitch-output">0°</output>
+        <input id="pitch-control" type="range" min="-35" max="35" step="1" value="0">
+      </label>
+      <label>Turn width <output id="turn-output">1.00</output>
+        <input id="turn-control" type="range" min="0.32" max="1" step="0.02" value="1">
       </label>
       <label>Palette
         <select id="palette-control">
@@ -71,6 +77,6 @@
     <footer>
       Artwork from <em>asciiquarium 1.1</em> by Kirk Baucom; most ASCII art by Joan Stark. GPL v2 or later.
     </footer>
-    <script type="module" src="src/sprite-sheet.js?v=visual-depth-20260830"></script>
+    <script type="module" src="src/sprite-sheet.js?v=phase1-pitch-20260830"></script>
   </body>
 </html>

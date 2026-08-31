@@ -15,7 +15,18 @@ persistent simulation.
 - A 25–40 fish boids school with live tuning for separation, alignment,
   cohesion, boundary pull, depth preference, and speed.
 - Six persistent individual fish with seeded traits, changing drives,
-  utility-selected behavior, interaction history, and local persistence.
+  utility-selected behavior, interaction history, and local persistence. Their
+  body posture now exposes that behavior: meaningful climbs and dives ease into
+  bounded vertical pitch, while tiny velocity noise leaves them nearly level.
+- Substrate-aware foraging. Eligible individuals approach the real deterministic
+  terrain contour, slow into a lateral search, carry a deliberate nose-down
+  bias, make small seeded peck/dip motions, and kick up a sparse 1-4 glyph puff.
+  Hunger relief begins only after the fish actually reaches that search zone.
+  The first three permanently visible mid-water individuals do not select forage,
+  which keeps the visibility invariant without phantom feeding above the floor.
+- Curious exploration can occasionally become a brief surface inspection using
+  the same pure moving-water helper as the renderer. Fish climb nose-up, slow
+  below the actual swell, then return to ordinary exploration.
 - A living skeletal vegetation system with 28 data-driven species, seeded
   colonies, structural growth, three depth groups, shared current, and subtle
   touch/fish disturbance. ASCII glyphs decorate tiny parent-index skeletons;
@@ -69,7 +80,8 @@ persistent simulation.
   real second.
 - A deterministic [typographic motion lab](https://cigthepig.github.io/Fish_view/sprites.html)
   showing every static source sprite beside animated right- and left-facing
-  poses, with phase, palette, deformation, anchor, bounds, and damage controls.
+  poses, with phase, pitch (-35°..+35°), turn compression, palette, deformation,
+  anchor, bounds, damage, and live body-profile controls.
 - A deterministic [skeletal plant lab](https://cigthepig.github.io/Fish_view/plants.html)
   showing all 28 species as seedlings and mature specimens, with day/night,
   orientation, size, current, disturbance, quality, bounds, damage, and bone
@@ -114,7 +126,27 @@ render(state) -> RenderScene { width, height, background, glyphs, objects }
 
 World positions remain floating point through scene composition. Each visible
 ASCII character becomes an independent glyph command with continuous physical
-coordinates, a bitmap scale, colour, and layer. A scene object may also carry
+coordinates, a bitmap scale, colour, and layer. Individual glyph bitmaps remain
+upright and crisp when a fish pitches; the shared fish pose rotates only their
+anchors after facing, body wave, and turn compression. The transform first
+normalizes logical X/Y by the current physical cell aspect, so the 12x24
+art-authoring proportions do not double the apparent angle in portrait,
+landscape, or the motion lab. Positive simulation pitch always means nose-down,
+including after a fish mirrors to face left.
+
+The opaque body passes through that exact same pose. Its nine calibrated source
+slices become nine axis-aligned bounding rectangles around the pitched slice
+quadrilaterals, preserving the ESP32-friendly fillRect budget instead of adding
+polygon rotation or a per-pixel mask. A level pitch takes the original integer
+geometry path exactly, so existing profile calibration remains unchanged.
+
+Fish/substrate clearance stays on the simulation side. A single shared maximum
+individual visual scale is exposed from sim/config.js and the simulation uses a
+conservative logical envelope for the strongest permitted pitch; it never imports
+render/depth.js. Forage and surface targets then come from substrateSurfaceY()
+and waterSurfaceY() respectively.
+
+A scene object may also carry
 `fill`: opaque spans painted under its own glyphs, which is how a fish occludes
 what swims behind it. Nine spans per fish keeps the whole school inside one
 filled-rectangle budget an ESP32 panel driver can meet, and spans arrive snapped
