@@ -100,7 +100,7 @@ function structuralProgresses(point, sampleCount) {
   // Keep the first root attachment low enough to read as planted while spacing
   // the pair evenly enough that maximum-height portrait stems do not reopen an
   // internal hole. Other bones use symmetric quarter points.
-  return point.parent === 0 ? [0.2, 0.75] : [0.25, 0.75];
+  return point.parent === 0 ? [0.2, 0.72] : [0.25, 0.75];
 }
 
 function singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels) {
