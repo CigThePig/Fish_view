@@ -71,6 +71,8 @@ export function createIndividual(baseSeed, index, cols, rows) {
       facing: direction,
       targetFacing: direction,
       turnProgress: 1,
+      pitch: 0,
+      targetPitch: 0,
     },
   };
 }
