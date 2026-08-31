@@ -27,6 +27,8 @@ jobs:
             echo 'Renderer integration already present.'
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
+            sed -i 's#    // Using a separate front shoulder lets pointed fish close around .*#    // Using a separate front shoulder lets pointed fish close around the nose instead#' tools/apply-phase1.mjs
+            node --check tools/apply-phase1.mjs
             node tools/apply-phase1.mjs
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
