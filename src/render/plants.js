@@ -104,6 +104,12 @@ function structuralProgresses(point, sampleCount) {
   return point.parent === 0 ? [0.18, 0.72] : [0.25, 0.75];
 }
 
+function singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels) {
+  const progress = point.parent === 0 ? 0.3 : 0.5;
+  const edgeDistance = Math.max(progress, 1 - progress) * segmentLengthPixels;
+  return Math.max(0, edgeDistance - projectedCoveragePixels / 2);
+}
+
 // This is the render-resolution boundary of the plant system. The pose remains
 // a sparse hierarchy; this helper decides how much typographic ink one posed
 // bone needs at the current physical glyph scale. Tests use the same layout to
@@ -152,12 +158,11 @@ export function plantAttachmentLayout(pose, point, metrics, baseScale) {
     scaleX,
     scaleY,
   );
-  // One centred glyph has an allowable uncovered interval on each side. Count
-  // both edge allowances before subdividing, otherwise tall portrait plants
-  // needlessly double every ordinary bone even when no visual hole exceeds the
-  // continuity budget.
-  const oneGlyphReach = Math.max(1, projectedCoveragePixels + MAX_STRUCTURAL_GAP_PX * 2);
-  const sampleCount = segmentLengthPixels <= oneGlyphReach
+  // Measure the actual one-glyph placement instead of assuming every sample is
+  // centred. The grounded first glyph deliberately sits at 30% of its bone, so
+  // its child-side gap can require subdivision sooner than an ordinary segment.
+  const sampleCount = singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels)
+      <= MAX_STRUCTURAL_GAP_PX
     ? 1
     : MAX_STRUCTURAL_SAMPLES_PER_SEGMENT;
 
