@@ -101,7 +101,7 @@ function structuralProgresses(point, sampleCount) {
   // stays high enough to hand the stem to the next bone without reopening the
   // grounding gap. Other bones use symmetric quarter points so neighbouring
   // segments visually share the joint between them.
-  return point.parent === 0 ? [0.18, 0.72] : [0.25, 0.75];
+  return point.parent === 0 ? [0.18, 0.75] : [0.25, 0.75];
 }
 
 function singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels) {
