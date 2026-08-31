@@ -5,7 +5,6 @@ import { glyphPixels } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { individualSprites, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
-import { orientationConfig } from "../src/sim/config.js";
 import { forageActivity, substrateSafeY } from "../src/sim/fish-motion.js";
 import { createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
@@ -173,6 +172,8 @@ test("physical pitch is stable across landscape, portrait, and motion-lab cell a
 test("pitched opaque bodies remain bounded, registered, tapered, and inside the nine-fill budget", () => {
   const interior = new Set(["(", ")", "o", "O"]);
   for (const sprite of individualSprites) {
+    const columns = sourceColumns(sprite);
+    const tailColumn = Math.min(...columns);
     for (const facing of ["right", "left"]) {
       for (const pitch of [-30, -15, 15, 30]) {
         for (const phase of [0, 1.3, 3.1]) {
@@ -190,16 +191,22 @@ test("pitched opaque bodies remain bounded, registered, tapered, and inside the 
             }
             const heights = object.fill.map((span) => span.height);
             assert.ok(new Set(heights).size >= 2, `${sprite.id} became a rectangular pitched block`);
-            for (const glyph of glyphsForObject(scene, object)) {
+            const glyphs = glyphsForObject(scene, object);
+            for (const glyph of glyphs) {
               if (interior.has(glyph.char)) {
                 assert.ok(backsGlyph(object, glyph), `${sprite.id} exposed interior '${glyph.char}' at ${pitch}° ${facing}`);
               }
             }
-            const glyphs = glyphsForObject(scene, object);
-            const trailing = glyphs.reduce((furthest, glyph) => (facing === "right"
-              ? (glyph.x < furthest.x ? glyph : furthest)
-              : (glyph.x > furthest.x ? glyph : furthest)), glyphs[0]);
-            assert.equal(backsGlyph(object, trailing), false, `${sprite.id} swallowed its pitched tail at ${pitch}°`);
+            // Rotation means the authored tail is not necessarily the furthest
+            // screen-X glyph. Preserve the intended open ASCII rim by checking
+            // the source-space tail column through the posed glyph order.
+            assert.equal(glyphs.length, columns.length);
+            const tailGlyphs = glyphs.filter((_, index) => columns[index] === tailColumn);
+            assert.ok(tailGlyphs.length > 0);
+            assert.ok(
+              tailGlyphs.some((glyph) => !backsGlyph(object, glyph)),
+              `${sprite.id} swallowed its authored pitched tail at ${pitch}° ${facing}`,
+            );
           }
         }
       }
