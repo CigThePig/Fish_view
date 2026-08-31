@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { WATERLINE_ROWS } from "../src/sim/config.js";
 import { MAX_FISH_PITCH_DEGREES, forageActivity, forageEligible, substrateSafeY, surfaceSafeY } from "../src/sim/fish-motion.js";
 import { substrateSurfaceY, waterSurfaceY } from "../src/sim/environment.js";
 import {
@@ -127,6 +128,22 @@ test("the permanent mid-water cast cannot select or receive successful forage", 
     assert.notEqual(next.individuals[index].behavior.current, "forage");
     assert.equal(forageActivity(next.individuals[index], index, next).searching, false);
     assert.ok(next.individuals[index].drives.hunger >= forced.individuals[index].drives.hunger);
+  }
+});
+
+test("permanent mid-water cast keeps its clearance-adjusted ceiling during long runs", () => {
+  let state = createAquariumState({ orientation: "landscape", seed: 0, wallClockHours: 12 });
+  for (let frame = 0; frame < 4000; frame += 1) {
+    state = tick(state, 0.1);
+    for (const fish of state.individuals.slice(0, 3)) {
+      const clearanceAdjustedBottom = substrateSafeY(fish, state, fish.x);
+      const ceiling = WATERLINE_ROWS
+        + Math.max(0, clearanceAdjustedBottom - WATERLINE_ROWS) * 0.68;
+      assert.ok(
+        fish.y <= ceiling + 1e-10,
+        `protected fish drifted below clearance-adjusted ceiling: ${fish.y} > ${ceiling}`,
+      );
+    }
   }
 });
 
