@@ -71,7 +71,10 @@ function heightForSpecies(species, seed, waterHeight, size = "seeded") {
   return clamp(waterHeight * fraction, 1.35, waterHeight - 0.75);
 }
 
-function variationFromSeed(seed) {
+// Motion variation is a pure function of the plant seed. Exporting it lets a
+// dynamic roster rebuild a specimen whose saved motion traits are missing or
+// corrupt without inventing values or reshuffling the garden.
+export function plantVariationFromSeed(seed) {
   return {
     phase: sampleRange(seed, 8, 0, TAU),
     frequency: sampleRange(seed, 9, 0.23, 0.39),
@@ -93,12 +96,66 @@ function createPlantRecord({ seed, speciesId, x, ageDays, matureHeight }) {
     ageDays,
     matureHeight,
     layer: species.layer,
-    ...variationFromSeed(seed),
+    ...plantVariationFromSeed(seed),
   };
+}
+
+// The stable seeds of an orientation's authored initial roster. Diagnostics use
+// it to tell an original specimen from one the aquarium grew for itself.
+export function initialPlantSeeds(baseSeed, orientation) {
+  return Array.from(
+    { length: plantCountFor(orientation) },
+    (_, index) => mix32((baseSeed >>> 0) ^ Math.imul(index + 31, 0xc2b2ae35)),
+  );
 }
 
 export function plantCountFor(orientation) {
   return HABITATS[orientation].reduce((total, habitat) => total + habitat.count, 0);
+}
+
+// The hard, measured ceiling on a lifetime of propagation and rare emergence.
+// It is a rendering budget first and a composition budget second: a mature
+// aquarium at this count is the worst case the damage and glyph regressions
+// are measured against, so it is raised only with new measurements.
+export const PLANT_CAPS = Object.freeze({ landscape: 30, portrait: 22 });
+
+export function plantCapFor(orientation) {
+  return PLANT_CAPS[orientation] ?? PLANT_CAPS.landscape;
+}
+
+// One construction path for every plant that is not part of the authored
+// initial habitat layout: propagated shoots, delayed rare emergence, and
+// restored dynamic rosters. Seeded variation still comes from the plant seed,
+// so a saved plant and a freshly derived one agree exactly.
+export function createPlantFromSeed({
+  seed,
+  speciesId,
+  x,
+  ageDays = 0,
+  rows,
+  matureHeight,
+  size = "seeded",
+}) {
+  const numericSeed = seed >>> 0;
+  const species = PLANT_SPECIES_BY_ID[speciesId];
+  if (!species) throw new Error(`Unknown plant species: ${speciesId}`);
+  const waterHeight = rows - WATERLINE_ROWS - SUBSTRATE_ROWS;
+  return createPlantRecord({
+    seed: numericSeed,
+    speciesId,
+    x,
+    ageDays,
+    matureHeight: Number.isFinite(matureHeight)
+      ? clamp(matureHeight, 1.2, Math.max(1.2, rows - 6.5))
+      : heightForSpecies(species, numericSeed, waterHeight, size),
+  });
+}
+
+// Habitat bands are composition, not geometry: exposing the normalized bands a
+// species family already occupies lets long-horizon content choose a plausible
+// region without reading anything the renderer produced.
+export function plantHabitatBands(orientation) {
+  return HABITATS[orientation] ?? HABITATS.landscape;
 }
 
 export function createPlant(baseSeed, index, cols, rows, orientation = orientationFromColumns(cols)) {
@@ -176,6 +233,60 @@ export function plantGrowthState(plant, species = plantSpecies(plant)) {
     currentStage,
     mature: ageDays >= (species.maximumStage + 1) * species.growthStepDays,
   };
+}
+
+// A rare plant that has finished growing would otherwise be finished forever.
+// A slow derived lifecycle gives it something left to do: every several
+// simulated weeks an unusual species opens, glows for a few days, and closes
+// again. Nothing about it is stored - the whole cycle is a pure function of the
+// plant seed and its age - and nothing about it is a health, decay, or death
+// model. A bloom ending simply returns the plant to its ordinary mature state.
+//
+// The stages are deliberately coarse. At real time a viewer sees no change at
+// all; across visits a week apart the same plant is doing something different.
+export const PLANT_LIFECYCLE_STAGES = Object.freeze(["dormant", "opening", "active", "fading"]);
+
+const LIFECYCLE_MINIMUM_DAYS = 35;
+const LIFECYCLE_MAXIMUM_DAYS = 70;
+const LIFECYCLE_OPENING_END = 0.05;
+const LIFECYCLE_ACTIVE_END = 0.13;
+const LIFECYCLE_FADING_END = 0.18;
+
+const DORMANT_LIFECYCLE = Object.freeze({
+  capable: false,
+  stage: "dormant",
+  intensity: 0,
+  active: false,
+  cycleDays: 0,
+  phase: 0,
+});
+
+function positiveModulo(value, modulus) {
+  return ((value % modulus) + modulus) % modulus;
+}
+
+export function plantLifecycle(plant, species = plantSpecies(plant), growth = null) {
+  if (!species.rare && !species.glowTips) return DORMANT_LIFECYCLE;
+  const seed = plant.seed >>> 0;
+  const ageDays = Math.max(0, Number.isFinite(plant.ageDays) ? plant.ageDays : 0);
+  const cycleDays = sampleRange(seed, 920, LIFECYCLE_MINIMUM_DAYS, LIFECYCLE_MAXIMUM_DAYS);
+  const mature = (growth ?? plantGrowthState(plant, species)).mature;
+  if (!mature) {
+    return { capable: true, stage: "dormant", intensity: 0, active: false, cycleDays, phase: 0 };
+  }
+  const offset = sampleRange(seed, 921, 0, cycleDays);
+  const phase = positiveModulo(ageDays + offset, cycleDays) / cycleDays;
+  const stage = phase < LIFECYCLE_OPENING_END
+    ? "opening"
+    : phase < LIFECYCLE_ACTIVE_END
+      ? "active"
+      : phase < LIFECYCLE_FADING_END
+        ? "fading"
+        : "dormant";
+  // Quantized on purpose: a continuously varying value would invalidate the
+  // plant's scene object every frame for days at a time.
+  const intensity = stage === "active" ? 1 : stage === "dormant" ? 0 : 0.5;
+  return { capable: true, stage, intensity, active: intensity >= 0.5, cycleDays, phase };
 }
 
 export function plantHeight(plant) {

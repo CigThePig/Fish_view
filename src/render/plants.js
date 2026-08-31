@@ -1,7 +1,7 @@
 import { MAX_PLANT_JOINTS } from "../art/plants.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { sample01 } from "../sim/prng.js";
-import { createPlantFrameContext, posePlant } from "../sim/plants.js";
+import { createPlantFrameContext, plantLifecycle, posePlant } from "../sim/plants.js";
 import { glyphInkExtent } from "./bitmap-font.js";
 import { addGlyphObject, positionedGlyph } from "./scene.js";
 
@@ -87,11 +87,19 @@ export function plantGlyphScale(plant, layer) {
   return base + (sample01(plant.seed, 470) - 0.5) * spread;
 }
 
-function colorForPoint(plant, pose, point, palette) {
+// A rare glow-tipped species is not lit permanently any more. Its special tips
+// take the glow colour only while its slow derived lifecycle is open, and sit on
+// the ordinary growth-tip colour the rest of the time. The change is expressed
+// entirely through a palette slot the renderer already has - no shader, no blur,
+// no alpha bloom, no new primitive, and no extra colour in the scene - and it
+// moves on multi-day stages, so it cannot invalidate a plant every frame.
+function colorForPoint(plant, pose, point, palette, lifecycle) {
   const species = pose.species;
   const slot = (species.paletteSlot + plant.paletteSlot + (sample01(plant.seed, 480 + point.index) > 0.87 ? 1 : 0)) % 3;
   const specialTip = point.isTip || point.role === "tip" || point.role === "lantern" || point.role === "bell";
-  if (species.glowTips && specialTip) return palette.plants.glowTip;
+  if (species.glowTips && specialTip) {
+    return lifecycle.active ? palette.plants.glowTip : palette.plants.growthTip;
+  }
   if (specialTip && point.maturity < 0.78) return palette.plants.growthTip;
   return palette.plants[species.layer][slot];
 }
@@ -231,6 +239,12 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
     disturbanceOverride,
   });
   const scale = plantGlyphScale(plant, pose.species.layer);
+  // One lifecycle evaluation per specimen per frame, not one per joint.
+  const lifecycle = plantLifecycle(
+    ageDays === plant.ageDays ? plant : { ...plant, ageDays },
+    pose.species,
+    pose.growth,
+  );
   const glyphs = [];
   let jointAttachments = 0;
   let fillerAttachments = 0;
@@ -239,7 +253,7 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
   for (const point of pose.joints) {
     const parent = pose.points[point.parent];
     const layout = plantAttachmentLayout(plant, pose, point, metrics, scale);
-    const fg = colorForPoint(plant, pose, point, palette);
+    const fg = colorForPoint(plant, pose, point, palette, lifecycle);
 
     if (!parent) {
       glyphs.push(positionedGlyph(metrics, {
@@ -282,6 +296,7 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
     glyphs,
     pose,
     renderScale: scale,
+    lifecycle,
     attachmentStats: {
       jointAttachments,
       fillerAttachments,

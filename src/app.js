@@ -1,6 +1,7 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
-import { render } from "./render/render.js?v=phase2-personality-20260831";
+import { render } from "./render/render.js?v=phase3-history-20260831";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
+import { historyDiagnostics } from "./sim/aquarium-history.js";
 import { DEFAULT_SEED } from "./sim/config.js";
 import { topAffinities } from "./sim/fish-personality.js";
 import { hashSeed } from "./sim/prng.js";
@@ -69,6 +70,31 @@ function updatePersonalityDiagnostics(state) {
   document.querySelector("#personality-output").textContent = lines.join("\n");
 }
 
+// Developer tooling only, hidden behind the tuning panel. The aquarium itself
+// never shows an age, a countdown, a plant tally, or any other historical
+// statistic: the child is meant to discover a history by noticing the world.
+function updateHistoryDiagnostics(state) {
+  const diagnostics = historyDiagnostics(state);
+  const lines = [
+    `age ${diagnostics.ageDays.toFixed(2)} days · `
+      + `fish ${diagnostics.individualCount}/${diagnostics.individualCap} · `
+      + `plants ${diagnostics.plantCount}/${diagnostics.plantCap}`,
+    `content v${diagnostics.content.version} · `
+      + `propagation epoch ${diagnostics.content.propagationEpoch} · `
+      + `milestone mask 0b${diagnostics.content.milestones.toString(2).padStart(4, "0")}`,
+    `next milestone ${diagnostics.nextMilestone ?? "none"} · `
+      + `arrived ${diagnostics.arrivedSeeds.map((seed) => seed.toString(16)).join(", ") || "none"}`,
+    ...diagnostics.milestones.map((milestone) => [
+      milestone.id.padEnd(18),
+      `day ${milestone.day.toFixed(1)}`,
+      milestone.resolved ? "resolved" : "pending",
+      milestone.speciesId ?? (milestone.fishSeed === null ? "" : milestone.fishSeed.toString(16)),
+    ].join(" · ")),
+    `plants grown since creation: ${diagnostics.grownPlantCount}`,
+  ];
+  document.querySelector("#history-output").textContent = lines.join("\n");
+}
+
 function visibleOrientations() {
   return currentMode === "compare" ? ["portrait", "landscape"] : [currentMode];
 }
@@ -119,6 +145,7 @@ function updateMetrics(timestamp) {
     ? (sampledPlantChanges / sampledPlantFrames).toFixed(1)
     : "0";
   updatePersonalityDiagnostics(state);
+  updateHistoryDiagnostics(state);
   sampledFrames = 0;
   sampledDamage = 0;
   sampledTotal = 0;

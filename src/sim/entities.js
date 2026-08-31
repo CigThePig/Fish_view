@@ -33,8 +33,25 @@ export function createSchoolFish(baseSeed, index, cols, rows) {
   };
 }
 
+// Individual identity is a pure function of the aquarium seed and a creation
+// ordinal. Exposing it separately is what lets Phase 3 name a fish that has not
+// arrived yet without rerolling, or even constructing, the initial cast.
+// mix32 is a bijection over uint32 and `index + 17` scaled by an odd multiplier
+// is injective, so two different ordinals can never collide.
+export function individualSeedFor(baseSeed, index) {
+  return mix32((baseSeed >>> 0) ^ Math.imul((index + 17) >>> 0, 0x85ebca6b));
+}
+
 export function createIndividual(baseSeed, index, cols, rows) {
-  const seed = mix32(baseSeed ^ Math.imul(index + 17, 0x85ebca6b));
+  return createIndividualFromSeed(individualSeedFor(baseSeed, index), index, cols, rows);
+}
+
+// `options` only overrides the entry pose of a fish that swims in from an
+// aquarium edge. Everything that makes the fish itself - traits, affinities,
+// sprite, preferred depth, empty learned history - still comes from the seed,
+// so an arrival is an ordinary persistent individual from its first frame.
+export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {}) {
+  const seed = rawSeed >>> 0;
   const sprite = spriteForSeed(seed);
   const height = sprite.shape.length;
   const waterBottom = rows - SUBSTRATE_ROWS;
@@ -43,14 +60,16 @@ export function createIndividual(baseSeed, index, cols, rows) {
   const y = index < 3
     ? sampleRange(seed, 6, middleTop, middleTop + (middleBottom - middleTop) * 0.62)
     : sampleRange(seed, 6, WATERLINE_ROWS + 0.5, middleBottom);
-  const direction = sample01(seed, 7) > 0.5 ? 1 : -1;
+  const seededDirection = sample01(seed, 7) > 0.5 ? 1 : -1;
+  const vx = Number.isFinite(options.vx) ? options.vx : seededDirection * sampleRange(seed, 9, 0.18, 0.48);
+  const direction = vx < 0 ? -1 : 1;
 
   return {
     seed,
-    x: sampleRange(seed, 8, 4, Math.max(5, cols - 5)),
-    y,
-    vx: direction * sampleRange(seed, 9, 0.18, 0.48),
-    vy: sampleSigned(seed, 10) * 0.08,
+    x: Number.isFinite(options.x) ? options.x : sampleRange(seed, 8, 4, Math.max(5, cols - 5)),
+    y: Number.isFinite(options.y) ? options.y : y,
+    vx,
+    vy: Number.isFinite(options.vy) ? options.vy : sampleSigned(seed, 10) * 0.08,
     drives: {
       hunger: sampleRange(seed, 11, 0.28, 0.68),
       energy: sampleRange(seed, 12, 0.34, 0.82),
@@ -62,14 +81,14 @@ export function createIndividual(baseSeed, index, cols, rows) {
       sociabilityDrift: 0,
       socialMemory: [],
     },
-    behavior: {
+    behavior: options.behavior ?? {
       current: "cruise",
       previous: "cruise",
       blend: 1,
       ageSeconds: sampleRange(seed, 14, 0, 40),
       ageRealSeconds: sampleRange(seed, 16, 0, MIN_BEHAVIOR_REAL_SECONDS),
     },
-    activity: {
+    activity: options.activity ?? {
       current: "cruise",
       previous: "cruise",
       ageRealSeconds: sampleRange(seed, 15, 0, 12),

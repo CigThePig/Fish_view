@@ -7,6 +7,7 @@ import {
   SUBSTRATE_ROWS,
   WATERLINE_ROWS,
 } from "./config.js";
+import { advanceAquariumHistory } from "./aquarium-history.js";
 import { clamp, createSchoolFish, spriteForSeed, traitsFromSeed } from "./entities.js";
 import { createBubbleWorldRecords } from "./bubbles.js";
 import {
@@ -415,30 +416,29 @@ export function tick(state, dt) {
     ? { ...state.reaction, ageSeconds: state.reaction.ageSeconds + realDelta }
     : null;
   const activeReaction = reaction && reaction.ageSeconds < reaction.durationSeconds ? reaction : null;
+  // Long-horizon world state - aquarium age, plant growth, and every discrete
+  // historical event - is owned by one shared resolver so live accelerated
+  // simulation and offline catch-up cannot drift apart. It runs on the full
+  // simulated span, deliberately unlike the drive/behaviour clocks below.
+  const advanced = advanceAquariumHistory(state, simDelta / 86400);
   const context = {
-    ...state,
+    ...advanced,
     elapsedRealSeconds: state.elapsedRealSeconds + realDelta,
     elapsedSimSeconds: state.elapsedSimSeconds + simDelta,
-    totalDays: state.totalDays + simDelta / 86400,
     timeOfDayHours,
     reaction: activeReaction,
   };
   const school = tickSchool(context, realDelta, motionScale);
   const activityContext = { ...context, school };
   const bubbles = createBubbleWorldRecords(activityContext);
-  const movedIndividuals = state.individuals.map((fish, index) =>
+  const movedIndividuals = advanced.individuals.map((fish, index) =>
     tickIndividual(fish, index, activityContext, school, bubbles, realDelta, simDelta, motionScale),
   );
   const individuals = updateSocialMemories(movedIndividuals, realDelta);
-  const plants = state.plants.map((plant) => ({
-    ...plant,
-    ageDays: plant.ageDays + simDelta / 86400,
-  }));
 
   return {
     ...context,
     school,
     individuals,
-    plants,
   };
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DRIVE_MAXIMUM, WATERLINE_ROWS } from "../src/sim/config.js";
+import { plantCapFor } from "../src/sim/plants.js";
 import { forageActivity } from "../src/sim/fish-motion.js";
 import {
   advanceOffline,
@@ -85,11 +86,19 @@ test("bounded emergence keeps fish visible and drives away from extremes", () =>
 
 test("week-per-second acceleration exposes plant growth without removing entities", () => {
   const state = withSettings(createAquariumState({ orientation: "portrait", seed: 3 }), { timeScale: 604800 });
-  const ages = state.plants.map((plant) => plant.ageDays);
+  const ages = new Map(state.plants.map((plant) => [plant.seed, plant.ageDays]));
   const result = run(state, 50);
-  assert.equal(result.plants.length, state.plants.length);
-  assert.equal(result.individuals.length, state.individuals.length);
-  assert.ok(result.plants.every((plant, index) => plant.ageDays > ages[index] + 30));
+  // The roster may now grow with aquarium age, but nothing ever leaves it and
+  // every original specimen is still present and older.
+  assert.ok(result.plants.length >= state.plants.length);
+  assert.ok(result.plants.length <= plantCapFor("portrait"));
+  assert.ok(result.individuals.length >= state.individuals.length);
+  assert.ok(result.individuals.length <= 8);
+  for (const [seed, age] of ages) {
+    const plant = result.plants.find((candidate) => candidate.seed === seed);
+    assert.ok(plant, `original plant ${seed} disappeared`);
+    assert.ok(plant.ageDays > age + 30);
+  }
 });
 
 test("persistence stores individuals and plants but not the identity-free school", () => {
@@ -114,8 +123,8 @@ test("persistence stores individuals and plants but not the identity-free school
 test("offline time advances the long horizon without simulating loss", () => {
   const state = createAquariumState({ orientation: "landscape", seed: 19 });
   const advanced = advanceOffline(state, 14 * 86400);
-  assert.equal(advanced.individuals.length, state.individuals.length);
-  assert.equal(advanced.plants.length, state.plants.length);
+  assert.ok(advanced.individuals.length >= state.individuals.length);
+  assert.ok(advanced.plants.length >= state.plants.length);
   assert.ok(advanced.totalDays >= 14);
   assert.ok(advanced.plants[0].ageDays >= state.plants[0].ageDays + 14);
 });
