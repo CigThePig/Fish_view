@@ -19,73 +19,47 @@ jobs:
           ref: feat/phase1-readable-fish-behavior
           fetch-depth: 0
 
-      - name: Tighten pitched rear body slices once
+      - name: Integrate authored typographic pitch poses once
         shell: bash
         run: |
-          if grep -q 'rearBaseInset' src/render/render.js; then
-            echo 'Pitched tail inset already present.'
+          if grep -q 'spriteId: source.id' src/render/render.js && grep -q 'authored pitch keeps the ASCII drawing compact' tests/phase1-pitch-render.test.js; then
+            echo 'Authored pitch integration already present.'
           else
             python3 - <<'PY'
           from pathlib import Path
 
-          old = '''      const baseLeft = centerX - sliceWidth / 2;
-                const baseRight = centerX + sliceWidth / 2;
-                const fullLeft = Math.min(cornerLeft, baseLeft);
-                const fullRight = Math.max(cornerRight, baseRight);
-                // Bounding a rotated vertical slice as a rectangle adds empty
-                // triangular corners. At the rear of the fish those corners can
-                // reach into the authored tail even though the ideal slice does
-                // not. Keep the full expansion through the body, but taper only
-                // the trailing-side AABB excess across the two rear slices.
-                const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
-                if (facing < 0) {
-                  left = Math.round(fullLeft);
-                  right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
-                } else {
-                  left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
-                  right = Math.round(fullRight) + 1;
-                }'''
-          new = '''      const pitchFraction = Math.min(1, Math.abs(pitch) / 30);
-                // The level body deliberately preserves enough local glyph width to
-                // stay opaque through an edge-on turn. Once the body pitches, that
-                // same safety width can extend through the authored tail at the rear
-                // end. Inset only the trailing edge of the first two source slices,
-                // proportional to pitch, while leaving their noseward edge and every
-                // interior slice untouched.
-                const rearBaseInset = sliceWidth
-                  * (index === 0 ? 0.42 : index === 1 ? 0.08 : 0)
-                  * pitchFraction;
-                let baseLeft = centerX - sliceWidth / 2;
-                let baseRight = centerX + sliceWidth / 2;
-                if (facing < 0) baseRight -= rearBaseInset;
-                else baseLeft += rearBaseInset;
-                const fullLeft = Math.min(cornerLeft, baseLeft);
-                const fullRight = Math.max(cornerRight, baseRight);
-                // Bounding a rotated vertical slice as a rectangle adds empty
-                // triangular corners. At the rear of the fish those corners can
-                // reach into the authored tail even though the ideal slice does
-                // not. Keep the full expansion through the body, but taper only
-                // the trailing-side AABB excess across the two rear slices.
-                const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
-                if (facing < 0) {
-                  left = Math.round(fullLeft);
-                  right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
-                } else {
-                  left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
-                  right = Math.round(fullRight) + 1;
-                }'''
-
           for filename in ['src/render/render.js', 'src/render/body-profile-lab.js']:
               path = Path(filename)
               text = path.read_text()
-              if old not in text:
-                  raise SystemExit(f'missing pitched body block in {filename}')
-              path.write_text(text.replace(old, new, 1))
+              old_result = 'const result = Object.freeze({ width, height, points: Object.freeze(points) });'
+              new_result = 'const result = Object.freeze({ id: sprite.id, width, height, points: Object.freeze(points) });'
+              if old_result in text:
+                  text = text.replace(old_result, new_result, 1)
+              elif new_result not in text:
+                  raise SystemExit(f'missing spritePoints result in {filename}')
+
+              old_options = '''    facing,\n    pitch,\n    cellAspect,\n  });'''
+              new_options = '''    facing,\n    pitch,\n    cellAspect,\n    spriteId: source.id,\n    column,\n    row,\n    width: source.width,\n    height: source.height,\n  });'''
+              if old_options in text:
+                  text = text.replace(old_options, new_options, 1)
+              elif 'spriteId: source.id' not in text:
+                  raise SystemExit(f'missing pitch options in {filename}')
+              path.write_text(text)
+
+          test_path = Path('tests/phase1-pitch-render.test.js')
+          tests = test_path.read_text()
+          old_test = '''test("physical pitch is stable across landscape, portrait, and motion-lab cell aspects", () => {\n  const sprite = individualSprites.find((candidate) => candidate.id === "round-fin");\n  assert.ok(sprite);\n  const lab = renderSpriteScene(sprite, { staticPose: true });\n  const modes = [\n    { name: "landscape", cellWidth: 800 / 66, cellHeight: 480 / 20 },\n    { name: "portrait", cellWidth: 480 / 40, cellHeight: 800 / 33 },\n    { name: "lab", cellWidth: lab.width / lab.logicalWidth, cellHeight: lab.height / lab.logicalHeight },\n  ];\n  for (const mode of modes) {\n    for (const facing of [1, -1]) {\n      const aspect = mode.cellHeight / mode.cellWidth;\n      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: aspect });\n      const pitched = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: aspect });\n      const levelAngle = angleDegrees(noseTailAxis(sprite, level, facing, mode.cellWidth, mode.cellHeight));\n      const pitchedAngle = angleDegrees(noseTailAxis(sprite, pitched, facing, mode.cellWidth, mode.cellHeight));\n      const delta = wrappedDelta(levelAngle, pitchedAngle);\n      const expected = facing > 0 ? 30 : -30;\n      assert.ok(Math.abs(delta - expected) < 0.75, `${mode.name}/${facing} rotated ${delta.toFixed(2)}° instead of ${expected}°`);\n    }\n  }\n});'''
+          new_test = '''test("authored pitch is aspect-stable without literally rotating the ASCII drawing", () => {\n  const sprite = individualSprites.find((candidate) => candidate.id === "round-fin");\n  assert.ok(sprite);\n  const lab = renderSpriteScene(sprite, { staticPose: true });\n  const modes = [\n    { name: "landscape", cellWidth: 800 / 66, cellHeight: 480 / 20 },\n    { name: "portrait", cellWidth: 480 / 40, cellHeight: 800 / 33 },\n    { name: "lab", cellWidth: lab.width / lab.logicalWidth, cellHeight: lab.height / lab.logicalHeight },\n  ];\n  const magnitudes = [];\n  for (const mode of modes) {\n    for (const facing of [1, -1]) {\n      const aspect = mode.cellHeight / mode.cellWidth;\n      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: aspect });\n      const pitched = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: aspect });\n      const levelAngle = angleDegrees(noseTailAxis(sprite, level, facing, mode.cellWidth, mode.cellHeight));\n      const pitchedAngle = angleDegrees(noseTailAxis(sprite, pitched, facing, mode.cellWidth, mode.cellHeight));\n      const delta = wrappedDelta(levelAngle, pitchedAngle);\n      assert.ok(delta * facing > 0, `${mode.name}/${facing} pitched in the wrong semantic direction`);\n      const magnitude = Math.abs(delta);\n      assert.ok(magnitude >= 11 && magnitude <= 17, `${mode.name}/${facing} authored pose was ${magnitude.toFixed(2)}°`);\n      magnitudes.push(magnitude);\n    }\n  }\n  assert.ok(Math.max(...magnitudes) - Math.min(...magnitudes) < 0.75);\n});\n\ntest("authored pitch keeps the ASCII drawing compact instead of scattering upright glyphs", () => {\n  for (const sprite of individualSprites) {\n    for (const facing of [1, -1]) {\n      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: 2 });\n      const strong = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: 2 });\n      assert.equal(level.length, strong.length);\n      for (let index = 0; index < level.length; index += 1) {\n        assert.ok(Math.abs(strong[index].y - level[index].y) <= 0.4, `${sprite.id} displaced a glyph by more than 0.4 rows`);\n        assert.ok(Math.abs(strong[index].x - level[index].x) <= 0.11, `${sprite.id} displaced a glyph sideways by more than 0.11 columns`);\n      }\n    }\n  }\n});'''
+          if old_test in tests:
+              tests = tests.replace(old_test, new_test, 1)
+          elif 'authored pitch keeps the ASCII drawing compact' not in tests:
+              raise SystemExit('missing old physical pitch regression')
+          test_path.write_text(tests)
           PY
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add src/render/render.js src/render/body-profile-lab.js
-            git commit -m 'Tighten pitched rear body around open tail'
+            git add src/render/render.js src/render/body-profile-lab.js tests/phase1-pitch-render.test.js
+            git commit -m 'Integrate authored typographic pitch poses'
             git push origin HEAD:feat/phase1-readable-fish-behavior
           fi
 
