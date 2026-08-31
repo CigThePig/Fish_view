@@ -53,8 +53,55 @@ const GLYPH_PIXELS = Object.freeze(Object.fromEntries(
   }),
 ));
 
+// How much ink a glyph actually carries, in authoring units. A hyphen covers
+// ten columns and three rows; a pipe covers two columns and twenty-one rows.
+// Anything that spaces glyphs along a line has to use the real extent rather
+// than the font's maximum box, or a run of thin glyphs comes apart.
+const GLYPH_INK_EXTENTS = Object.freeze(Object.fromEntries(
+  Object.entries(GLYPH_PIXELS).map(([glyph, pixels]) => {
+    if (!pixels.length) return [glyph, Object.freeze({ width: 0, height: 0 })];
+    let left = Number.POSITIVE_INFINITY;
+    let top = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    let bottom = Number.NEGATIVE_INFINITY;
+    for (const pixel of pixels) {
+      left = Math.min(left, pixel.x);
+      top = Math.min(top, pixel.y);
+      right = Math.max(right, pixel.x + pixel.width);
+      bottom = Math.max(bottom, pixel.y + pixel.height);
+    }
+    return [glyph, Object.freeze({ width: right - left, height: bottom - top })];
+  }),
+));
+
+export function glyphInkExtent(glyph) {
+  return GLYPH_INK_EXTENTS[glyph] ?? GLYPH_INK_EXTENTS["?"];
+}
+
 export function glyphPixels(glyph) {
   return GLYPH_PIXELS[glyph] ?? GLYPH_PIXELS["?"];
+}
+
+// The device rectangles one placed glyph paints. Each source pixel's far edge
+// is rounded rather than its size, so neighbouring rows and columns tile
+// exactly: rounding origin and size independently opens one-pixel seams inside
+// a glyph at any scale above 1, which is what made stems and blades look
+// dashed even where their sampling was continuous.
+export function glyphPixelRects({ char, x, y, scaleX = 1, scaleY = 1 }) {
+  const originX = Math.round(x);
+  const originY = Math.round(y);
+  return glyphPixels(char).map((pixel) => {
+    const left = originX + Math.round(pixel.x * scaleX);
+    const top = originY + Math.round(pixel.y * scaleY);
+    const right = originX + Math.round((pixel.x + pixel.width) * scaleX);
+    const bottom = originY + Math.round((pixel.y + pixel.height) * scaleY);
+    return {
+      x: left,
+      y: top,
+      width: Math.max(1, right - left),
+      height: Math.max(1, bottom - top),
+    };
+  });
 }
 
 export function isSupportedGlyph(glyph) {
