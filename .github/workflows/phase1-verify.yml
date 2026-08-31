@@ -19,30 +19,51 @@ jobs:
           ref: feat/phase1-readable-fish-behavior
           fetch-depth: 0
 
-      - name: Apply staged renderer and lab integration once
-        id: apply
+      - name: Apply tail-safe pitched body approximation once
         shell: bash
         run: |
-          if grep -q 'phase1-pitch-20260830' src/render/render.js; then
-            echo 'Renderer integration already present.'
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          if grep -q 'rearExpansionFactor' src/render/render.js; then
+            echo 'Tail-safe pitched body approximation already present.'
           else
             python3 - <<'PY'
           from pathlib import Path
-          path = Path("tools/apply-phase1.mjs")
-          text = path.read_text()
-          text = text.replace("\\\\`", "\\`")
-          path.write_text(text)
+
+          old = '''      left = Math.round(Math.min(cornerLeft, centerX - sliceWidth / 2));
+                right = Math.round(Math.max(cornerRight, centerX + sliceWidth / 2)) + 1;
+                spanTop = Math.round(cornerTop);
+                spanBottom = Math.round(cornerBottom) + 1;'''
+          new = '''      const baseLeft = centerX - sliceWidth / 2;
+                const baseRight = centerX + sliceWidth / 2;
+                const fullLeft = Math.min(cornerLeft, baseLeft);
+                const fullRight = Math.max(cornerRight, baseRight);
+                // Bounding a rotated vertical slice as a rectangle adds empty
+                // triangular corners. At the rear of the fish those corners can
+                // reach into the authored tail even though the ideal slice does
+                // not. Keep the full expansion through the body, but taper only
+                // the trailing-side AABB excess across the two rear slices.
+                const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
+                if (facing < 0) {
+                  left = Math.round(fullLeft);
+                  right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
+                } else {
+                  left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
+                  right = Math.round(fullRight) + 1;
+                }
+                spanTop = Math.round(cornerTop);
+                spanBottom = Math.round(cornerBottom) + 1;'''
+
+          for filename in ['src/render/render.js', 'src/render/body-profile-lab.js']:
+              path = Path(filename)
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'missing pitched body block in {filename}')
+              path.write_text(text.replace(old, new, 1))
           PY
-            sed -i 's#    // Using a separate front shoulder lets pointed fish close around .*#    // Using a separate front shoulder lets pointed fish close around the nose instead#' tools/apply-phase1.mjs
-            node --check tools/apply-phase1.mjs
-            node tools/apply-phase1.mjs
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add README.md index.html sprites.html src tests tools
-            git commit -m 'Implement Phase 1 fish pitch and terrain foraging'
+            git add src/render/render.js src/render/body-profile-lab.js
+            git commit -m 'Keep pitched body clear of authored tail'
             git push origin HEAD:feat/phase1-readable-fish-behavior
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run full test suite
