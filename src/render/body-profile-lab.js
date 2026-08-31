@@ -221,8 +221,20 @@ function bodyFill(sprite, metrics, profile, {
       const cornerRight = (worldX + Math.max(...corners.map((point) => point.x))) * metrics.cellWidth;
       const cornerTop = (worldY + Math.min(...corners.map((point) => point.y))) * metrics.cellHeight;
       const cornerBottom = (worldY + Math.max(...corners.map((point) => point.y))) * metrics.cellHeight;
-      const baseLeft = centerX - sliceWidth / 2;
-      const baseRight = centerX + sliceWidth / 2;
+      const pitchFraction = Math.min(1, Math.abs(pitch) / 30);
+      // The level body deliberately preserves enough local glyph width to
+      // stay opaque through an edge-on turn. Once the body pitches, that
+      // same safety width can extend through the authored tail at the rear
+      // end. Inset only the trailing edge of the first two source slices,
+      // proportional to pitch, while leaving their noseward edge and every
+      // interior slice untouched.
+      const rearBaseInset = sliceWidth
+        * (index === 0 ? 0.42 : index === 1 ? 0.08 : 0)
+        * pitchFraction;
+      let baseLeft = centerX - sliceWidth / 2;
+      let baseRight = centerX + sliceWidth / 2;
+      if (facing < 0) baseRight -= rearBaseInset;
+      else baseLeft += rearBaseInset;
       const fullLeft = Math.min(cornerLeft, baseLeft);
       const fullRight = Math.max(cornerRight, baseRight);
       // Bounding a rotated vertical slice as a rectangle adds empty
