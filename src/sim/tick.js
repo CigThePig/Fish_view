@@ -392,11 +392,11 @@ function tickIndividual(fish, index, state, school, realDelta, simDelta, motionS
     : 0;
   const terrainMaximumY = baseMaximumY + peckAllowance;
   // The permanent mid-water cast keeps the same clearance-adjusted
-// swimming envelope it had before terrain-aware foraging. Applying the
-// 68% ceiling to the raw water column lets large/pitched fish drift
-// visibly deeper because their body clearance is ignored.
-const protectedMaximumY = WATERLINE_ROWS
-  + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;
+  // swimming envelope it had before terrain-aware foraging. Applying the
+  // 68% ceiling to the raw water column lets large/pitched fish drift
+  // visibly deeper because their body clearance is ignored.
+  const protectedMaximumY = WATERLINE_ROWS
+    + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;
   const maximumY = index < 3 ? Math.min(terrainMaximumY, protectedMaximumY) : terrainMaximumY;
 
   if (y < minimumY) {
