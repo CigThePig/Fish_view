@@ -22,20 +22,24 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           tick_path = Path('src/sim/tick.js')
           tick = tick_path.read_text()
-          old = '''  const protectedMaximumY = WATERLINE_ROWS
-            + (state.rows - SUBSTRATE_ROWS - WATERLINE_ROWS) * 0.68;'''
-          new = '''  // The permanent mid-water cast keeps the same clearance-adjusted
-            // swimming envelope it had before terrain-aware foraging. Applying the
-            // 68% ceiling to the raw water column lets large/pitched fish drift
-            // visibly deeper because their body clearance is ignored.
-            const protectedMaximumY = WATERLINE_ROWS
-              + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;'''
-          if old not in tick:
-              raise SystemExit('expected protectedMaximumY block not found')
-          tick_path.write_text(tick.replace(old, new, 1))
+          pattern = re.compile(
+              r'  const protectedMaximumY = WATERLINE_ROWS\n'
+              r'\s*\+ \(state\.rows - SUBSTRATE_ROWS - WATERLINE_ROWS\) \* 0\.68;'
+          )
+          replacement = '''  // The permanent mid-water cast keeps the same clearance-adjusted
+          // swimming envelope it had before terrain-aware foraging. Applying the
+          // 68% ceiling to the raw water column lets large/pitched fish drift
+          // visibly deeper because their body clearance is ignored.
+          const protectedMaximumY = WATERLINE_ROWS
+            + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;'''
+          tick, count = pattern.subn(replacement, tick, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one protectedMaximumY block, found {count}')
+          tick_path.write_text(tick)
 
           test_path = Path('tests/phase1-fish-behavior.test.js')
           tests = test_path.read_text()
