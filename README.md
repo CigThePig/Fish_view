@@ -18,6 +18,18 @@ persistent simulation.
   utility-selected behavior, interaction history, and local persistence. Their
   body posture now exposes that behavior: meaningful climbs and dives ease into
   bounded vertical pitch, while tiny velocity noise leaves them nearly level.
+- Those six fish now have seed-derived, deliberately accented interests beneath
+  their broad temperament. A bounded real-time activity layer turns explore into
+  open-water wandering, plant inspection/weaving, bubble pursuit, or the existing
+  surface inspection; social behavior can follow the anonymous school, follow a
+  persistent fish, cruise with a familiar companion, or briefly play chase; rest
+  can settle beside suitable foreground vegetation. No labels, icons, names, or
+  meters appear over the aquarium: identity is expressed only through repeated
+  movement choices and preferred places.
+- Persistent fish learn at most two positive familiarities from actual time spent
+  visibly near another stable fish seed. Familiarity feeds later companion choice,
+  while social need relief and sociability drift now require real physical contact
+  with the school or a companion instead of merely selecting the word `social`.
 - Substrate-aware foraging. Eligible individuals approach the real deterministic
   terrain contour, slow into a lateral search, carry a deliberate nose-down
   bias, make small seeded peck/dip motions, and kick up a sparse 1-4 glyph puff.
@@ -162,6 +174,91 @@ individual visual scale is exposed from sim/config.js and the simulation uses a
 conservative logical envelope for the strongest permitted pitch; it never imports
 render/depth.js. Forage and surface targets then come from substrateSurfaceY()
 and waterSurfaceY() respectively.
+
+## Phase 2 personality and activity architecture
+
+The original five broad behaviors remain the biological explanation for motion:
+`cruise`, `explore`, `social`, `forage`, and `rest`. Hunger, energy, social need,
+daylight, and the original broad traits still decide which one wins. Phase 2 adds
+a smaller intention immediately below it. In other words, behavior answers
+"why?" while activity answers "what specifically?" A hungry fish still forages;
+substrate affinity only changes the breadth and rhythm of its real terrain search.
+A tired bubble lover still rests. Touch remains an unconditional, immediate
+override for every fish and only uses glass affinity to vary speed and standoff.
+
+Broad traits (`boldness`, `sociability`, `activity`, `preferredDepth`, and
+`curiosity`) remain the temperament model. The specific bubble, plant, school,
+glass, wander, surface, shelter, and substrate affinities are regenerated from
+the stable fish seed. A rank-and-accent pass gives every fish two or three strong
+interests and suppresses two weak ones, instead of hoping six narrow random ranges
+look distinct. The strongest accents are selected from activities every member
+of the cast can perform, so Phase 1's first three protected mid-water fish are
+never defined by inaccessible surface or substrate quirks. Affinities are never
+saved and interaction history never rerolls them.
+
+Activities use bounded deterministic utility: affinity and traits combine with
+environmental opportunity, distance, continuity, social proof, target crowding,
+and learned familiarity. Each activity has a seeded minimum and maximum real-time
+dwell. A valid plant, bubble, or companion target is retained rather than rescanned
+for a new winner every 100 ms. The stable identity stored in transient intention
+is always a fish seed, plant seed, or deterministic bubble ID, never an array
+index or object reference. Missing plants, popped bubbles, self/missing companions,
+top-level behavior changes, and touch all have explicit deterministic fallback.
+This keeps week-per-second biology visually coherent even though broad intent can
+advance quickly.
+
+Plant intelligence uses only pure biological records: root position, current
+height, species growth state, layer, age, and seed. A stable fish/plant preference
+causes repeat visits, a short score derived around a newly revealed growth stage
+adds novelty, and foreground height gates shelter. The AI never imports or searches
+the rendered bone/glyph skeleton. Coarse anchors are enough for inspection and
+weaving, while the existing fish disturbance and foreground compositing provide
+the secondary visual feedback for free.
+
+Bubble positions now have one source of truth in `src/sim/bubbles.js`. That module
+owns emitter layout, stable IDs, lifecycle, rise/pop position, current, depth-speed,
+fish disturbance, exhalations, and touch bursts as bounded world records. The
+renderer maps those same records to glyphs, colour, fog, scale, and pop artwork.
+The tiny continuous distance trajectories shared by fish and bubbles moved to the
+neutral `src/sim/depth.js`; simulation never imports `src/render/depth.js`.
+Consequently a bubble-oriented fish cannot chase a mathematical bubble drawn in a
+different place.
+
+Learned social state is deliberately smaller than a relationship graph. Each fish
+remembers at most two `{ seed, familiarity }` entries in `[0, 1]`. A bounded pair
+post-pass over the current 5–8 fish grows those entries from actual proximity,
+with extra weight for deliberate following, companion cruising, or resting close.
+Compatibility is symmetric and seed-derived; familiarity is learned and saved.
+There is no dislike, decay penalty, dominance, fear, health effect, or offline fake
+trajectory replay. A missing, duplicate, malformed, non-finite, or self relationship
+is discarded during restore.
+
+Persistence remains version 2. Broad behavior, motion, drives, visual pose, touch
+history, trait drift, and bounded familiarity are durable. Affinities and pair
+compatibility are derived. Current bubble/plant/fish targets, chase state, and
+activity clocks are transient and safely reconstructed after power loss, so an old
+Phase 1 save simply starts with empty familiarity. The hidden tuning panel includes
+a developer-only per-fish line showing seed, behavior/activity, target, top
+affinities, and strongest familiarity; none of it enters the aquarium view.
+
+The repeatable 200-frame, 10 fps measurement compares the Phase 1 merge against
+Phase 2 with the same seed and forced representative opportunities:
+
+| Orientation / scenario | Phase 1 avg damage | Phase 2 avg damage | Phase 1 max | Phase 2 max | Phase 2 avg rects | Max bubbles |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Landscape ordinary | 27.51% | 27.75% | 47.02% | 41.59% | 29.2 | 2 |
+| Portrait ordinary | 37.94% | 33.92% | 75.24% | 67.25% | 13.7 | 2 |
+| Landscape bubble-heavy | 28.74% | 25.95% | 43.24% | 55.82% | 38.9 | 23 |
+| Portrait bubble-heavy | 27.69% | 20.75% | 72.15% | 49.81% | 41.2 | 12 |
+| Landscape plant/social | 35.61% | 37.64% | 57.94% | 76.95% | 26.6 | 2 |
+| Portrait plant/social | 60.45% | 63.61% | 96.00% | 96.00% | 13.2 | 2 |
+
+Every one of the 2,400 measured transitions records zero full redraws and every
+individual stays at the nine-fill body ceiling. The slowest observed Phase 2
+`tick + render` average in the final Node measurement was 3.48 ms; that is a relative
+development measurement rather than an ESP32 benchmark, but remains comfortably
+inside the prototype's 100 ms frame interval. `tools/measure-phase2.mjs` reproduces
+the ordinary, bubble-heavy, and plant/social scenarios against any supplied tree.
 
 A scene object may also carry
 `fill`: opaque spans painted under its own glyphs, which is how a fish occludes

@@ -23,7 +23,7 @@ import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
 import { pitchCoordinate } from "./fish-pitch.js?v=phase1-pitch-20260830";
-import { drawBubbles } from "./bubbles.js?v=visual-depth-20260830";
+import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import {
   depthScale,

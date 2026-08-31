@@ -96,8 +96,16 @@ test("persistence stores individuals and plants but not the identity-free school
   const evolved = run(applyTouch(base, 12, 8), 30);
   const saved = serializePersistentState(evolved);
   assert.equal("school" in saved, false);
+  assert.ok(saved.individuals.every((fish) => !("activity" in fish)));
   const restored = restorePersistentState(base, saved);
-  assert.deepEqual(restored.individuals, evolved.individuals);
+  for (let index = 0; index < restored.individuals.length; index += 1) {
+    const { activity: restoredActivity, ...restoredPersistent } = restored.individuals[index];
+    const { activity: evolvedActivity, ...evolvedPersistent } = evolved.individuals[index];
+    assert.deepEqual(restoredPersistent, evolvedPersistent);
+    assert.equal(restoredActivity.current, evolvedPersistent.behavior.current);
+    assert.equal(restoredActivity.targetType, null);
+    assert.equal(evolvedActivity.current, "touch-react");
+  }
   assert.deepEqual(restored.plants, evolved.plants);
   assert.deepEqual(restored.school, base.school);
 });

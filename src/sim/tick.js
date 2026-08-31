@@ -1,19 +1,20 @@
 import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
 import { clamp, createSchoolFish, spriteForSeed, traitsFromSeed } from "./entities.js";
+import { createBubbleWorldRecords } from "./bubbles.js";
 import {
-  FORAGE_PITCH_BIAS_DEGREES,
+  BEHAVIORS,
+  socialEngagement,
+  tickFishActivity,
+} from "./fish-activities.js";
+import {
   MAX_FISH_PITCH_DEGREES,
-  SURFACE_PITCH_BIAS_DEGREES,
-  fishVerticalClearanceRows,
   forageActivity,
   forageEligible,
   substrateSafeY,
   surfaceSafeY,
 } from "./fish-motion.js";
-import { sampleRange } from "./prng.js";
+import { affinitiesFromSeed, updateSocialMemories } from "./fish-personality.js";
 
-const TAU = Math.PI * 2;
-const BEHAVIORS = Object.freeze(["cruise", "explore", "social", "forage", "rest"]);
 const FACING_THRESHOLD = 0.11;
 const PITCH_DEADZONE = 0.035;
 const PITCH_NORMAL_VY = 0.22;
@@ -24,10 +25,6 @@ const PITCH_EASE_RATE = 3.6;
 function smoothstep(edge0, edge1, value) {
   const amount = clamp((value - edge0) / (edge1 - edge0), 0, 1);
   return amount * amount * (3 - 2 * amount);
-}
-
-function positiveModulo(value, modulus) {
-  return ((value % modulus) + modulus) % modulus;
 }
 
 export function daylightFactor(hour) {
@@ -159,19 +156,14 @@ function tickSchool(state, realDelta, motionScale) {
   });
 }
 
-function schoolCenter(school, state) {
-  if (!school.length) return { x: state.cols / 2, y: state.rows / 2 };
-  const sum = school.reduce((result, fish) => ({ x: result.x + fish.x, y: result.y + fish.y }), { x: 0, y: 0 });
-  return { x: sum.x / school.length, y: sum.y / school.length };
-}
-
 export function behaviorUtilities(fish, state, traits = traitsFromSeed(fish.seed, fish.history)) {
+  const affinities = affinitiesFromSeed(fish.seed);
   const daylight = daylightFactor(state.timeOfDayHours);
   const utilities = {
-    cruise: 0.34 + traits.activity * 0.22 + fish.drives.energy * 0.1,
-    explore: traits.curiosity * 0.55 + fish.drives.energy * 0.25 - fish.drives.hunger * 0.08,
-    social: fish.drives.social * (0.5 + traits.sociability * 0.62),
-    forage: fish.drives.hunger * (0.68 + traits.activity * 0.32),
+    cruise: 0.3 + traits.activity * 0.18 + fish.drives.energy * 0.08,
+    explore: traits.curiosity * 0.6 + fish.drives.energy * 0.28 - fish.drives.hunger * 0.08,
+    social: fish.drives.social * (0.65 + traits.sociability * 0.62),
+    forage: fish.drives.hunger * (0.68 + traits.activity * 0.28 + affinities.substrate * 0.13),
     rest: (1 - fish.drives.energy) * (0.72 + (1 - traits.activity) * 0.38) + (1 - daylight) * 0.16,
   };
   utilities[fish.behavior.current] = (utilities[fish.behavior.current] ?? 0) + 0.07;
@@ -185,78 +177,6 @@ function selectBehavior(fish, state, traits, allowForage) {
     (best, behavior) => (utilities[behavior] > utilities[best] ? behavior : best),
     BEHAVIORS[0],
   );
-}
-
-function surfaceInvestigationTarget(fish, index, state, traits, driftX) {
-  if (index < 3) return null;
-  const period = sampleRange(fish.seed, 2400, 72, 112);
-  const offset = sampleRange(fish.seed, 2401, 0, period);
-  const cycle = positiveModulo(state.elapsedSimSeconds + offset, period) / period;
-  const window = 0.08 + traits.curiosity * 0.09;
-  if (cycle > window) return null;
-
-  const targetX = clamp(driftX, 2, state.cols - 2);
-  const targetY = surfaceSafeY(fish, state, targetX);
-  const nearSurface = Math.abs(fish.y - targetY) < 1.1;
-  return {
-    x: targetX,
-    y: targetY,
-    speed: nearSurface ? 0.1 + traits.activity * 0.04 : 0.23 + traits.curiosity * 0.16,
-    postureBias: SURFACE_PITCH_BIAS_DEGREES,
-    surfaceInspect: true,
-  };
-}
-
-function behaviorTarget(fish, index, state, traits, center, behavior) {
-  const sprite = spriteForSeed(fish.seed);
-  const halfWidth = Math.max(...sprite.shape.map((row) => [...row].length)) / 2;
-  const clearance = fishVerticalClearanceRows(fish);
-  const top = surfaceSafeY(fish, state, fish.x);
-  const bottom = substrateSafeY(fish, state, fish.x);
-  const preferredY = top + Math.max(0, bottom - top) * traits.preferredDepth;
-  const cycle = state.elapsedSimSeconds;
-  const driftX = state.cols * (0.5 + 0.42 * Math.sin(cycle / 41 + sampleRange(fish.seed, 21, 0, TAU)));
-  const driftY = top + Math.max(0, bottom - top) * (0.5 + 0.38 * Math.sin(cycle / 57 + sampleRange(fish.seed, 22, 0, TAU)));
-
-  if (behavior === "social") return { x: center.x, y: center.y, speed: 0.3 + traits.sociability * 0.28, postureBias: 0 };
-  if (behavior === "forage") {
-    const activity = forageActivity(fish, index, state);
-    const searchSpan = Math.min(5.5, state.cols * 0.09);
-    const searchPhase = fish.behavior.ageSeconds * (0.16 + traits.activity * 0.08)
-      + sampleRange(fish.seed, 25, 0, TAU);
-    const patchCenter = state.cols * (
-      0.5 + 0.34 * Math.sin(cycle / 97 + sampleRange(fish.seed, 26, 0, TAU))
-    );
-    const targetX = clamp(patchCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
-    const dip = activity.searching ? activity.peck * 0.14 : 0;
-    return {
-      x: targetX,
-      y: substrateSafeY(fish, state, targetX) + dip,
-      speed: activity.searching ? 0.075 + traits.activity * 0.085 : 0.24 + traits.activity * 0.24,
-      postureBias: activity.searching
-        ? FORAGE_PITCH_BIAS_DEGREES + activity.peck * 4
-        : 0,
-      forageSearching: activity.searching,
-      peck: activity.peck,
-    };
-  }
-  if (behavior === "rest") return {
-    x: driftX,
-    y: preferredY + (bottom - preferredY) * 0.35,
-    speed: 0.09 + traits.activity * 0.07,
-    postureBias: 0,
-  };
-  if (behavior === "explore") {
-    const surface = surfaceInvestigationTarget(fish, index, state, traits, driftX);
-    if (surface) return surface;
-    return { x: driftX, y: driftY, speed: 0.28 + traits.curiosity * 0.35, postureBias: 0 };
-  }
-  return {
-    x: fish.vx < 0 ? 0 : state.cols,
-    y: preferredY + Math.sin(cycle / 33 + sampleRange(fish.seed, 23, 0, TAU)) * 0.8,
-    speed: 0.2 + traits.activity * 0.32,
-    postureBias: 0,
-  };
 }
 
 export function trajectoryPitchDegrees(vx, vy) {
@@ -316,10 +236,10 @@ function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0) {
   return { facing, targetFacing, turnProgress, pitch, targetPitch };
 }
 
-function tickIndividual(fish, index, state, school, realDelta, simDelta, motionScale) {
+function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta, motionScale) {
   const traits = traitsFromSeed(fish.seed, fish.history);
+  const affinities = affinitiesFromSeed(fish.seed);
   const deltaHours = simDelta / 3600;
-  const deltaDays = simDelta / 86400;
   const daylight = daylightFactor(state.timeOfDayHours);
   const currentForage = forageActivity(fish, index, state);
   const hungerRelief = currentForage.searching
@@ -329,7 +249,8 @@ function tickIndividual(fish, index, state, school, realDelta, simDelta, motionS
   const energyChange = current === "rest"
     ? deltaHours * 0.03
     : -deltaHours * (0.004 + traits.activity * 0.005);
-  const socialRelief = current === "social" ? deltaHours * 0.022 : 0;
+  const engagement = socialEngagement(fish, state, school);
+  const socialRelief = deltaHours * 0.024 * engagement;
   const drives = {
     hunger: clamp(fish.drives.hunger + deltaHours * 0.003 - hungerRelief, 0.15, 0.85),
     energy: clamp(fish.drives.energy + energyChange + (1 - daylight) * deltaHours * 0.002, 0.15, 0.85),
@@ -350,17 +271,14 @@ function tickIndividual(fish, index, state, school, realDelta, simDelta, motionS
     behavior = { current: candidate, previous: behavior.current, blend: 0, ageSeconds: 0 };
   }
 
-  const center = schoolCenter(school, state);
-  const fishWithBehavior = { ...fish, behavior };
-  let target = behaviorTarget(fishWithBehavior, index, state, traits, center, behavior.current);
-  if (state.reaction) {
-    target = {
-      x: state.reaction.x,
-      y: state.reaction.y,
-      speed: 0.58 + traits.boldness * 0.22,
-      postureBias: 0,
-    };
-  }
+  const fishWithBehavior = { ...fish, drives, behavior };
+  const activityFrame = tickFishActivity(fishWithBehavior, index, state, realDelta, {
+    traits,
+    affinities,
+    bubbles,
+    school,
+  });
+  const { target } = activityFrame;
 
   const direction = safeNormalize(target.x - fish.x, target.y - fish.y, fish.vx < 0 ? -1 : 1, 0);
   const targetSpeed = target.speed * motionScale;
@@ -409,8 +327,9 @@ function tickIndividual(fish, index, state, school, realDelta, simDelta, motionS
 
   const history = {
     ...fish.history,
+    socialMemory: (fish.history.socialMemory ?? []).map((entry) => ({ ...entry })),
     sociabilityDrift: clamp(
-      fish.history.sociabilityDrift + deltaDays * (behavior.current === "social" ? 0.0007 : -0.00008),
+      fish.history.sociabilityDrift + realDelta * (engagement > 0 ? engagement * 0.0000012 : -0.00000002),
       0,
       0.12,
     ),
@@ -425,6 +344,7 @@ function tickIndividual(fish, index, state, school, realDelta, simDelta, motionS
     drives,
     history,
     behavior,
+    activity: activityFrame.activity,
     visual: tickVisualPose(fish, vx, vy, realDelta, target.postureBias),
   };
 }
@@ -450,9 +370,12 @@ export function tick(state, dt) {
     reaction: activeReaction,
   };
   const school = tickSchool(context, realDelta, motionScale);
-  const individuals = state.individuals.map((fish, index) =>
-    tickIndividual(fish, index, context, school, realDelta, simDelta, motionScale),
+  const activityContext = { ...context, school };
+  const bubbles = createBubbleWorldRecords(activityContext);
+  const movedIndividuals = state.individuals.map((fish, index) =>
+    tickIndividual(fish, index, activityContext, school, bubbles, realDelta, simDelta, motionScale),
   );
+  const individuals = updateSocialMemories(movedIndividuals, realDelta);
   const plants = state.plants.map((plant) => ({
     ...plant,
     ageDays: plant.ageDays + simDelta / 86400,

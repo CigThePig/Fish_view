@@ -6,6 +6,7 @@ import {
 } from "./config.js";
 import { spriteForSeed } from "./entities.js";
 import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
+import { affinitiesFromSeed } from "./fish-personality.js";
 import { sampleRange } from "./prng.js";
 
 export const MAX_FISH_PITCH_DEGREES = 32;
@@ -75,7 +76,8 @@ export function forageActivity(fish, index, state) {
     && fish.behavior?.current === "forage"
     && distanceRows <= FORAGE_SEARCH_DISTANCE_ROWS;
 
-  const period = sampleRange(fish.seed, 4600, 4.2, 6.6);
+  const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
+  const period = sampleRange(fish.seed, 4600, 4.2, 6.6) * (1.08 - substrateAffinity * 0.24);
   const offset = sampleRange(fish.seed, 4601, 0, period);
   const cycle = positiveModulo((fish.behavior?.ageSeconds ?? 0) + offset, period) / period;
   const peckPhase = searching && cycle < PECK_WINDOW ? cycle / PECK_WINDOW : null;
