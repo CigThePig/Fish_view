@@ -97,11 +97,10 @@ function projectedInkCoveragePixels(metrics, dxPixels, dyPixels, scaleX, scaleY)
 
 function structuralProgresses(point, sampleCount) {
   if (sampleCount <= 1) return [point.parent === 0 ? 0.3 : 0.5];
-  // The first bone starts visibly close to the buried root. Its second sample
-  // stays high enough to hand the stem to the next bone without reopening the
-  // grounding gap. Other bones use symmetric quarter points so neighbouring
-  // segments visually share the joint between them.
-  return point.parent === 0 ? [0.18, 0.75] : [0.25, 0.75];
+  // Keep the first root attachment low enough to read as planted while spacing
+  // the pair evenly enough that maximum-height portrait stems do not reopen an
+  // internal hole. Other bones use symmetric quarter points.
+  return point.parent === 0 ? [0.2, 0.75] : [0.25, 0.75];
 }
 
 function singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels) {
