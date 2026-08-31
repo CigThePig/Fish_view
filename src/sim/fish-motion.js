@@ -34,12 +34,13 @@ function spriteFor(value) {
 // visual depth and its horizontal silhouette contributes to its vertical
 // envelope when pitched. The calculation stays in pure logical/authoring units,
 // using the same 12x24 cell aspect as the bitmap artwork, so sim never imports
-// render/depth.js or any backend geometry.
+// render/depth.js or any backend geometry. width/2 and height/2 already include
+// the half-cell of bitmap ink beyond the outermost authored glyph centres.
 export function fishVerticalClearanceRows(fishOrSprite) {
   const sprite = spriteFor(fishOrSprite);
   const { width, height } = spriteDimensions(sprite);
-  const halfWidth = width / 2 + 0.5;
-  const halfHeight = height / 2 + 0.5;
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
   const horizontalAsRows = halfWidth * (CELL_WIDTH / CELL_HEIGHT);
   const projected = halfHeight * Math.cos(MAX_PITCH_RADIANS)
     + horizontalAsRows * Math.sin(MAX_PITCH_RADIANS);
