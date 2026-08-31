@@ -183,34 +183,77 @@ A persisted plant stores its seed, species, continuous root x, age, mature
 height, depth layer, and seven seeded variation values. It never stores animated
 joints. At render time the root is fixed and 5–12 possible joints are walked in
 parent order; growth exposes joints and locally lengthens new segments instead
-of scaling finished artwork. A mature specimen emits at most 12 glyphs. Tests
-cap a mature landscape at 200 visible plant glyphs and portrait at 150; the
-dense validation seed currently produces 193 and 141 respectively.
+of scaling finished artwork. Those joints are the simulation skeleton only.
+They define topology, growth, sway, current response, and disturbance, but they
+are deliberately too sparse to dictate the final number of visible characters.
 
-The three depth groups are now separated by size as well as by colour: a
-foreground specimen draws at 1.12 and a background one at 0.76, with each
-species mixed towards the water on the same fog ramp as the fish. The
-background floor is deliberate rather than tuned by eye - a stem is a column of
-glyphs, and much below 0.75 the glyphs stop touching and a distant reed reads as
-a dashed line.
+Rendering is a second, still bounded resolution. Each posed structural bone is
+measured in physical panel pixels after the plant's depth scale has been applied.
+A short bone keeps one structural glyph. A bone whose scaled 5×7 ink would leave
+a visible hole receives a second attachment sampled directly between its current
+posed parent and child. Explicit decorations such as leaves, tips, beads,
+lanterns, and bells remain one authored glyph at their endpoint; an authored
+structural marker such as `Y` is likewise emitted once at the joint while stem
+attachments cover the incoming bone. Attachments have no stored animation or
+physics state. Their coordinates are derived from the posed bone every render,
+so growth and motion remain owned entirely by the sparse skeleton.
+
+The continuity decision uses the bitmap font's real 10×21 lit-pixel envelope,
+not a guessed logical row count. The regression contract allows at most 12
+physical pixels of uncovered distance along a structural segment. Slight
+structural scaling remains secondary polish and is capped at 1.35 rather than
+being stretched into a vector-like bar. When a long first bone needs two
+attachments they begin near the buried root and continue up the segment, keeping
+vegetation visibly planted without reopening the old first-to-second-glyph gap.
+
+The three depth groups stay separated by size as well as by colour: a foreground
+specimen draws around 1.12 and a background one around 0.76, with seeded spread,
+while each species is mixed towards the water on the same fog ramp as the fish.
+The smaller background glyphs therefore request denser structural sampling only
+when their reduced physical ink actually needs it. Depth remains visually useful
+instead of being flattened back to scale 1.0 merely to hide sparse stems.
+
+`activeJoints` in render diagnostics still means active simulated skeletal
+joints. `glyphs` now means actual emitted render glyphs, and is intentionally
+allowed to be larger. Diagnostics also expose structural and decorative
+attachment counts plus the maximum attachments emitted by one segment. The
+algorithm is statically bounded at two sampled stem glyphs per structural bone,
+with one additional authored structural marker possible at the endpoint. With a
+12-joint simulation ceiling that gives an absolute renderer ceiling of 36 glyphs
+per specimen, though the measured mature scenes stay well below it.
+
+Five mature deterministic seeds (`5`, `29`, `83`, `147`, and `818`) measured at
+10 fps produce 186–196 plant glyphs in landscape, averaging 189, with a maximum
+of 14 glyphs on one specimen. Portrait produces 166–182, averaging 176, with a
+maximum specimen of 24 in the physically taller stress cases. The regression
+budgets remain deliberately above those measurements at 260 landscape glyphs
+and 210 portrait glyphs so normal seeded variation has room without making the
+limit meaningless. Before segment sampling the same five seeds produced
+182–193 glyphs in landscape, averaging 184.4, and 128–141 in portrait, averaging
+133.2. The larger portrait increase is the intended cost of covering long bones
+that previously appeared as dashed columns.
 
 There is no soft-body solver, recursion, per-pixel plant effect, rotation, or
 per-glyph collision work. Three low-frequency current samples are shared by the
 garden. Each plant adds two seeded harmonics, one root-level touch calculation,
-and—outside the background layer—one coarse nearest-individual disturbance.
+and, outside the background layer, one coarse nearest-individual disturbance.
 Background poses quantize to 5 Hz while nearer plants use the aquarium's 10 Hz
 cadence. A future fixed-point/LUT port can replace the small bounded set of
 trigonometric calls without changing the descriptors. The normal bitmap-glyph
-backend simply rounds each posed glyph to pixels.
+backend simply rounds each sampled glyph to pixels.
 
 Every specimen remains one stable scene object. Its old and new tight bounds
 enter the existing dirty-rectangle compositor, and opaque fish are painted
 after background/midground plants but before foreground plants. Reduced-detail
 rendering can omit alternating leaf attachments while retaining the same
-skeleton and species identity. In a 60-seed mature-tank sample at 10 Hz, an
-average frame changed 4.7 plant objects. Plant-only damage averaged 4.7% of the
-landscape framebuffer and 10.4% of portrait; whole-scene damage averaged 26.0%
-and 32.5% respectively.
+skeleton and species identity. Across the same five mature seeds, 200 frames per
+seed and orientation, sampled attachments raise average whole-scene damage from
+46.77% to 49.49% in landscape and from 64.70% to 68.18% in portrait. Average
+dirty-rectangle counts move from 30.40 to 27.99 in landscape and from 14.78 to
+13.17 in portrait. None of the 1,000 measured 10 fps transitions in either
+orientation requests a full-screen repaint. The repair therefore costs a modest
+number of simple bitmap draws without multiplying simulation complexity or
+turning plant motion into full-frame redraws.
 
 ## Source layout
 
