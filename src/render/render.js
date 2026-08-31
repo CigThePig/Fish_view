@@ -7,7 +7,16 @@ import {
   substrateArt,
 } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
-import { SUBSTRATE_RELIEF_ROWS, SURFACE_Y_ROWS, substrateSurfaceY } from "../sim/environment.js";
+import {
+  SUBSTRATE_RELIEF_ROWS,
+  SURFACE_WAVE_CURVATURE,
+  SURFACE_WAVE_ROWS,
+  SURFACE_Y_ROWS,
+  substrateSurfaceY,
+  surfaceWaveCurvature,
+  surfaceWaveOffset,
+  surfaceWaveSlope,
+} from "../sim/environment.js";
 import { spriteForSeed } from "../sim/entities.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
@@ -45,6 +54,9 @@ const BAYER_4 = Object.freeze([
 ]);
 
 export const LAYERS = Object.freeze({
+  // Sunlight is behind everything, the water surface included: a shaft is the
+  // water being lit, not something floating in front of it.
+  shafts: 5,
   waterline: 10,
   backgroundPlants: 20,
   // The far end of the school swims behind the midground weed rather than in
@@ -64,20 +76,58 @@ export const LAYERS = Object.freeze({
   substrate: 60,
 });
 
-// Sunlight entering a tank is the cheapest volume there is: a handful of
-// tilted, widening, fading rectangles behind everything else. They are part of
-// the background rather than scene objects, so they cost nothing per frame
-// beyond the background repaint that every damage rectangle already performs.
+// Sunlight entering a tank is cheap volume: a handful of tilted, widening,
+// fading rectangles behind everything that swims. They are sliced into steps
+// down the water column and each step is its own scene object, because the
+// swell overhead only really moves the top of a shaft and a whole-column
+// object would repaint four hundred pixels of still water to say so.
 const SHAFT_STEPS = 11;
 const SHAFT_MAX_TILT = 0.3;
-// The shafts lean with the sun, quantized to two-hour stages. That is the same
-// trick as the 12 palette stages: whole-field changes stay infrequent, and the
-// two stage clocks are the only things that force a full repaint.
+// The sun's own direction, quantized to two-hour stages. That is the same
+// trick as the 12 palette stages: the lean itself is a slow, coarse clock, and
+// everything that moves shaft to shaft between its ticks comes from the water.
 const SHAFT_STAGE_HOURS = 2;
 // Sunlight in water is a suggestion, not a spotlight. Keeping the peak mix low
 // is what stops the steps in the taper from reading as stacked blocks.
 const SHAFT_MINIMUM = 0.008;
 const SHAFT_PEAK = 0.15;
+// Fresh water. Every coupling between the swell and the shafts below is some
+// consequence of light crossing this boundary.
+const WATER_IOR = 1.333;
+// A crest is met earlier along a leaning ray than the still surface would have
+// been, so the beam enters behind where it otherwise would. This is the term
+// that makes the swell move a shaft sideways rather than merely pinch it, and
+// it is the sun's lean that scales it: a shaft under a low sun wanders as the
+// crests pass, and one under a noon sun barely does. Strictly the shift is the
+// crest height times that lean, which is a pixel or two on a panel this size,
+// so it is amplified the same way the lean itself already is.
+const SHAFT_ENTRY_GAIN = 9;
+// Snell on the facet: the beam bends by a fixed fraction of the facet's own
+// slope, and keeps drifting sideways the deeper it goes. Unlike the entry
+// shift this one does not care where the sun is, so it stays near its true
+// strength - it is the small residue of movement a shaft keeps at noon.
+const SHAFT_BEND_GAIN = 1;
+// A crest is a converging lens and a trough a diverging one. Light a narrowed
+// shaft no longer spends on width it spends on brightness.
+const SHAFT_FOCUS_GAIN = 0.42;
+const SHAFT_FOCUS_MIN = 0.58;
+const SHAFT_FOCUS_MAX = 1.45;
+const SHAFT_FOCUS_LIGHT = 0.8;
+// Facets turned into the sun collect more of it than facets turned away. This
+// is the half of the coupling that flips between morning and evening instead
+// of merely pulsing, and it vanishes at noon when the light is straight down.
+const SHAFT_FACET_GAIN = 2.5;
+// How far down the column any of that still applies. One facet shapes the
+// light it lets through; a few metres further down the beam has crossed enough
+// of them for their deflections to average out, which is why real caustics are
+// sharp near the surface and a steady glow below it. It is also what keeps the
+// still half of every shaft off the dirty-rectangle list.
+const SHAFT_COUPLE_REACH = 0.5;
+// The swell runs at the frame rate; the shafts read it three times a second,
+// staggered so no two shafts re-read it on the same frame. Light on water is
+// slow and soft, the shaft mix peaks at 15%, and this is the difference
+// between four tall objects repainting every frame and one of them doing so.
+const SHAFT_WAVE_HZ = 1.5;
 // The floor recedes towards the water it meets. Four slabs is enough to read as
 // a ground plane and cheap enough to stay full width.
 const FLOOR_STEPS = 4;
@@ -87,6 +137,29 @@ const FLOOR_LIFT = 0.5;
 const EDGE_STEPS = 3;
 const EDGE_FRACTION = 0.12;
 const EDGE_STRENGTH = 0.3;
+// The water surface is re-cut along the swell one narrow column at a time, the
+// same trick the terrain crest uses at the other end of the tank. Four pixels
+// is fine enough that the crest never steps visibly and coarse enough that a
+// whole surface costs about as many rectangles as the floor does.
+const SURFACE_SAMPLE_PX = 4;
+// Damage granularity along the surface. The swell moves every frame, so this
+// only decides how few, how wide the repainted strips are.
+const SURFACE_CHUNK_PX = 120;
+// The lit meniscus and the sunlit water immediately under it.
+const SURFACE_INK_PX = 2;
+const SURFACE_SKIN_PX = 3;
+const SURFACE_SHEEN_FLOOR = 0.16;
+const SURFACE_SHEEN_GAIN = 0.52;
+const SURFACE_SKIN_FLOOR = 0.05;
+const SURFACE_SKIN_GAIN = 0.13;
+// A slow travelling brightness that breaks the meniscus into glints instead of
+// leaving it an even ribbon.
+const SURFACE_GLINT_SPAN = 6.7;
+const SURFACE_GLINT_DRIFT = 0.38;
+// Surface chop, in glyphs. Spaced closely enough to read as one broken line.
+const SURFACE_RIPPLE_SPACING = 3.6;
+const SURFACE_RIPPLE_DRIFT = 0.18;
+const SURFACE_RIPPLE_DROP = 0.5;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -205,69 +278,18 @@ function turnPose(fish) {
 }
 
 // How far a given horizontal position is dimmed by the tank's side falloff.
-// Used both for the explicit edge rectangles and for the per-column terrain
-// segments, which are already split finely enough to be shaded in place.
-function edgeAmount(x, width) {
+// Used by the explicit edge rectangles, by the per-column terrain segments and
+// water surface, which are already split finely enough to be shaded in place,
+// and by the sun shafts, which are painted over the falloff and so have to
+// carry it themselves. Exported because it is part of how the scene composes:
+// anything that paints its own water has to know what the pane took out of it.
+export function edgeDimming(x, width) {
   const margin = width * EDGE_FRACTION;
   if (margin <= 0) return 0;
   const distance = Math.min(x, width - x);
   if (distance >= margin) return 0;
   const step = Math.floor((distance / margin) * EDGE_STEPS);
   return EDGE_STRENGTH * (1 - step / EDGE_STEPS);
-}
-
-// Light shafts fall from the surface, lean with the sun, widen as they spread
-// and die out with depth. Each step is one core rectangle plus two dimmer
-// flanks, so a shaft is a soft column rather than a painted stripe.
-function createSunShafts(dimensions, palette, seed, bands, surfaceTop, waterBottom, timeOfDayHours) {
-  const strength = SHAFT_PEAK * (0.16 + palette.daylight * 0.84);
-  const count = dimensions.logicalWidth > 50 ? 4 : 3;
-  const stages = 24 / SHAFT_STAGE_HOURS;
-  const stage = Math.floor(positiveModulo(timeOfDayHours, 24) / SHAFT_STAGE_HOURS);
-  // Morning light leans one way, evening light the other, and the quantized
-  // stage is what makes that motion cost one repaint every two simulated hours.
-  const tilt = (((stage + 0.5) / stages) - 0.5) * 2 * SHAFT_MAX_TILT;
-  const waterHeight = Math.max(1, waterBottom - surfaceTop);
-  const stepHeight = waterHeight / SHAFT_STEPS;
-  const rects = [];
-  for (let index = 0; index < count; index += 1) {
-    const originX = sampleRange(seed, 5200 + index, 0.1, 0.9) * dimensions.width;
-    const coreWidth = sampleRange(seed, 5300 + index, 0.018, 0.038) * dimensions.width;
-    const brightness = sampleRange(seed, 5400 + index, 0.55, 1);
-    for (let step = 0; step < SHAFT_STEPS; step += 1) {
-      const progress = (step + 0.5) / SHAFT_STEPS;
-      const intensity = strength * brightness * Math.pow(1 - progress, 1.7);
-      if (intensity < SHAFT_MINIMUM) break;
-      const top = surfaceTop + step * stepHeight;
-      const band = bands.find((candidate) => top < candidate.y + candidate.height) ?? bands.at(-1);
-      const width = coreWidth * (1 + progress * 1.4);
-      const centerX = originX + tilt * progress * dimensions.width;
-      const y = Math.round(top);
-      const height = Math.round(top + stepHeight) - y;
-      // Outer flank, core, outer flank. Widths are rounded so the panel driver
-      // sees whole pixels, exactly like the opaque fish bodies.
-      const columns = [
-        { offset: -width * 0.8, span: width * 0.62, share: 0.42 },
-        { offset: 0, span: width, share: 1 },
-        { offset: width * 0.8, span: width * 0.62, share: 0.42 },
-      ];
-      for (const column of columns) {
-        const amount = intensity * column.share;
-        if (amount < SHAFT_MINIMUM) continue;
-        const left = Math.round(clamp(centerX + column.offset - column.span / 2, 0, dimensions.width));
-        const right = Math.round(clamp(centerX + column.offset + column.span / 2, 0, dimensions.width));
-        if (right - left < 1 || height < 1) continue;
-        rects.push({
-          x: left,
-          y,
-          width: right - left,
-          height,
-          color: mixColor(band.color, palette.shaftLight, amount),
-        });
-      }
-    }
-  }
-  return rects;
 }
 
 // `tankDepth` is what separates the aquarium from the two labs. The labs exist
@@ -277,7 +299,6 @@ function createSunShafts(dimensions, palette, seed, bands, surfaceTop, waterBott
 function createBackground(dimensions, palette, seed, {
   withSubstrate = true,
   tankDepth = true,
-  timeOfDayHours = 12,
 } = {}) {
   const metrics = sceneMetrics(dimensions);
   const surfaceTop = withSubstrate ? SURFACE_Y_ROWS * metrics.cellHeight : 0;
@@ -304,9 +325,6 @@ function createBackground(dimensions, palette, seed, {
     matrix: BAYER_4,
     blockSize: 4,
   }));
-  const shafts = tankDepth
-    ? createSunShafts(dimensions, palette, seed, bands, surfaceTop, waterBottom, timeOfDayHours)
-    : [];
   const substrateSegments = [];
   const floorSlabs = [];
   if (withSubstrate) {
@@ -337,7 +355,7 @@ function createBackground(dimensions, palette, seed, {
           ? mixColor(
             palette.substrateBg,
             palette.edge,
-            edgeAmount(sample * sampleWidth + sampleWidth / 2, dimensions.width),
+            edgeDimming(sample * sampleWidth + sampleWidth / 2, dimensions.width),
           )
           : palette.substrateBg,
       });
@@ -390,9 +408,6 @@ function createBackground(dimensions, palette, seed, {
       dimensions.logicalWidth,
       dimensions.logicalHeight,
       palette.paletteStage,
-      // The sun's own stage clock. Whole-field repaints stay as rare as the
-      // palette stages they sit beside.
-      tankDepth ? Math.floor(positiveModulo(timeOfDayHours, 24) / SHAFT_STAGE_HOURS) : 0,
       seed >>> 0,
       withSubstrate ? 1 : 0,
       tankDepth ? 1 : 0,
@@ -400,7 +415,10 @@ function createBackground(dimensions, palette, seed, {
     baseColor: withSubstrate ? palette.airBg : palette.waterBands[0],
     bands,
     transitions,
-    shafts,
+    // The sun shafts are scene objects rather than background rectangles now,
+    // and they need the same water box the bands were cut from.
+    surfaceTop,
+    waterBottom,
     edges,
     substrateSegments,
     floorSlabs,
@@ -417,9 +435,7 @@ function builderForState(state, palette) {
   };
   return createSceneBuilder({
     ...dimensions,
-    background: createBackground(dimensions, palette, state.seed, {
-      timeOfDayHours: state.timeOfDayHours,
-    }),
+    background: createBackground(dimensions, palette, state.seed),
     metadata: {
       orientation: state.orientation,
       paletteStage: palette.paletteStage,
@@ -431,31 +447,212 @@ function builderForState(state, palette) {
   });
 }
 
-function drawWaterline(builder, state, palette, metrics) {
+// Sunlight reaches the tank through the swell, so the swell is what moves it.
+// Each shaft samples the wave at its own entry column and takes three things
+// from it: the height of the water there slides the entry point along the
+// sun's lean, the slope of that facet bends the beam under it, and the
+// curvature of the facet focuses or spreads it. Two of the three are scaled by
+// the lean, so the coupling changes character across the day - at noon a
+// passing crest mostly pinches a shaft narrower and brighter, while under a
+// low sun the same crest also swings it sideways and lights the flanks turned
+// towards the light more than the flanks turned away.
+function drawSunShafts(builder, state, palette, metrics) {
+  const { bands, surfaceTop, waterBottom } = builder.background;
+  const width = builder.width;
+  const waterHeight = Math.max(1, waterBottom - surfaceTop);
+  const strength = SHAFT_PEAK * (0.16 + palette.daylight * 0.84);
+  const count = state.cols > 50 ? 4 : 3;
+  const stages = 24 / SHAFT_STAGE_HOURS;
+  const stage = Math.floor(positiveModulo(state.timeOfDayHours, 24) / SHAFT_STAGE_HOURS);
+  // Morning light leans one way, evening light the other, on a clock coarse
+  // enough that the direction itself never animates.
+  const tilt = (((stage + 0.5) / stages) - 0.5) * 2 * SHAFT_MAX_TILT;
+  // The same lean as a plain gradient - pixels sideways per pixel of descent -
+  // and its steeper counterpart above the water, where nothing has refracted
+  // it yet. Both are what the surface geometry gets multiplied by.
+  const lean = (tilt * width) / waterHeight;
+  const airLean = lean * WATER_IOR;
+  // The swell is measured in rows per column and the shafts in pixels.
+  const aspect = metrics.cellHeight / metrics.cellWidth;
+  const stepHeight = waterHeight / SHAFT_STEPS;
+  const beat = 1 / SHAFT_WAVE_HZ;
+
+  for (let index = 0; index < count; index += 1) {
+    const originX = sampleRange(state.seed, 5200 + index, 0.1, 0.9) * width;
+    const coreWidth = sampleRange(state.seed, 5300 + index, 0.018, 0.038) * width;
+    const brightness = sampleRange(state.seed, 5400 + index, 0.55, 1);
+    // This shaft's own slot in the sampling clock. Each one reads the swell as
+    // it stood at the last tick of its slot, so the four of them take turns.
+    const slot = (index * beat) / count;
+    const swell = {
+      seed: state.seed,
+      elapsedRealSeconds: Math.floor((state.elapsedRealSeconds + slot) / beat) * beat - slot,
+    };
+    const worldX = originX / metrics.cellWidth;
+    const offset = surfaceWaveOffset(swell, worldX);
+    const slope = surfaceWaveSlope(swell, worldX) * aspect;
+    const curve = clamp(surfaceWaveCurvature(swell, worldX) / SURFACE_WAVE_CURVATURE, -1, 1);
+    // A crest is met earlier along a leaning ray than the still surface would
+    // have been, so the beam enters behind where it otherwise would. Straight
+    // overhead there is nothing to enter behind and this term vanishes.
+    const entryShift = offset * metrics.cellHeight * airLean * SHAFT_ENTRY_GAIN;
+    const drop = offset * metrics.cellHeight;
+    const bend = slope * (1 - 1 / WATER_IOR) * SHAFT_BEND_GAIN;
+    const focus = clamp(1 - SHAFT_FOCUS_GAIN * curve, SHAFT_FOCUS_MIN, SHAFT_FOCUS_MAX);
+    const facet = clamp(1 + SHAFT_FACET_GAIN * (airLean * slope - (slope * slope) / 2), 0.4, 1.8);
+    // Two objects per shaft, not one per step: everything the swell reaches
+    // moves together on this shaft's tick, and everything below it never moves
+    // at all. Splitting them any finer only multiplies signatures to hash.
+    const live = [];
+    const still = [];
+
+    for (let step = 0; step < SHAFT_STEPS; step += 1) {
+      const progress = (step + 0.5) / SHAFT_STEPS;
+      // Everything the surface did to this beam, faded out with depth. Below
+      // the reach a step is exactly the shaft it would have been without any
+      // waves at all, and so never repaints while they pass overhead.
+      const couple = smoothstep(1 - progress / SHAFT_COUPLE_REACH);
+      const lens = 1 + (focus - 1) * couple;
+      const gather = (1 + (facet - 1) * couple) * Math.pow(1 / lens, SHAFT_FOCUS_LIGHT);
+      const intensity = strength * brightness * gather * Math.pow(1 - progress, 1.7);
+      if (intensity < SHAFT_MINIMUM) break;
+      const top = surfaceTop + step * stepHeight + drop * couple;
+      const band = bands.find((candidate) => top < candidate.y + candidate.height) ?? bands.at(-1);
+      const spread = coreWidth * (1 + progress * 1.4) * lens;
+      const centerX = originX + tilt * progress * width
+        + (entryShift + bend * progress * waterHeight) * couple;
+      const y = Math.round(top);
+      const height = Math.min(Math.round(top + stepHeight), Math.round(waterBottom)) - y;
+      if (height < 1) break;
+      // Outer flank, core, outer flank. Widths are rounded so the panel driver
+      // sees whole pixels, exactly like the opaque fish bodies.
+      const columns = [
+        { offset: -spread * 0.8, span: spread * 0.62, share: 0.42 },
+        { offset: 0, span: spread, share: 1 },
+        { offset: spread * 0.8, span: spread * 0.62, share: 0.42 },
+      ];
+      const fill = couple > 0 ? live : still;
+      for (const column of columns) {
+        const amount = intensity * column.share;
+        if (amount < SHAFT_MINIMUM) continue;
+        const left = Math.round(clamp(centerX + column.offset - column.span / 2, 0, width));
+        const right = Math.round(clamp(centerX + column.offset + column.span / 2, 0, width));
+        if (right - left < 1) continue;
+        // The side falloff used to reach these when they were painted into the
+        // background. As scene objects they have to carry it themselves, which
+        // also means they can be checked against the water they sit on: the
+        // faintest steps of a taper round to the colour already underneath
+        // them, and a rectangle that changes no pixel is not worth sending.
+        const dim = edgeDimming((left + right) / 2, width);
+        const water = mixColor(band.color, palette.edge, dim);
+        const color = mixColor(mixColor(band.color, palette.shaftLight, amount), palette.edge, dim);
+        if (color === water) continue;
+        fill.push({ x: left, y, width: right - left, height, color });
+      }
+    }
+
+    addGlyphObject(builder, { id: `shaft:${index}:lit`, layer: LAYERS.shafts, glyphs: [], fill: live });
+    addGlyphObject(builder, { id: `shaft:${index}:deep`, layer: LAYERS.shafts, glyphs: [], fill: still });
+  }
+}
+
+// The water surface is painted, not merely decorated. The background stops the
+// water band at a straight edge because a rectangle is all a panel driver
+// understands cheaply; this pass then re-cuts that edge along the swell,
+// carrying water above the line at every crest and uncovering air below it in
+// every trough. A lit meniscus rides the cut, brightest where the crest stands
+// highest, so the boundary reads as a moving surface rather than a ruled line.
+function drawSurface(builder, state, palette, metrics) {
+  const width = builder.width;
+  const baseTop = Math.round(SURFACE_Y_ROWS * metrics.cellHeight);
+  const bandColor = palette.waterBands[0];
+  const sampleCount = Math.max(1, Math.round(width / SURFACE_SAMPLE_PX));
+  const chunkCount = Math.max(1, Math.round(width / SURFACE_CHUNK_PX));
   const chunks = new Map();
-  const spacing = 2.25;
-  const count = Math.ceil(state.cols / spacing);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const left = Math.round((index * width) / sampleCount);
+    const right = Math.round(((index + 1) * width) / sampleCount);
+    if (right <= left) continue;
+    const centerX = (left + right) / 2;
+    const worldX = centerX / metrics.cellWidth;
+    const offset = surfaceWaveOffset(state, worldX);
+    const top = Math.round((SURFACE_Y_ROWS + offset) * metrics.cellHeight);
+    // 1 on the highest crest, 0 in the deepest trough. Light collects on the
+    // crests, which is the whole reason the swell is visible at all.
+    const crest = clamp(-offset / SURFACE_WAVE_ROWS, -1, 1) * 0.5 + 0.5;
+    const glint = 0.5 + 0.5 * Math.sin(
+      ((worldX - state.elapsedRealSeconds * SURFACE_GLINT_DRIFT) / SURFACE_GLINT_SPAN) * TAU,
+    );
+    // The side falloff is already painted into the band underneath, so the
+    // columns that replace it have to carry the same dimming.
+    const dim = edgeDimming(centerX, width);
+    const water = mixColor(bandColor, palette.edge, dim);
+    const ink = mixColor(palette.waterline, palette.edge, dim);
+    const key = Math.min(chunkCount - 1, Math.floor((centerX / width) * chunkCount));
+    if (!chunks.has(key)) chunks.set(key, []);
+    const fill = chunks.get(key);
+    const span = { x: left, width: right - left };
+
+    if (top < baseTop) {
+      // A crest stands up into the air strip, so the water follows it up.
+      fill.push({ ...span, y: top, height: baseTop - top, color: water });
+    } else if (top > baseTop) {
+      // A trough drops below where the band begins, uncovering the air behind.
+      fill.push({ ...span, y: baseTop, height: top - baseTop, color: palette.airBg });
+    }
+    // Light reaches a little way into the water it enters. Without this the
+    // meniscus sits on the band like a decal instead of belonging to it.
+    fill.push({
+      ...span,
+      y: top + SURFACE_INK_PX,
+      height: SURFACE_SKIN_PX,
+      color: mixColor(water, ink, SURFACE_SKIN_FLOOR + SURFACE_SKIN_GAIN * crest),
+    });
+    fill.push({
+      ...span,
+      y: top,
+      height: SURFACE_INK_PX,
+      color: mixColor(water, ink, SURFACE_SHEEN_FLOOR + SURFACE_SHEEN_GAIN * crest * (0.4 + 0.6 * glint)),
+    });
+  }
+
+  for (const [key, fill] of chunks) {
+    addGlyphObject(builder, { id: `surface:${key}`, layer: LAYERS.waterline, glyphs: [], fill });
+  }
+}
+
+// Ripple marks are the ASCII half of the surface. They ride the same swell the
+// meniscus is cut from and drift along with the water, so they read as chop on
+// one surface instead of as glyphs scattered near the top of the field. Each
+// is its own object: they are sparse, and a shared chunk would make every one
+// of them repaint a band the full width of that chunk.
+function drawSurfaceRipples(builder, state, palette, metrics) {
+  const count = Math.ceil(state.cols / SURFACE_RIPPLE_SPACING);
+  const span = count * SURFACE_RIPPLE_SPACING;
   for (let index = 0; index < count; index += 1) {
     if (sample01(state.seed, 1050 + index) > 0.74) continue;
-    const worldX = 0.45 + index * spacing + sampleSigned(state.seed, 1100 + index) * 0.26;
+    const drift = sampleRange(state.seed, 1150 + index, 0.7, 1.3) * SURFACE_RIPPLE_DRIFT;
+    const anchor = index * SURFACE_RIPPLE_SPACING
+      + sampleRange(state.seed, 1100 + index, 0.3, SURFACE_RIPPLE_SPACING - 0.3);
+    const worldX = positiveModulo(anchor + state.elapsedRealSeconds * drift, span);
     if (worldX >= state.cols) continue;
-    const wave = Math.sin(state.elapsedRealSeconds * 0.38 + worldX * 0.29 + sampleRange(state.seed, 1200 + index, 0, TAU));
-    const worldY = SURFACE_Y_ROWS + wave * 0.055 + sampleSigned(state.seed, 1300 + index) * 0.025;
+    const offset = surfaceWaveOffset(state, worldX);
     const shape = sample01(state.seed, 1350 + index);
-    const char = shape < 0.12 ? "'" : shape < 0.27 ? "_" : shape < 0.35 ? "^" : "~";
-    const chunk = Math.floor(worldX / 9);
-    if (!chunks.has(chunk)) chunks.set(chunk, []);
-    chunks.get(chunk).push(positionedGlyph(metrics, {
-      char,
-      worldX,
-      worldY: char === "'" ? worldY + 0.22 : worldY,
-      fg: palette.waterline,
-      scaleX: char === "'" ? 0.7 : char === "_" ? 0.86 : 0.9,
-      scaleY: char === "'" ? 0.7 : 0.84,
-    }));
-  }
-  for (const [chunk, glyphs] of chunks) {
-    addGlyphObject(builder, { id: `waterline:${chunk}`, layer: LAYERS.waterline, glyphs });
+    const char = shape < 0.52 ? "~" : shape < 0.84 ? "-" : "_";
+    addGlyphObject(builder, {
+      id: `waterline:${index}`,
+      layer: LAYERS.waterline,
+      glyphs: [positionedGlyph(metrics, {
+        char,
+        worldX,
+        worldY: SURFACE_Y_ROWS + offset + SURFACE_RIPPLE_DROP,
+        // Dimmer than the meniscus above it: the chop is texture, not the edge.
+        fg: mixColor(palette.waterBands[0], palette.waterline, 0.52 + 0.32 * clamp(-offset / SURFACE_WAVE_ROWS, 0, 1)),
+        scaleX: char === "~" ? 0.95 : 0.78,
+        scaleY: 0.84,
+      })],
+    });
   }
 }
 
@@ -862,7 +1059,9 @@ export function render(state, { deformationStrength = 1 } = {}) {
   const plantFrame = createPlantRenderRecords(state, palette, metrics);
   builder.metadata.plants = plantFrame.diagnostics;
 
-  drawWaterline(builder, state, palette, metrics);
+  drawSunShafts(builder, state, palette, metrics);
+  drawSurface(builder, state, palette, metrics);
+  drawSurfaceRipples(builder, state, palette, metrics);
   for (const record of plantFrame.records) {
     if (record.layerName === "background") addPlantRecord(builder, record, LAYERS.backgroundPlants);
     if (record.layerName === "midground") addPlantRecord(builder, record, LAYERS.midgroundPlants);

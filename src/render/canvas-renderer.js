@@ -34,13 +34,6 @@ function drawBackground(context, scene, region) {
     }
   }
 
-  // Sun shafts sit on the water and under everything that swims or grows in it.
-  for (const shaft of background.shafts ?? []) {
-    if (!rectanglesOverlap(region, shaft)) continue;
-    context.fillStyle = shaft.color;
-    context.fillRect(shaft.x, shaft.y, shaft.width, shaft.height);
-  }
-
   for (const segment of background.substrateSegments) {
     if (!rectanglesOverlap(region, segment)) continue;
     context.fillStyle = segment.color;
@@ -55,7 +48,8 @@ function drawBackground(context, scene, region) {
     context.fillRect(slab.x, slab.y, slab.width, slab.height);
   }
 
-  // Side falloff goes last: it dims the water, the shafts, and the floor alike.
+  // Side falloff goes last: it dims the water and the floor alike. The sun
+  // shafts are scene objects and carry the same dimming in their own colours.
   for (const edge of background.edges ?? []) {
     if (!rectanglesOverlap(region, edge)) continue;
     context.fillStyle = edge.color;

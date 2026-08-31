@@ -34,6 +34,22 @@ persistent simulation.
   through the water in tilted shafts that lean with the sun, the floor recedes
   towards the water it meets, and the left and right edges fall away so the
   water reads as a volume with a front pane.
+- Sunlight that comes in through the waves. Each shaft samples the swell at its
+  own entry column and takes three things from it: the height of the water
+  there slides the entry point along the sun's lean, the slope of that facet
+  bends the beam under it, and the curvature of the facet focuses or spreads
+  it. Two of the three scale with the lean, so the coupling changes character
+  across the day - at noon a passing crest mostly pinches a shaft narrower and
+  brighter, and under a low sun the same crest also swings it sideways and
+  lights the flanks turned towards the light more than the flanks turned away.
+  It fades out with depth, the way real caustics do.
+- A real water surface. The air/water boundary used to be the straight top edge
+  of the first water band with a handful of `~` glyphs floating above it. It is
+  now a travelling swell of three unrelated wavelengths, painted as narrow
+  columns that carry water up over every crest and open the air behind every
+  trough, with a lit meniscus riding the cut that brightens where the crest
+  stands highest. The ripple glyphs sit on that same swell and drift along it,
+  so the top of the tank reads as moving water rather than as a ruled line.
 - Opaque fish: each individual carries a body of horizontal spans behind its
   strokes, so plants, water bands, and other fish stop reading straight through
   it. The body is fitted to each sprite's own artwork and to the real ink of the
@@ -128,20 +144,31 @@ draw calls rather than repainted area.
 Day/night colours are part of the scene rather than a CSS brightness filter;
 12 quantized palette stages keep slow whole-field transitions infrequent.
 
-Sun shafts, the receding floor, and the edge falloff are background rectangles,
-not scene objects or per-pixel effects, so they cost plain `fillRect` calls
-inside damage regions the compositor was already going to repaint. A noon
-landscape background is 6 water bands, 95 shaft rectangles, 60 edge
-rectangles, 4 floor slabs, and the existing 132 terrain columns; portrait is
-70 shafts against 80 terrain columns, and a deep-night background keeps only
-21 and 14 shafts respectively. After overlap culling an ordinary 10 fps frame
-asks for about 117 of those in landscape and 99 in portrait, worst observed 169
-and 139 - well under the dithered band transitions, which remain the most
-expensive thing in the background. The shafts lean with the sun on their own
-two-hour stage clock, so they add 12 whole-field repaints a simulated day beside
-the 12 the palette already spends, and none during ordinary animation. Measured
-over 200 frames at 10 fps, damage is 22.7% of the landscape framebuffer and
-35.1% of portrait, which is where it was before the depth axis existed.
+The receding floor and the edge falloff are background rectangles, and the sun
+shafts are scene objects; none of them is a per-pixel effect, so all of them
+cost plain `fillRect` calls inside damage regions the compositor was already
+going to repaint. A noon landscape frame is 6 water bands, 60 edge rectangles,
+4 floor slabs, the existing 132 terrain columns, and 95 shaft rectangles;
+portrait is 70 shafts against 80 terrain columns, and a deep night keeps only
+20 and 14 shafts respectively. Worst frame observed across the test seeds is
+288 of them in landscape, against 252 before the shafts started moving - the
+increase is a shaft damaging the region its own rectangles sit in, which is
+what it costs for the swell to be able to move one. The dithered band
+transitions remain the most expensive thing in the background.
+
+The sun's lean is still quantized to two-hour stages, but it no longer restages
+the field at all: the shafts left the background when they started following
+the water, so moving the sun now rebuilds four scene objects instead of
+repainting the tank, and the 12 whole-field repaints a simulated day that the
+sun used to spend are gone. Measured over 200 frames at 10 fps, damage is 27.3%
+of the landscape framebuffer and 40.2% of portrait, against 20.9% and 34.7%
+before the water surface started moving. Two things account for the difference,
+both of them the price of the boundary being water instead of the edge of a
+band: the surface is re-cut across the full width every frame, about 15 rows of
+pixels, and the head of one shaft repaints each frame. Only the head - the
+swell's reach down the column is finite, and below it a shaft is exactly the
+shaft it would have been with no waves at all, so the still half of the water
+never enters a damage rectangle.
 
 ## Skeletal plants and ESP32 portability
 

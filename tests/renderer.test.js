@@ -92,7 +92,7 @@ test("every scene command uses a supported crisp glyph and sane values", () => {
     for (const object of scene.objects) {
       assert.equal(ids.has(object.id), false, "duplicate object id " + object.id);
       ids.add(object.id);
-      assert.ok(Number.isFinite(object.layer) && object.layer >= LAYERS.waterline && object.layer <= LAYERS.substrate);
+      assert.ok(Number.isFinite(object.layer) && object.layer >= LAYERS.shafts && object.layer <= LAYERS.substrate);
       assert.ok(Number.isFinite(object.bounds.x) && Number.isFinite(object.bounds.y));
       assert.ok(object.bounds.width > 0 && object.bounds.height > 0);
       assert.ok(object.glyphStart >= 0 && object.glyphStart + object.glyphCount <= scene.glyphs.length);
@@ -103,7 +103,7 @@ test("every scene command uses a supported crisp glyph and sane values", () => {
       assert.ok(Number.isFinite(glyph.scaleX) && glyph.scaleX >= 0.5 && glyph.scaleX <= 1.5);
       assert.ok(Number.isFinite(glyph.scaleY) && glyph.scaleY >= 0.5 && glyph.scaleY <= 1.5);
       assert.match(glyph.fg, HEX_COLOR);
-      assert.ok(Number.isFinite(glyph.layer) && glyph.layer >= LAYERS.waterline && glyph.layer <= LAYERS.substrate);
+      assert.ok(Number.isFinite(glyph.layer) && glyph.layer >= LAYERS.shafts && glyph.layer <= LAYERS.substrate);
       assert.ok(glyph.x > -scene.width && glyph.x < scene.width * 2);
       assert.ok(glyph.y > -scene.height && glyph.y < scene.height * 2);
     }
