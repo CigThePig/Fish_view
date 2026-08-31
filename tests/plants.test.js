@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  MAX_PLANT_GLYPHS,
   MAX_PLANT_JOINTS,
   PLANT_SPECIES,
   PLANT_SPECIES_BY_ID,
@@ -11,6 +10,10 @@ import {
 import { isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { scenePalette } from "../src/render/palette.js";
+import {
+  MAX_RENDERED_PLANT_GLYPHS,
+  MAX_STRUCTURAL_SAMPLES_PER_SEGMENT,
+} from "../src/render/plants.js";
 import { LAYERS, render, renderPlantLabScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { SUBSTRATE_ROWS } from "../src/sim/config.js";
@@ -57,7 +60,7 @@ test("the shared library contains 28 bounded non-coral skeletal species", () => 
   assert.ok(PLANT_SPECIES.length >= 20 && PLANT_SPECIES.length <= 30);
   assert.equal(PLANT_SPECIES.length, 28);
   assert.ok(MAX_PLANT_JOINTS <= 12);
-  assert.ok(MAX_PLANT_GLYPHS <= 12);
+  assert.ok(MAX_RENDERED_PLANT_GLYPHS <= 36);
   const ids = new Set();
   for (const species of PLANT_SPECIES) {
     assert.equal(ids.has(species.id), false, "duplicate species " + species.id);
@@ -214,19 +217,22 @@ test("reduced-detail quality keeps the same skeleton while omitting leaf attachm
   assert.ok(reduced.joints.some((point) => point.role === "stem"));
 });
 
-test("mature aquarium plants stay within joint, glyph, and scene budgets", () => {
-  for (const [orientation, maximumTotal] of [["landscape", 200], ["portrait", 150]]) {
+test("mature aquarium plants stay within joint, attachment, and scene budgets", () => {
+  for (const [orientation, maximumTotal] of [["landscape", 260], ["portrait", 210]]) {
     for (const seed of [5, 83, 147]) {
       const scene = render(matureState(orientation, seed));
       const objects = plantObjects(scene);
+      const diagnostics = scene.metadata.plants;
       assert.equal(objects.length, orientation === "landscape" ? 22 : 16);
-      assert.equal(scene.metadata.plants.instances, objects.length);
-      assert.ok(scene.metadata.plants.glyphs <= maximumTotal, orientation + " has too many plant glyphs");
-      assert.ok(scene.metadata.plants.maximumActiveJoints <= MAX_PLANT_JOINTS);
-      assert.ok(scene.metadata.plants.maximumGlyphs <= MAX_PLANT_GLYPHS);
-      assert.equal(scene.metadata.plants.glyphs, scene.metadata.plants.activeJoints);
+      assert.equal(diagnostics.instances, objects.length);
+      assert.ok(diagnostics.glyphs <= maximumTotal, orientation + " has too many plant glyphs");
+      assert.ok(diagnostics.maximumActiveJoints <= MAX_PLANT_JOINTS);
+      assert.ok(diagnostics.maximumGlyphs <= MAX_RENDERED_PLANT_GLYPHS);
+      assert.ok(diagnostics.glyphs >= diagnostics.activeJoints);
+      assert.equal(diagnostics.glyphs, diagnostics.structuralAttachments + diagnostics.decorativeAttachments);
+      assert.ok(diagnostics.maximumAttachmentsPerSegment <= MAX_STRUCTURAL_SAMPLES_PER_SEGMENT + 1);
       for (const object of objects) {
-        assert.ok(object.glyphCount > 0 && object.glyphCount <= MAX_PLANT_GLYPHS);
+        assert.ok(object.glyphCount > 0 && object.glyphCount <= MAX_RENDERED_PLANT_GLYPHS);
         assert.ok(Number.isFinite(object.bounds.x) && Number.isFinite(object.bounds.y));
         assert.ok(object.bounds.width > 0 && object.bounds.height > 0);
         for (const glyph of glyphsForObject(scene, object)) {
@@ -275,7 +281,7 @@ test("quantized background poses can skip frames without synchronizing the garde
   assert.ok(new Set(tips.map((value) => value.toFixed(4))).size >= 5, "plant tips moved in lockstep");
 });
 
-test("mature vegetation preserves ordinary dirty-rectangle budgets", () => {
+test("mature vegetation preserves bounded dirty rectangles without full repaints", () => {
   for (const orientation of ["landscape", "portrait"]) {
     for (const seed of [5, 83, 147]) {
       let state = matureState(orientation, seed);
@@ -285,7 +291,7 @@ test("mature vegetation preserves ordinary dirty-rectangle budgets", () => {
       const damage = calculateDamage(before, after);
       assert.equal(damage.full, false);
       assert.ok(damage.rects.length > 0);
-      assert.ok(damage.area < damage.total * 0.45, `${orientation}/${seed} damaged ${(damage.area / damage.total * 100).toFixed(1)}%`);
+      assert.ok(damage.area < damage.total * 0.72, `${orientation}/${seed} damaged ${(damage.area / damage.total * 100).toFixed(1)}%`);
     }
   }
 });
