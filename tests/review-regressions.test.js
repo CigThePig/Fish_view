@@ -8,8 +8,15 @@ import {
 } from "../src/render/plants.js";
 import { scenePalette } from "../src/render/palette.js";
 import { orientationConfig } from "../src/sim/config.js";
+import {
+  ACTIVITIES,
+  createActivityState,
+  schoolSummary,
+  socialEngagement,
+} from "../src/sim/fish-activities.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../src/sim/plants.js";
-import { createAquariumState } from "../src/sim/state.js";
+import { createAquariumState, withSettings } from "../src/sim/state.js";
+import { tick } from "../src/sim/tick.js";
 
 test("implicit terminal stems stay structural instead of becoming detached tip decorations", () => {
   const state = {
@@ -64,4 +71,45 @@ test("implicit terminal stems stay structural instead of becoming detached tip d
   const stemInk = record.glyphs.filter((glyph) => stemCharacters.has(glyph.char)).length;
   assert.ok(record.attachmentStats.fillerAttachments > 0);
   assert.ok(stemInk >= record.attachmentStats.jointAttachments);
+});
+
+test("school engagement comes from nearby school fish, not an empty centroid", () => {
+  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 2 }), { timeScale: 3600 });
+  const center = schoolSummary(base.school, base);
+  const nearestToCenter = Math.min(
+    ...base.school.map((fish) => Math.hypot(fish.x - center.x, fish.y - center.y)),
+  );
+  // Seed 2 starts with a school scattered around an empty middle: the centroid
+  // is the shape of the shoal, never a fish that another fish can swim beside.
+  assert.ok(nearestToCenter > 5, "seed 2 no longer has an empty school centroid to guard");
+
+  const follow = (x, y) => ({
+    ...base,
+    individuals: base.individuals.map((fish, index) => index === 0
+      ? {
+        ...fish,
+        x,
+        y,
+        behavior: { current: "social", previous: "cruise", blend: 0, ageSeconds: 0 },
+        activity: { ...createActivityState(ACTIVITIES.schoolFollow), targetType: "school" },
+      }
+      : fish),
+  });
+
+  const atCentroid = follow(center.x, center.y);
+  assert.equal(socialEngagement(atCentroid.individuals[0], atCentroid, atCentroid.school), 0);
+
+  const member = base.school[0];
+  const beside = follow(member.x + 0.4, member.y);
+  assert.ok(socialEngagement(beside.individuals[0], beside, beside.school) > 0);
+
+  // A phantom contact must not relieve the social drive or drift sociability
+  // any more than swimming alone in a corner does.
+  const alone = tick(follow(1.5, base.rows - 5), 0.1).individuals[0];
+  const phantom = tick(atCentroid, 0.1).individuals[0];
+  const company = tick(beside, 0.1).individuals[0];
+  assert.equal(phantom.drives.social, alone.drives.social);
+  assert.equal(phantom.history.sociabilityDrift, alone.history.sociabilityDrift);
+  assert.ok(company.drives.social < phantom.drives.social);
+  assert.ok(company.history.sociabilityDrift > phantom.history.sociabilityDrift);
 });

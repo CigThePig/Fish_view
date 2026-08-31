@@ -23,6 +23,11 @@ import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 const TAU = Math.PI * 2;
 
+// Reach of a single school member's company, and how many such neighbors add
+// up to full engagement, so one passing stray is not a whole school.
+const SCHOOL_CONTACT_RADIUS = 4.6;
+const SCHOOL_CONTACT_SATURATION = 2;
+
 export const BEHAVIORS = Object.freeze(["cruise", "explore", "social", "forage", "rest"]);
 
 export const ACTIVITIES = Object.freeze({
@@ -742,12 +747,26 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   return { activity, target };
 }
 
+// Company is only company when there are fish within reach of it. A school
+// spread around an empty centroid must not relieve the social drive, so
+// engagement counts the members actually close by rather than the aggregate
+// center the follower happens to be steering toward.
+export function schoolContact(fish, school) {
+  if (!school?.length) return 0;
+  let contact = 0;
+  for (const member of school) {
+    const distance = Math.hypot(fish.x - member.x, fish.y - member.y);
+    if (distance >= SCHOOL_CONTACT_RADIUS) continue;
+    contact += 1 - distance / SCHOOL_CONTACT_RADIUS;
+  }
+  return clamp(contact / SCHOOL_CONTACT_SATURATION, 0, 1);
+}
+
 export function socialEngagement(fish, state, school = state.school) {
   if (fish.behavior?.current !== "social") return 0;
   const activity = normalizedActivity(fish);
   if (activity.current === ACTIVITIES.schoolFollow) {
-    const center = schoolSummary(school, state);
-    return clamp(1 - Math.hypot(fish.x - center.x, fish.y - center.y) / 4.6, 0, 1);
+    return schoolContact(fish, school);
   }
   if ([ACTIVITIES.individualFollow, ACTIVITIES.companionCruise, ACTIVITIES.playfulChase].includes(activity.current)) {
     const companion = findFish(state, activity.targetId, fish.seed);

@@ -202,9 +202,12 @@ test("social need relief and sociability drift require actual physical engagemen
 
 test("being near the school also provides truthful social relief", () => {
   const base = withSettings(createAquariumState({ orientation: "landscape", seed: 505 }), { timeScale: 3600 });
-  const center = base.school.reduce((sum, fish) => ({ x: sum.x + fish.x, y: sum.y + fish.y }), { x: 0, y: 0 });
-  center.x /= base.school.length;
-  center.y /= base.school.length;
+  // Company means school fish within reach, not the school's aggregate center,
+  // which can sit in open water when the shoal is spread out.
+  const densest = base.school.reduce((best, fish) => {
+    const neighbors = base.school.filter((other) => Math.hypot(other.x - fish.x, other.y - fish.y) < 4.6).length;
+    return neighbors > best.neighbors ? { fish, neighbors } : best;
+  }, { fish: base.school[0], neighbors: 0 }).fish;
   const make = (x, y) => ({
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0
@@ -217,7 +220,7 @@ test("being near the school also provides truthful social relief", () => {
       }
       : fish),
   });
-  const near = tick(make(center.x, center.y), 0.1).individuals[0];
+  const near = tick(make(densest.x, densest.y), 0.1).individuals[0];
   const far = tick(make(2, base.rows - 5), 0.1).individuals[0];
   assert.ok(near.drives.social < far.drives.social);
 });
