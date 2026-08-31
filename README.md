@@ -43,6 +43,15 @@ persistent simulation.
   colonies, structural growth, three depth groups, shared current, and subtle
   touch/fish disturbance. ASCII glyphs decorate tiny parent-index skeletons;
   plants are never fixed text sprites.
+- An aquarium that accumulates a history. Over weeks and months a seventh and
+  then an eighth persistent fish swims in from a water edge, mature plants
+  establish nearby shoots so colonies visibly widen, an unusual plant comes up
+  long after the tank was set up, and rare species light their tips for a few
+  days every several weeks. All of it is seed-derived, resolved from simulated
+  aquarium age, and delivered whether or not the device was running at the time.
+  There is no unlock screen, notification, calendar, achievement, progress
+  meter, or chore anywhere in it: the history is only what is now living inside
+  the tank.
 - A reliable day/night arc with a warm filled night wash, dark fish silhouettes,
   continuously moving fish, and scene colours that model the nightlight directly.
   The night field is one warm hue that only loses value with depth, over a floor
@@ -98,6 +107,9 @@ persistent simulation.
   showing all 28 species as seedlings and mature specimens, with day/night,
   orientation, size, current, disturbance, quality, bounds, damage, and bone
   overlay controls.
+
+No fish or plant can die, become ill, disappear as a penalty, or be lost through
+neglect, and time away from the aquarium is never punished.
 
 No fish can die, become ill, disappear as a penalty, or be lost through
 neglect. Phase 0 does not choose the final orientation, decide the Phase 1
@@ -345,6 +357,353 @@ swell's reach down the column is finite, and below it a shaft is exactly the
 shaft it would have been with no waves at all, so the still half of the water
 never enters a damage rectangle.
 
+## Phase 3 aquarium history
+
+Phase 1 answered "what is that fish doing?" and Phase 2 answered "which fish is
+that?" Both are questions a single visible moment can settle. Phase 3 answers a
+question no frame can: "how has this aquarium changed since I last looked?" It
+turns time itself into content, so an aquarium visibly accumulates a past across
+weeks and months instead of being the same entities with larger `ageDays`.
+
+Nothing about that history is a screen. There is no unlock, notification,
+calendar, achievement, inventory, progress meter, daily reward, chore, or
+feeding requirement, and no text of any kind is added to the aquarium. The
+history exists only as what is now living inside the tank: a seventh and then an
+eighth persistent fish, a patch of needle grass that is slowly getting wider, an
+unusual plant that came up months after the tank was set up and now glows for a
+few days every several weeks.
+
+### Two clocks, and which one history uses
+
+Phase 2 established that the world runs on simulated time while everything a
+fish physically *does* runs on real time, because a fish answers hunger by
+swimming to the substrate rather than by calculating; drives therefore track
+simulated time only up to `MAX_DRIVE_HOURS_PER_REAL_SECOND`.
+
+Phase 3 sits on the other side of that split. Plant growth and aquarium history
+are long-horizon biological world state, not something an animal has to find
+time to carry out. A plant needs no real-time permission for a week to pass
+while the device is off. Long-horizon advancement therefore uses the full
+simulated aquarium age - `totalDays`, `simDelta / 86400` - including debug time
+acceleration and offline elapsed time, and is deliberately *not* subject to the
+drive cap. Short visible actions remain exactly as real-time bounded as they
+were.
+
+### One shared long-horizon resolver
+
+`src/sim/aquarium-history.js` owns every chronological long-horizon change.
+`tick()` and `advanceOffline()` both call the same
+
+```text
+advanceAquariumHistory(state, deltaDays) -> state
+```
+
+instead of each aging plants and crossing event boundaries in their own way, so
+live accelerated simulation and offline catch-up cannot drift apart. It returns
+updated `totalDays`, `plants`, `individuals`, and `content`; `tick()` no longer
+ages plants or advances the day counter itself.
+
+Events are detected as *crossings*, never as equality with the current day:
+`if (totalDays === 30)` is unreliable under floating point and coarse steps, and
+a one-week-per-second debug frame legitimately skips several calendar boundaries
+at once. Every crossed boundary still resolves exactly once. Advancing from day
+24.2 to day 120.6 costs a few dozen operations - the milestone days and
+propagation epochs inside the interval - not ninety-six days of replayed 10 fps
+simulation.
+
+### Why the resolver is chronological rather than terminal
+
+**A plant's maturity can be reached inside a large offline interval, so
+propagation opportunities are evaluated at their historical boundaries rather
+than against only the final plant age.** Adding seventy days to every plant and
+then asking which of them could have reproduced would let a plant reproduce
+before it had actually matured, and would hide the later generations entirely:
+an offspring that appears on day 60 and matures by day 100 is legitimately
+eligible for an opportunity at day 132 inside a single jump to day 180. Ages are
+therefore carried forward to each boundary before that boundary is evaluated.
+The number of boundaries is small enough to do this correctly. A future port
+that "optimizes" this into a single terminal evaluation would silently change
+what the aquarium becomes.
+
+The same property makes advancement step-size invariant. Reaching day 180 in one
+180-day step, twenty-six week-sized steps, or a hundred and eighty day-sized
+steps produces the same persistent fish roster, the same fish seeds, the same
+plant roster, seeds, species and mature sizes, and the same processing cursor.
+Fish positions and transient activities deliberately do not match, because
+offline advancement never replays locomotion. Plant ages agree to within
+floating-point accumulation, which nothing downstream reads more finely than a
+growth stage.
+
+### Deterministic milestone schedule
+
+`contentSchedule(seed)` is a pure function returning this aquarium's four
+one-time milestones: two fish arrivals and two delayed rare-plant emergences.
+Dates are derived, never stored - the same rule affinities and pair
+compatibility already follow. Seeded windows keep different aquariums on
+different histories:
+
+| Milestone | Window (aquarium days) |
+| --- | ---: |
+| `fish-arrival:0` | 10 – 24 |
+| `rare-emergence:0` | 24 – 50 |
+| `fish-arrival:1` | 45 – 85 |
+| `rare-emergence:1` | 80 – 150 |
+
+The schedule is orientation-independent on purpose. Portrait and landscape are
+two views of one aquarium, so for a given seed the same fish arrives on the same
+aquarium day and the same rare species is scheduled; only the physical plant
+positions differ, because the two habitats differ. Switching orientation or
+entering compare mode cannot generate an arrival, duplicate an event, change an
+arrival seed, or reroll a date.
+
+Every long-horizon decision derives from the aquarium seed, the event family,
+and an ordinal or epoch through the existing PRNG helpers. `Math.random()` and
+`Date.now()` appear nowhere in simulation code.
+
+### New fish arrivals
+
+The aquarium begins with the same six persistent individuals it always has, and
+grows 6 → 7 → 8 over its first few months. Eight is the hard ceiling persistence
+has always supported and it is never exceeded. No new fish artwork or species is
+introduced: arrivals use the existing individual sprite system, and new
+ecological resident types remain Phase 4 work.
+
+Individual identity is now `individualSeedFor(baseSeed, index)`, and
+`createIndividualFromSeed(seed, index, cols, rows, options)` is the single
+construction path. `mix32` is a bijection over uint32 and `index + 17` scaled by
+an odd multiplier is injective, so an arrival seed can never collide with the
+initial six or with the other arrival; the resolver still carries a bounded
+uniqueness walk rather than trusting that argument at runtime. Existing aquarium
+seeds keep their exact Phase 1/2 cast.
+
+An arrival enters from a water edge with real body clearance, a sensible depth,
+and inward velocity, all derived from its stable event seed. A fish popping into
+the middle of the tank would read as a rendering fault. The entry side alternates
+strictly by ordinal from one seeded choice made for the aquarium as a whole,
+which is what stops two overdue arrivals - from an old-save migration, a very
+large accelerated jump, or a long offline gap - from landing inside one another.
+
+The newcomer is created in a short transient `arrival-enter` activity, which is
+an ordinary Phase 2 explore activity with a dwell and a waypoint: it swims
+inward using the normal pitch, turn, and body deformation, then exits into
+whatever its own personality wants. It is never *chosen*; nothing can re-enter
+it. There is no arrival text, icon, flash, or cinematic. The correct reaction is
+that the user notices the fish.
+
+From its first frame the arrival is an ordinary persistent individual: traits,
+affinities, sprite, preferred depth, and pair compatibility all come from its
+seed, and it participates in behaviour selection, activity selection, foraging,
+touch, and relationship learning like anybody else. There is no simplified "new
+fish AI". It starts with `socialMemory: []`, `touches: 0`, and zero drift:
+familiarity is learned through visible proximity, never granted. Adding a fish
+does not touch the existing cast's memories, drift, or touch history - the
+available-seed sanitation simply recognises that another valid seed exists. The
+first three individuals remain Phase 1's protected mid-water cast; arrivals join
+at index 6 and 7 and behave like the existing later individuals.
+
+### Dynamic plant populations
+
+`state.plants` now grows over an aquarium's lifetime. The skeletal architecture
+is unchanged - the skeleton defines the plant and ASCII glyphs decorate the
+skeleton - and a propagated plant is simply another normal specimen with a
+stable seed, species, root x, age, mature height, layer, and seeded motion
+variation. No joints are copied and nothing is persisted that was not persisted
+before.
+
+Reproduction is evaluated on coarse epochs (`PROPAGATION_EPOCH_DAYS = 12`)
+rather than per frame, so at real time it costs one integer comparison. A
+crossed epoch has a seeded 34% chance of an opportunity at all, and an
+opportunity produces at most one shoot. Eligibility uses the real
+`plantGrowthState(plant).mature` rule rather than an age threshold, because
+growth schedules differ by several days between a ground tuft and a leaf reed:
+an immature plant cannot propagate. Rare species never propagate - delayed
+emergence is how an unusual plant enters, and letting one colonise would make it
+ordinary. A shoot keeps its parent's species, which is what makes a colony
+recognisable: a patch of needle grass slowly becomes a larger patch of needle
+grass, and a ribbon never gives birth to a broadleaf.
+
+Placement tries a small fixed set of four deterministic candidate offsets around
+the parent and stops. A failed opportunity is not a failure state - it simply
+produces nothing rather than searching the substrate. A candidate root must:
+
+- lie within the local propagation spread of its parent (`max(1.4, cols × 0.03)`
+  columns, so colonies stay local rather than jumping across the tank);
+- keep at least `max(0.55, cols × 0.014)` columns from every existing root;
+- have at most four other roots inside `max(1.8, cols × 0.045)` columns;
+- and leave the aquarium's widest open-water gap at or above 6% of the tank
+  width.
+
+That last rule is the one worth keeping. The authored habitats deliberately
+contain open water between them; that space is composition, not unused memory,
+so a candidate that would close the widest gap is rejected however well it
+satisfies every local rule. Across 40 seeds and two simulated years the widest
+gap never falls below 5.4 columns in landscape or 4.4 in portrait.
+
+Plant counts are hard-capped at **30 in landscape and 22 in portrait**, against
+initial rosters of 22 and 16. These are measured rendering budgets, not
+permission (see the table below). Combined with the sparse epochs they stretch
+the change across months: a landscape aquarium typically gains one or two plants
+in its first month, three to five by month three, and reaches its cap somewhere
+between month six and its first year. Several seeds settle permanently below the
+cap because spacing and density, not the count, are the real limit. Every shoot
+starts at `ageDays = 0` and is itself weeks of subsequent content. Nothing marks
+a propagated plant sterile: once it matures months later it is an ordinary
+candidate, which is what lets a colony keep spreading slowly. The caps and the
+spacing rules are the safety mechanism, not a generation counter.
+
+### Delayed rare emergence and the rare lifecycle
+
+The existing habitat generator can already seed rare plants and is untouched.
+Phase 3 adds the possibility that another unusual plant comes up later. A
+scheduled emergence roots a **seedling** - `ageDays ≈ 0`, revealed over the
+following weeks by the ordinary skeletal growth system - beside an existing
+specimen, preferring one that already shares its depth layer, so it lands in
+vegetation rather than in the deliberate open middle of the tank. It respects
+the same spacing, density, open-water, and cap rules, and tries a bounded three
+hosts before giving up.
+
+A rare plant that has finished growing would otherwise be finished forever, so
+`plantLifecycle(plant, species)` gives unusual and glow-tipped species a slow
+recurring phase: a seeded 35–70 day cycle with a `dormant → opening → active →
+fading` progression, roughly two to four simulated days per open stage. It is
+derived entirely from the plant's seed and age - no `nextBloomDay` is stored -
+and it is not a health, decay, or death model. Nothing in the aquarium ever
+dies, rots, withers, or disappears; a bloom ending simply returns the plant to
+its ordinary mature state.
+
+The bloom is expressed through a palette slot the renderer already has: a
+glow-tipped species' special tips take `plants.glowTip` while its cycle is open
+and `plants.growthTip` while it is closed. No shader, blur, alpha bloom,
+per-pixel halo, or new primitive is added, and the mature scene still uses no
+more than the eleven plant colours it used before. Stages are coarse on purpose:
+at real time the change is imperceptible, across visits it is noticeable, and it
+cannot invalidate a plant's scene object every 100 ms for days.
+
+### How Phase 3 feeds Phase 2
+
+`plantGrowthNovelty()` previously returned zero for a plant that had revealed no
+structural stage - which was exactly the plants a Phase 3 aquarium makes most
+interesting. A true seedling now gets its own short novelty window, and a rare
+plant in its active lifecycle receives a temporary bonus. Both raise activity
+*utility*; neither commands anybody. A plant-affine curious fish may cross the
+tank for a new shoot while a bubble-obsessed wanderer never looks at it, which
+is exactly the intended interaction between the two phases. Existing favourite
+plants stay preferred, because that scoring is keyed on stable fish and plant
+seeds; new plants simply become additional candidates.
+
+### Persistence, migration, and offline behaviour
+
+Persistence remains **version 2**. The stored schema did not become
+incompatible: the only addition is one optional top-level record, and the
+existing defensive restoration already tolerates its absence.
+
+```text
+content: { version: 1, propagationEpoch: <integer>, milestones: <4-bit mask> }
+```
+
+That is the entire persisted history. There is no event log. Fish View may run
+for years, so the aquarium's physical state *is* the historical record - a fish
+that arrived is present, a shoot that took is present, and its age says when it
+appeared. `content` is a bounded processing cursor that exists so a boundary is
+not resolved twice, and it is computational bookkeeping rather than a hidden
+user-facing statistic. It is validated on restore: an unsupported version,
+non-finite, negative, or absurd value is clamped or rebuilt rather than trusted,
+so corrupt bookkeeping cannot loop millions of epochs, spawn thousands of
+plants, duplicate an arrival, or crash restore.
+
+**Dynamic plant restoration is the mandatory persistence change.** Serialization
+always saved however many plants existed, but restore rebuilt the garden by
+mapping the orientation's *original* habitat roster - which would have silently
+deleted every propagated shoot and every delayed rare plant on the next reload.
+A plant's identity is its stable seed, never its array position, so a version 2
+save is now restored from the saved roster itself: seeds are validated and
+deduplicated, species IDs are checked, `x` and `ageDays` must be finite, mature
+height is clamped, the depth layer is taken from the species rather than the
+save, motion traits fall back to the plant's own `plantVariationFromSeed()`
+rather than to another specimen's animation, and the roster is capped. A saved
+plant whose seed matches an original specimen still falls back to that specimen
+for anything missing, which is what keeps an existing garden byte-identical
+across the upgrade - no original plant's seed, species, root, age, or mature
+size moves. Version 1 saves keep their original index-based path exactly.
+
+This matters for the eventual ESP32 implementation: plant restoration is no
+longer bounded by the initial habitat roster, and an NVS layout has to store a
+variable-length garden up to the orientation cap.
+
+Migration policy for a pre-Phase-3 save is deliberately asymmetric, and the
+reasoning is worth keeping:
+
+- **Propagation is not replayed.** An old save has a real aquarium age and a
+  garden that has never propagated. Generating six months of hypothetical colony
+  reproduction into it would invent a history that never happened, so the
+  propagation cursor simply starts at the save's current age and future epochs
+  run from there.
+- **One-time milestones are reconciled.** Arrivals and rare emergences are
+  bounded, exactly reconstructable events, so any that the save is already
+  overdue for are materialized on restore - respecting the fish and plant caps
+  and the alternating entry placement. Without this a long-lived Phase 2
+  aquarium would be permanently stuck at six fish.
+
+Offline advancement is catch-up, never a neglect simulation. A month away costs
+an aquarium nothing: no fish is lost, no plant dies, no relationship is
+punished, and no milestone that fell inside the gap is missed. Nothing in Phase 3
+requires touch, feeding, checking in, or a streak. A fish that arrived while the
+device was off keeps its entry swim, so the next viewer effectively sees it
+joining rather than finding it already parked.
+
+### Phase 3 performance
+
+Timeline bookkeeping is close to free - most frames pay a boundary comparison
+against four milestone days and one integer epoch. The real cost is the entities
+history eventually adds, so the useful measurement is a mature aquarium at the
+caps rather than a fresh one. `tools/measure-phase3.mjs` reproduces both against
+any supplied tree: 200 frames at 10 fps, seeds 5/83/147, after a 20-frame settle.
+"Mature" means eight individuals, the hard plant cap, every specimen grown, the
+ordinary 32-fish school, and the existing bubbles.
+
+| Orientation / scenario | Fish | Plants | Plant glyphs | `main` avg | Phase 3 avg | `main` max | Phase 3 max | Full redraws | Avg rects | Max body fill |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Landscape fresh | 6 | 22 | 137 | 27.88% | 27.88% | 58.16% | 58.16% | 0 | 32.5 | 9 |
+| Landscape mature | 6→8 | 22→30 | 491→681 | 42.16% | 52.49% | 91.46% | 92.92% | 0 | 24.2 | 9 |
+| Portrait fresh | 6 | 16 | 160 | 32.87% | 32.87% | 94.38% | 94.38% | 0 | 24.6 | 9 |
+| Portrait mature | 6→8 | 16→22 | 564→823 | 65.52% | 75.21% | 96.00% | 96.00% | 0 | 9.8 | 9 |
+
+A fresh aquarium is bit-identical to `main`: Phase 3 costs nothing on day one,
+which is the point - the tank is left room to develop. The mature rows are the
+honest cost of two more fish and eight more mature plants, and it is paid in
+draw calls inside the same dirty rectangles rather than in a new kind of work.
+None of the 2,400 measured transitions requests a full-frame redraw, the maximum
+individual body fill stays at exactly nine rectangles, and the slowest observed
+`tick + render` average was 3.91 ms - a relative development measurement rather
+than an ESP32 benchmark, still comfortably inside the 100 ms frame interval.
+Portrait mature is the tightest case and is where a real panel measurement would
+first push back on the caps; lowering the portrait cap to 20 recovers about
+three and a half points of average damage if it ever needs to be spent.
+
+A plant appearing changes its own region on the frame it appears, exactly as any
+other plant does when it moves. There is no global "history changed" flag and
+nothing invalidates the framebuffer beyond that frame. Long-run memory is
+hard-bounded in every direction: at most eight individuals, a tested plant cap,
+at most two social memories per fish, a four-bit milestone mask, one integer
+epoch cursor, and the existing bounded transient activity targets. No Phase 3
+array grows with aquarium age.
+
+### Phase 3 test coverage
+
+`npm test` runs 194 tests. The 46 added by Phase 3 live in
+`tests/phase3-timeline.test.js`, `tests/phase3-arrivals.test.js`,
+`tests/phase3-plants.test.js`, `tests/phase3-persistence.test.js`, and
+`tests/phase3-mature-render.test.js`, and cover schedule determinism across 80
+seeds, orientation independence, step-size invariance, chronological ordering,
+crossing at every frame granularity, idempotency, corrupt-cursor safety,
+arrival identity/placement/Phase 2 compatibility, relationship preservation,
+propagation maturity/species/locality/spacing/density/caps/pacing, later
+generations, rare containment, rare emergence and its derived lifecycle,
+seedling and bloom novelty, dynamic and corrupt plant persistence, Phase 2 save
+migration, offline catch-up, and mature maximum-population rendering. The
+existing multi-month accelerated determinism tests are retained and extended
+with Phase 3 assertions rather than weakened.
+
 ## Skeletal plants and ESP32 portability
 
 Plant artwork lives in one static descriptor library. Each species is a shallow
@@ -461,7 +820,8 @@ turning plant motion into full-frame redraws.
 
 ```text
 src/art/       extracted art data and glyph-aware mirroring
-src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose
+src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose,
+               and the shared long-horizon aquarium-history resolver
 src/render/    scene composition, depth lanes, plant glyph mapping, palette,
                font, damage
 src/platform/  browser-only persistence adapter

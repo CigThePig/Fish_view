@@ -17,6 +17,7 @@ import {
 import {
   plantGrowthState,
   plantHeight,
+  plantLifecycle,
   plantSpecies,
 } from "./plants.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
@@ -45,6 +46,11 @@ export const ACTIVITIES = Object.freeze({
   openWaterRest: "open-water-rest",
   plantShelter: "plant-shelter",
   touchReact: "touch-react",
+  // Appended last on purpose: activity salts are derived from position in this
+  // list, so inserting anywhere else would reroll every existing fish's dwell
+  // times. A new fish is never *chosen* into this activity - it is the transient
+  // state a Phase 3 arrival is created in, and it exits into ordinary explore.
+  arrivalEnter: "arrival-enter",
 });
 
 const ACTIVITY_LIST = Object.freeze(Object.values(ACTIVITIES));
@@ -62,6 +68,7 @@ const ACTIVITY_BEHAVIOR = Object.freeze({
   [ACTIVITIES.substrateSearch]: "forage",
   [ACTIVITIES.openWaterRest]: "rest",
   [ACTIVITIES.plantShelter]: "rest",
+  [ACTIVITIES.arrivalEnter]: "explore",
 });
 
 const DWELL_SECONDS = Object.freeze({
@@ -79,6 +86,7 @@ const DWELL_SECONDS = Object.freeze({
   [ACTIVITIES.openWaterRest]: [9, 24, 40],
   [ACTIVITIES.plantShelter]: [11, 30, 50],
   [ACTIVITIES.touchReact]: [0, 3.2, 3.2],
+  [ACTIVITIES.arrivalEnter]: [4.5, 9, 14],
 });
 
 function positiveModulo(value, modulus) {
@@ -169,14 +177,29 @@ export function schoolSummary(school, state) {
   };
 }
 
+// A curious fish notices what has recently changed. Phase 3 gives it two more
+// things to notice: a shoot that was not there last week, and a rare plant that
+// is doing its slow glowing thing again. Both raise utility; neither commands
+// anybody. A plant-lover may cross the tank for a new seedling while a
+// bubble-obsessed wanderer never looks at it, which is the whole point of
+// Phase 2 deciding who cares.
 export function plantGrowthNovelty(plant) {
   const species = plantSpecies(plant);
   const growth = plantGrowthState(plant, species);
-  if (growth.currentStage <= 0) return 0;
+  const lifecycle = plantLifecycle(plant, species, growth);
+  const bloom = lifecycle.active ? 0.32 + lifecycle.intensity * 0.28 : 0;
+  const ageDays = Math.max(0, Number.isFinite(plant.ageDays) ? plant.ageDays : 0);
+  if (growth.currentStage <= 0) {
+    // A brand new specimen has revealed no structural stage yet, so the old
+    // stage-based window returned nothing for exactly the plants that are most
+    // novel. A true seedling gets its own short window instead.
+    const seedlingWindow = Math.max(1.5, species.growthStepDays * 0.9);
+    return Math.max(bloom, clamp(1 - ageDays / seedlingWindow, 0, 1));
+  }
   const revealDay = growth.currentStage * species.growthStepDays;
-  const ageSinceReveal = Math.max(0, plant.ageDays - revealDay);
+  const ageSinceReveal = Math.max(0, ageDays - revealDay);
   const windowDays = Math.max(0.75, species.growthStepDays * 0.42);
-  return clamp(1 - ageSinceReveal / windowDays, 0, 1);
+  return Math.max(bloom, clamp(1 - ageSinceReveal / windowDays, 0, 1));
 }
 
 export function favoritePlantScore(fishSeed, plant) {
@@ -564,6 +587,18 @@ export function resolveActivityTarget(fish, index, state, activity, {
       postureBias: 0,
     };
   }
+  // Joining the aquarium is just swimming: ordinary pitch, turn, and body
+  // deformation carry it. No text, no marker, no cinematic.
+  if (activity.current === ACTIVITIES.arrivalEnter) {
+    if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
+    return {
+      x: activity.targetX,
+      y: activity.targetY,
+      speed: 0.3 + traits.activity * 0.16,
+      postureBias: 0,
+      arrivalEntry: true,
+    };
+  }
   if (activity.current === ACTIVITIES.plantInvestigate
     || activity.current === ACTIVITIES.plantShelter
     || activity.current === ACTIVITIES.plantWeave) {
@@ -706,6 +741,7 @@ function naturalCompletion(fish, activity, target, dwell) {
   if (activity.current === ACTIVITIES.plantInvestigate) return distance < 0.62;
   if (activity.current === ACTIVITIES.plantWeave) return activity.ageRealSeconds > 9 && distance < 0.75;
   if (activity.current === ACTIVITIES.surfaceInvestigate) return distance < 0.72;
+  if (activity.current === ACTIVITIES.arrivalEnter) return distance < 0.9;
   return false;
 }
 

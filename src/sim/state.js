@@ -1,4 +1,9 @@
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
+import {
+  advanceAquariumHistory,
+  createContentState,
+  sanitizeContent,
+} from "./aquarium-history.js";
 import { DEFAULT_SEED, DEFAULT_SETTINGS, DRIVE_MAXIMUM, DRIVE_MINIMUM, orientationConfig } from "./config.js";
 import { clamp, createIndividual, createSchoolFish } from "./entities.js";
 import {
@@ -9,7 +14,13 @@ import {
 } from "./fish-activities.js";
 import { MAX_FISH_PITCH_DEGREES } from "./fish-motion.js";
 import { affinitiesFromSeed, sanitizeSocialMemory } from "./fish-personality.js";
-import { createPlant, plantCountFor } from "./plants.js";
+import {
+  createPlantFromSeed,
+  createPlant,
+  plantCapFor,
+  plantCountFor,
+  plantVariationFromSeed,
+} from "./plants.js";
 import { hashSeed, mix32 } from "./prng.js";
 
 export const PERSISTENCE_VERSION = 2;
@@ -48,6 +59,9 @@ export function createAquariumState({
     school,
     individuals,
     plants,
+    // Bounded long-horizon bookkeeping. This is a processing cursor, not a
+    // hidden user-facing statistic, and it cannot grow with aquarium age.
+    content: createContentState(),
     reaction: null,
   };
 }
@@ -176,6 +190,7 @@ export function serializePersistentState(state) {
       secondaryPhase: plant.secondaryPhase,
       paletteSlot: plant.paletteSlot,
     })),
+    content: { ...state.content },
   };
 }
 
@@ -255,17 +270,42 @@ export function restorePersistentState(baseState, saved) {
     },
   }));
 
-  const plants = baseState.plants.map((fallback, index) => {
+  const plants = saved.persistenceVersion === 1
+    ? restoreLegacyPlants(baseState, saved)
+    : restoreDynamicPlants(baseState, saved);
+  const totalDays = Math.max(0, finite(saved.totalDays, 0));
+
+  const restored = {
+    ...baseState,
+    rngState: finite(saved.rngState, baseState.rngState) >>> 0,
+    elapsedSimSeconds: Math.max(0, finite(saved.elapsedSimSeconds, 0)),
+    totalDays,
+    timeOfDayHours: ((finite(saved.timeOfDayHours, baseState.timeOfDayHours) % 24) + 24) % 24,
+    settings: { ...baseState.settings, ...(saved.settings ?? {}) },
+    individuals: normalizedIndividuals,
+    plants,
+    content: sanitizeContent(saved.content, { totalDays, seed: baseState.seed }),
+  };
+
+  // A zero-length advance resolves nothing new, but it does materialize the
+  // bounded one-time milestones an older save is already overdue for. That is
+  // what keeps a long-lived Phase 2 aquarium from being stuck at six fish
+  // forever, and it is a no-op for a save that already recorded them.
+  return advanceAquariumHistory(restored, 0);
+}
+
+// Version 1 stored maxHeight and no species or motion traits. Its positions and
+// ages are retained while the missing compact traits come from the
+// deterministic version-2 specimen occupying the same layout slot, so the
+// original roster is what an old save comes back as.
+function restoreLegacyPlants(baseState, saved) {
+  return baseState.plants.map((fallback, index) => {
     const plant = saved.plants[index];
     if (!plant || typeof plant !== "object") return fallback;
     const speciesId = typeof plant.speciesId === "string" && PLANT_SPECIES_BY_ID[plant.speciesId]
       ? plant.speciesId
       : fallback.speciesId;
     const species = PLANT_SPECIES_BY_ID[speciesId];
-    // Version 1 stored maxHeight and no species/motion traits. Its positions
-    // and ages are retained while the missing compact traits come from the
-    // deterministic version-2 specimen occupying the same layout slot.
-    const legacyHeight = saved.persistenceVersion === 1 ? plant.maxHeight : undefined;
     return {
       ...fallback,
       seed: finite(plant.seed, fallback.seed) >>> 0,
@@ -273,7 +313,7 @@ export function restorePersistentState(baseState, saved) {
       x: clamp(finite(plant.x, fallback.x), 0.35, baseState.cols - 0.35),
       ageDays: Math.max(0, finite(plant.ageDays, fallback.ageDays)),
       matureHeight: clamp(
-        finite(plant.matureHeight, finite(legacyHeight, fallback.matureHeight)),
+        finite(plant.matureHeight, finite(plant.maxHeight, fallback.matureHeight)),
         1.2,
         baseState.rows - 6.5,
       ),
@@ -287,33 +327,95 @@ export function restorePersistentState(baseState, saved) {
       paletteSlot: Math.round(clamp(finite(plant.paletteSlot, fallback.paletteSlot), 0, 2)),
     };
   });
-
-  return {
-    ...baseState,
-    rngState: finite(saved.rngState, baseState.rngState) >>> 0,
-    elapsedSimSeconds: Math.max(0, finite(saved.elapsedSimSeconds, 0)),
-    totalDays: Math.max(0, finite(saved.totalDays, 0)),
-    timeOfDayHours: ((finite(saved.timeOfDayHours, baseState.timeOfDayHours) % 24) + 24) % 24,
-    settings: { ...baseState.settings, ...(saved.settings ?? {}) },
-    individuals: normalizedIndividuals,
-    plants,
-  };
 }
 
+// A Phase 3 garden grows, so restoration can no longer rebuild it from the
+// orientation's original habitat roster: doing that would silently delete every
+// propagated shoot and every delayed rare plant on the next reload. A plant's
+// identity is its stable seed, never its array position, so the saved roster is
+// what comes back - validated field by field, deduplicated by seed, and capped.
+// A plant whose seed matches an original specimen still falls back to that
+// specimen for anything the save is missing, which is what keeps an existing
+// garden byte-identical across the upgrade.
+function restoreDynamicPlants(baseState, saved) {
+  const originals = new Map(baseState.plants.map((plant) => [plant.seed >>> 0, plant]));
+  const cap = plantCapFor(baseState.orientation);
+  const seen = new Set();
+  const plants = [];
+
+  for (const plant of saved.plants) {
+    if (plants.length >= cap) break;
+    if (!plant || typeof plant !== "object") continue;
+    if (!Number.isSafeInteger(plant.seed) || plant.seed < 0 || plant.seed > 0xffffffff) continue;
+    const seed = plant.seed >>> 0;
+    if (seen.has(seed)) continue;
+    const fallback = originals.get(seed) ?? null;
+    const speciesId = typeof plant.speciesId === "string" && PLANT_SPECIES_BY_ID[plant.speciesId]
+      ? plant.speciesId
+      : fallback?.speciesId;
+    if (!speciesId) continue;
+    if (!Number.isFinite(plant.x) && !fallback) continue;
+    if (!Number.isFinite(plant.ageDays) && !fallback) continue;
+    seen.add(seed);
+
+    // Motion traits are cheap to re-derive and impossible to guess wrong: a
+    // corrupt field falls back to the plant's own seeded variation rather than
+    // to another specimen's animation.
+    const derived = plantVariationFromSeed(seed);
+    const base = fallback ?? createPlantFromSeed({
+      seed,
+      speciesId,
+      x: clamp(finite(plant.x, baseState.cols / 2), 0.35, baseState.cols - 0.35),
+      ageDays: Math.max(0, finite(plant.ageDays, 0)),
+      rows: baseState.rows,
+      matureHeight: plant.matureHeight,
+    });
+    plants.push({
+      ...base,
+      seed,
+      speciesId,
+      x: clamp(finite(plant.x, base.x), 0.35, baseState.cols - 0.35),
+      ageDays: Math.max(0, finite(plant.ageDays, base.ageDays)),
+      matureHeight: clamp(
+        finite(plant.matureHeight, base.matureHeight),
+        1.2,
+        baseState.rows - 6.5,
+      ),
+      // Depth group is a species property, never a saved one.
+      layer: PLANT_SPECIES_BY_ID[speciesId].layer,
+      phase: finite(plant.phase, derived.phase),
+      frequency: clamp(finite(plant.frequency, derived.frequency), 0.15, 0.55),
+      sway: clamp(finite(plant.sway, derived.sway), 0.55, 1.45),
+      lean: clamp(finite(plant.lean, derived.lean), -0.4, 0.4),
+      stiffness: clamp(finite(plant.stiffness, derived.stiffness), 0.65, 1.35),
+      secondaryPhase: finite(plant.secondaryPhase, derived.secondaryPhase),
+      paletteSlot: Math.round(clamp(finite(plant.paletteSlot, derived.paletteSlot), 0, 2)),
+    });
+  }
+
+  return plants.length ? plants : baseState.plants;
+}
+
+// Catch-up, never a neglect simulation. A month away costs an aquarium nothing:
+// no fish is lost, no plant dies, no relationship is punished, and no milestone
+// that fell inside the gap is missed. Locomotion is deliberately not replayed -
+// a fish that arrived while the device was off simply resumes near the edge it
+// entered from, so the next viewer effectively sees it joining.
 export function advanceOffline(state, realSeconds) {
   const seconds = clamp(finite(realSeconds, 0), 0, 365 * 86400);
   if (seconds <= 0) return state;
   const days = seconds / 86400;
   const hour = (state.timeOfDayHours + seconds / 3600) % 24;
   const circadianEnergy = 0.48 + Math.max(0, Math.sin(((hour - 6) / 24) * Math.PI * 2)) * 0.2;
+  // The same shared resolver the live tick uses, so a week spent offline and a
+  // week spent accelerated reach the same aquarium.
+  const advanced = advanceAquariumHistory(state, days);
 
   return {
-    ...state,
+    ...advanced,
     elapsedSimSeconds: state.elapsedSimSeconds + seconds,
-    totalDays: state.totalDays + days,
     timeOfDayHours: hour,
-    plants: state.plants.map((plant) => ({ ...plant, ageDays: plant.ageDays + days })),
-    individuals: state.individuals.map((fish) => ({
+    individuals: advanced.individuals.map((fish) => ({
       ...fish,
       drives: {
         hunger: clamp(fish.drives.hunger + days * 0.03, DRIVE_MINIMUM, DRIVE_MAXIMUM),
@@ -326,7 +428,12 @@ export function advanceOffline(state, realSeconds) {
           .map((entry) => ({ ...entry })),
       },
       behavior: { ...fish.behavior },
-      activity: createActivityState(defaultActivityForBehavior(fish.behavior.current)),
+      // Transient intentions are rebuilt rather than resumed, with one
+      // exception: a fish that arrived during the gap keeps its entry swim, so
+      // the next viewer sees it joining instead of finding it already parked.
+      activity: fish.activity?.current === ACTIVITIES.arrivalEnter
+        ? { ...fish.activity }
+        : createActivityState(defaultActivityForBehavior(fish.behavior.current)),
       visual: { ...fish.visual },
     })),
   };
