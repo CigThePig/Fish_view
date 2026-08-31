@@ -31,6 +31,13 @@ export const SUBSTRATE_ROWS = 2;
 export const INDIVIDUAL_VISUAL_SCALE_MAX = 1.26;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
+// Drives never reach 0 or 1: a fish is never perfectly satisfied and never
+// starves to death. Behaviour selection has to account for the ceiling, because
+// a drive resting against it can no longer express that its need is still
+// growing.
+export const DRIVE_MINIMUM = 0.15;
+export const DRIVE_MAXIMUM = 0.85;
+
 export const DEFAULT_SETTINGS = Object.freeze({
   timeScale: 1,
   schoolCount: 32,

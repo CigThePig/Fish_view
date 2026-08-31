@@ -1,5 +1,5 @@
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
-import { DEFAULT_SEED, DEFAULT_SETTINGS, orientationConfig } from "./config.js";
+import { DEFAULT_SEED, DEFAULT_SETTINGS, DRIVE_MAXIMUM, DRIVE_MINIMUM, orientationConfig } from "./config.js";
 import { clamp, createIndividual, createSchoolFish } from "./entities.js";
 import {
   ACTIVITIES,
@@ -212,9 +212,9 @@ export function restorePersistentState(baseState, saved) {
       vx: finite(fish.vx, fallback.vx),
       vy: finite(fish.vy, fallback.vy),
       drives: {
-        hunger: clamp(finite(fish.drives?.hunger, fallback.drives.hunger), 0.15, 0.85),
-        energy: clamp(finite(fish.drives?.energy, fallback.drives.energy), 0.15, 0.85),
-        social: clamp(finite(fish.drives?.social, fallback.drives.social), 0.15, 0.85),
+        hunger: clamp(finite(fish.drives?.hunger, fallback.drives.hunger), DRIVE_MINIMUM, DRIVE_MAXIMUM),
+        energy: clamp(finite(fish.drives?.energy, fallback.drives.energy), DRIVE_MINIMUM, DRIVE_MAXIMUM),
+        social: clamp(finite(fish.drives?.social, fallback.drives.social), DRIVE_MINIMUM, DRIVE_MAXIMUM),
       },
       history: {
         touches: Math.max(0, Math.round(finite(fish.history?.touches, 0))),
@@ -315,9 +315,9 @@ export function advanceOffline(state, realSeconds) {
     individuals: state.individuals.map((fish) => ({
       ...fish,
       drives: {
-        hunger: clamp(fish.drives.hunger + days * 0.03, 0.15, 0.85),
-        energy: clamp(fish.drives.energy * 0.7 + circadianEnergy * 0.3, 0.15, 0.85),
-        social: clamp(fish.drives.social + days * 0.015, 0.15, 0.85),
+        hunger: clamp(fish.drives.hunger + days * 0.03, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+        energy: clamp(fish.drives.energy * 0.7 + circadianEnergy * 0.3, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+        social: clamp(fish.drives.social + days * 0.015, DRIVE_MINIMUM, DRIVE_MAXIMUM),
       },
       history: {
         ...fish.history,

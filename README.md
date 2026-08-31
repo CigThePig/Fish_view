@@ -186,6 +186,18 @@ substrate affinity only changes the breadth and rhythm of its real terrain searc
 A tired bubble lover still rests. Touch remains an unconditional, immediate
 override for every fish and only uses glass affinity to vary speed and standoff.
 
+Drives are clamped to a band (`DRIVE_MINIMUM`/`DRIVE_MAXIMUM`) so a fish is never
+perfectly satisfied and never starves to death, which means a drive resting
+against the ceiling can no longer express that its need is still growing. Once
+hunger reaches that ceiling, forage utility plateaus, and an equally saturated
+social drive can outbid it indefinitely — the fish keeps choosing company and
+never eats again. Hunger past a comfort point therefore damps the behaviors that
+compete with feeding for the same active time (cruise, explore, social) rather
+than inflating forage past everything, which would also outrank rest and leave
+the fish exhausted. The damping applies only where foraging is reachable: the
+protected mid-water cast never forages, so suppressing its alternatives would
+buy nothing and simply park it in a permanent rest.
+
 Broad traits (`boldness`, `sociability`, `activity`, `preferredDepth`, and
 `curiosity`) remain the temperament model. The specific bubble, plant, school,
 glass, wander, surface, shelter, and substrate affinities are regenerated from

@@ -333,8 +333,19 @@ for (const scenario of SCENARIOS) {
     // simulated time, so only runs that drive enough frames can be expected to
     // show variety. The max-timeScale run covers 6 sim months in 26 real
     // seconds and legitimately shows very few switches.
+    //
+    // The one accepted exception is a forage-eligible fish that spends the run
+    // pinned at maximum hunger. Above roughly an hour of simulated time per
+    // real second, hunger grows on simulated time while reaching the substrate
+    // costs real time, so such a fish is genuinely starving and committing to
+    // the search is the correct reading rather than a stuck state machine.
     if (first.realSeconds >= 120) {
       first.behaviorsPerFish.forEach((behaviors, index) => {
+        const starving = index >= 3 && first.hungerPinnedFraction[index] > 0.9;
+        if (starving && behaviors.length === 1) {
+          assert.deepEqual(behaviors, ["forage"], `fish ${index} starved into ${behaviors}`);
+          return;
+        }
         assert.ok(behaviors.length >= 2, `fish ${index} should not be stuck in one behaviour (${behaviors})`);
       });
     }

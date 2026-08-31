@@ -1,4 +1,4 @@
-import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
+import { DRIVE_MAXIMUM, DRIVE_MINIMUM, SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
 import { clamp, createSchoolFish, spriteForSeed, traitsFromSeed } from "./entities.js";
 import { createBubbleWorldRecords } from "./bubbles.js";
 import {
@@ -14,6 +14,12 @@ import {
   surfaceSafeY,
 } from "./fish-motion.js";
 import { affinitiesFromSeed, updateSocialMemories } from "./fish-personality.js";
+
+// Hunger above this point is discomfort rather than appetite.
+const HUNGER_COMFORT = 0.62;
+// How far a fully starving fish suppresses the behaviours that compete with
+// feeding for the same active time.
+const STARVATION_DAMPING = 0.45;
 
 const FACING_THRESHOLD = 0.11;
 const PITCH_DEADZONE = 0.035;
@@ -156,7 +162,22 @@ function tickSchool(state, realDelta, motionScale) {
   });
 }
 
-export function behaviorUtilities(fish, state, traits = traitsFromSeed(fish.seed, fish.history)) {
+// Hunger stops climbing once it reaches DRIVE_MAXIMUM, so a fish that keeps
+// missing the substrate cannot express getting any hungrier: its forage utility
+// plateaus while an equally saturated social drive outbids it indefinitely and
+// the fish never eats again. Starvation therefore damps the behaviours that
+// compete with feeding for the same active time rather than inflating forage
+// past everything, which would also outrank rest and leave the fish exhausted.
+function starvationPressure(hunger) {
+  return clamp((hunger - HUNGER_COMFORT) / (DRIVE_MAXIMUM - HUNGER_COMFORT), 0, 1);
+}
+
+export function behaviorUtilities(
+  fish,
+  state,
+  traits = traitsFromSeed(fish.seed, fish.history),
+  allowForage = true,
+) {
   const affinities = affinitiesFromSeed(fish.seed);
   const daylight = daylightFactor(state.timeOfDayHours);
   const utilities = {
@@ -166,12 +187,21 @@ export function behaviorUtilities(fish, state, traits = traitsFromSeed(fish.seed
     forage: fish.drives.hunger * (0.68 + traits.activity * 0.28 + affinities.substrate * 0.13),
     rest: (1 - fish.drives.energy) * (0.72 + (1 - traits.activity) * 0.38) + (1 - daylight) * 0.16,
   };
+  // Only a fish that can actually reach the substrate is steered by hunger. The
+  // mid-water cast never forages, so damping its alternatives would buy nothing
+  // and simply park it in a permanent rest.
+  if (allowForage) {
+    const damping = 1 - starvationPressure(fish.drives.hunger) * STARVATION_DAMPING;
+    utilities.cruise *= damping;
+    utilities.explore *= damping;
+    utilities.social *= damping;
+  }
   utilities[fish.behavior.current] = (utilities[fish.behavior.current] ?? 0) + 0.07;
   return utilities;
 }
 
 function selectBehavior(fish, state, traits, allowForage) {
-  const utilities = behaviorUtilities(fish, state, traits);
+  const utilities = behaviorUtilities(fish, state, traits, allowForage);
   if (!allowForage) utilities.forage = Number.NEGATIVE_INFINITY;
   return BEHAVIORS.reduce(
     (best, behavior) => (utilities[behavior] > utilities[best] ? behavior : best),
@@ -252,9 +282,13 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   const engagement = socialEngagement(fish, state, school);
   const socialRelief = deltaHours * 0.024 * engagement;
   const drives = {
-    hunger: clamp(fish.drives.hunger + deltaHours * 0.003 - hungerRelief, 0.15, 0.85),
-    energy: clamp(fish.drives.energy + energyChange + (1 - daylight) * deltaHours * 0.002, 0.15, 0.85),
-    social: clamp(fish.drives.social + deltaHours * 0.0025 - socialRelief, 0.15, 0.85),
+    hunger: clamp(fish.drives.hunger + deltaHours * 0.003 - hungerRelief, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+    energy: clamp(
+      fish.drives.energy + energyChange + (1 - daylight) * deltaHours * 0.002,
+      DRIVE_MINIMUM,
+      DRIVE_MAXIMUM,
+    ),
+    social: clamp(fish.drives.social + deltaHours * 0.0025 - socialRelief, DRIVE_MINIMUM, DRIVE_MAXIMUM),
   };
 
   let behavior = {
