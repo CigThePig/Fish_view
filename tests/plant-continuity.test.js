@@ -80,6 +80,15 @@ function maximumUncoveredGap(layout) {
   return maximum;
 }
 
+function singleAttachmentGap(point, layout) {
+  const progress = point.parent === 0 ? 0.3 : 0.5;
+  return Math.max(
+    0,
+    Math.max(progress, 1 - progress) * layout.segmentLengthPixels
+      - layout.projectedCoveragePixels / 2,
+  );
+}
+
 function validateStructuralCoverage(record, metrics, label) {
   const scale = plantGlyphScale(record.plant, record.layerName);
   let sampledSegments = 0;
@@ -102,10 +111,11 @@ function validateStructuralCoverage(record, metrics, label) {
       `${label} segment ${point.index} leaves ${gap.toFixed(2)}px uncovered`,
     );
 
-    // A segment that one glyph already covers must not receive filler merely
-    // because the species is mature. Density is driven by rendered length.
-    if (layout.segmentLengthPixels <= layout.projectedCoveragePixels + MAX_STRUCTURAL_GAP_PX + EPSILON) {
-      assert.equal(layout.progresses.length, 1, `${label} oversampled short segment ${point.index}`);
+    // If the actual one-glyph placement already meets the same visual gap
+    // contract, the renderer must not add filler merely because the plant is
+    // mature. This accounts for the deliberately asymmetric first/root glyph.
+    if (singleAttachmentGap(point, layout) <= MAX_STRUCTURAL_GAP_PX + EPSILON) {
+      assert.equal(layout.progresses.length, 1, `${label} oversampled covered segment ${point.index}`);
     }
 
     if (point.parent === 0) {
