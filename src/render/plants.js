@@ -16,7 +16,7 @@ export const MAX_RENDERED_PLANT_GLYPHS = MAX_PLANT_JOINTS * (MAX_STRUCTURAL_SAMP
 // The 5x7 font has 21px of vertical ink inside its 24px authoring cell. A small
 // gap is perceptually continuous at panel distance; a whole blank text row is
 // not. Sampling uses the actual posed length and scaled ink projection below.
-export const MAX_STRUCTURAL_GAP_PX = 16;
+export const MAX_STRUCTURAL_GAP_PX = 12;
 
 const STRUCTURAL_STRETCH_PER_WORLD_UNIT = 0.3;
 const STRUCTURAL_SCALE_CAP = 1.35;
