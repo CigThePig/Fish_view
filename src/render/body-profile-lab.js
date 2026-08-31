@@ -33,7 +33,7 @@ function spritePoints(sprite) {
       points.push({ char, column, row });
     }
   }
-  const result = Object.freeze({ width, height, points: Object.freeze(points) });
+  const result = Object.freeze({ id: sprite.id, width, height, points: Object.freeze(points) });
   spritePointCache.set(sprite.id, result);
   return result;
 }
@@ -61,6 +61,11 @@ function poseCoordinate(source, column, row, {
     facing,
     pitch,
     cellAspect,
+    spriteId: source.id,
+    column,
+    row,
+    width: source.width,
+    height: source.height,
   });
 }
 

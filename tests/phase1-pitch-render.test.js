@@ -157,7 +157,7 @@ test("nose-down and nose-up semantics remain correct for both facings", () => {
   }
 });
 
-test("physical pitch is stable across landscape, portrait, and motion-lab cell aspects", () => {
+test("authored pitch is aspect-stable without literally rotating the ASCII drawing", () => {
   const sprite = individualSprites.find((candidate) => candidate.id === "round-fin");
   assert.ok(sprite);
   const lab = renderSpriteScene(sprite, { staticPose: true });
@@ -166,6 +166,7 @@ test("physical pitch is stable across landscape, portrait, and motion-lab cell a
     { name: "portrait", cellWidth: 480 / 40, cellHeight: 800 / 33 },
     { name: "lab", cellWidth: lab.width / lab.logicalWidth, cellHeight: lab.height / lab.logicalHeight },
   ];
+  const magnitudes = [];
   for (const mode of modes) {
     for (const facing of [1, -1]) {
       const aspect = mode.cellHeight / mode.cellWidth;
@@ -174,8 +175,25 @@ test("physical pitch is stable across landscape, portrait, and motion-lab cell a
       const levelAngle = angleDegrees(noseTailAxis(sprite, level, facing, mode.cellWidth, mode.cellHeight));
       const pitchedAngle = angleDegrees(noseTailAxis(sprite, pitched, facing, mode.cellWidth, mode.cellHeight));
       const delta = wrappedDelta(levelAngle, pitchedAngle);
-      const expected = facing > 0 ? 30 : -30;
-      assert.ok(Math.abs(delta - expected) < 0.75, `${mode.name}/${facing} rotated ${delta.toFixed(2)}° instead of ${expected}°`);
+      assert.ok(delta * facing > 0, `${mode.name}/${facing} pitched in the wrong semantic direction`);
+      const magnitude = Math.abs(delta);
+      assert.ok(magnitude >= 11 && magnitude <= 17, `${mode.name}/${facing} authored pose was ${magnitude.toFixed(2)}°`);
+      magnitudes.push(magnitude);
+    }
+  }
+  assert.ok(Math.max(...magnitudes) - Math.min(...magnitudes) < 0.75);
+});
+
+test("authored pitch keeps the ASCII drawing compact instead of scattering upright glyphs", () => {
+  for (const sprite of individualSprites) {
+    for (const facing of [1, -1]) {
+      const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: 2 });
+      const strong = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: 2 });
+      assert.equal(level.length, strong.length);
+      for (let index = 0; index < level.length; index += 1) {
+        assert.ok(Math.abs(strong[index].y - level[index].y) <= 0.4, `${sprite.id} displaced a glyph by more than 0.4 rows`);
+        assert.ok(Math.abs(strong[index].x - level[index].x) <= 0.11, `${sprite.id} displaced a glyph sideways by more than 0.11 columns`);
+      }
     }
   }
 });
