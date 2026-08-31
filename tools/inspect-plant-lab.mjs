@@ -8,10 +8,14 @@ const SPECIES = [
   "ribbon-kelp",
   "leaf-reed",
   "long-frond",
-  "forked-grass",
+  "fork-tuft",
+  "fan-grass",
   "feather-weed",
-  "lantern-weed",
-  "bell-frond",
+  "bushy-grass",
+  "spiral-weed",
+  "lantern-plant",
+  "split-ribbon",
+  "floating-bell",
 ];
 
 const BIN_X = 8;
