@@ -1,7 +1,8 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
-import { render } from "./render/render.js?v=phase1-pitch-20260830";
+import { render } from "./render/render.js?v=phase2-personality-20260831";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { DEFAULT_SEED } from "./sim/config.js";
+import { topAffinities } from "./sim/fish-personality.js";
 import { hashSeed } from "./sim/prng.js";
 import { applyTouch, createAquariumState, withSettings } from "./sim/state.js";
 import { tick } from "./sim/tick.js";
@@ -44,6 +45,29 @@ let sampledPlantChanges = 0;
 let sampledPlantFrames = 0;
 const previousPlantSignatures = { portrait: new Map(), landscape: new Map() };
 const latestPlantMetrics = { portrait: null, landscape: null };
+
+function updatePersonalityDiagnostics(state) {
+  const lines = state.individuals.map((fish, index) => {
+    const affinities = topAffinities(fish.seed)
+      .map(({ key, value }) => `${key} ${value.toFixed(2)}`)
+      .join(", ");
+    const target = fish.activity?.targetType
+      ? `${fish.activity.targetType}:${fish.activity.targetId ?? "point"}`
+      : "none";
+    const companion = fish.history?.socialMemory?.[0];
+    const familiar = companion
+      ? `${companion.seed.toString(16)} ${companion.familiarity.toFixed(2)}`
+      : "none";
+    return [
+      `${index + 1} / ${fish.seed.toString(16)}`,
+      `${fish.behavior.current} > ${fish.activity?.current ?? "default"}`,
+      `target ${target}`,
+      `likes ${affinities}`,
+      `familiar ${familiar}`,
+    ].join(" · ");
+  });
+  document.querySelector("#personality-output").textContent = lines.join("\n");
+}
 
 function visibleOrientations() {
   return currentMode === "compare" ? ["portrait", "landscape"] : [currentMode];
@@ -94,6 +118,7 @@ function updateMetrics(timestamp) {
   document.querySelector("#plant-changed-output").textContent = sampledPlantFrames
     ? (sampledPlantChanges / sampledPlantFrames).toFixed(1)
     : "0";
+  updatePersonalityDiagnostics(state);
   sampledFrames = 0;
   sampledDamage = 0;
   sampledTotal = 0;

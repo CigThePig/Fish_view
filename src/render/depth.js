@@ -1,5 +1,5 @@
 import { INDIVIDUAL_VISUAL_SCALE_MAX } from "../sim/config.js";
-import { sample01, sampleRange } from "../sim/prng.js";
+import { scatteredDepth, spreadDepth } from "../sim/depth.js";
 
 // Fish View has always had a vertical axis - which water band a fish swims in -
 // but never a distance axis. Every fish was drawn at one size, in one set of
@@ -37,12 +37,6 @@ export const LANE_HAZE = Object.freeze([0.42, 0.29, 0.17, 0.07, 0]);
 // keeps its single warm field.
 export const LANE_CLARITY = Object.freeze([0, 0, 0, 0.05, 0.11]);
 
-// One slow breath per fish, about 140 seconds long. Enough that the tank is
-// never a set of fixed cut-outs, small enough that the change per frame stays
-// far below the damage a swimming fish already generates.
-const DRIFT_RATE = 0.045;
-const DRIFT_AMOUNT = 0.1;
-
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
@@ -66,27 +60,6 @@ export function schoolDepthScale(depth) {
   return interpolate(SCHOOL_LANE_SCALE, depth);
 }
 
-function drift(seed, salt, elapsedRealSeconds) {
-  const phase = sampleRange(seed, salt + 1, 0, Math.PI * 2);
-  return Math.sin(elapsedRealSeconds * DRIFT_RATE + phase) * DRIFT_AMOUNT;
-}
-
-// Unconstrained per-fish depth is fine for a 32-strong school but not for six
-// named individuals: seeds that happen to agree leave the whole cast on one
-// plane and the effect disappears. Each individual is given its own slice of
-// the tank and jitters inside it, with the slice order rotated by the aquarium
-// seed so depth is not permanently welded to creation index.
-export function spreadDepth(baseSeed, seed, index, count, elapsedRealSeconds = 0) {
-  const rotation = Math.floor(sample01(baseSeed, 3300) * count);
-  const slot = (index + rotation) % count;
-  const base = (slot + sampleRange(seed, 60, 0.16, 0.84)) / count;
-  return clamp(base + drift(seed, 60, elapsedRealSeconds), 0, 1);
-}
-
-export function scatteredDepth(seed, salt, elapsedRealSeconds = 0) {
-  return clamp(
-    sampleRange(seed, salt, 0.04, 0.96) + drift(seed, salt, elapsedRealSeconds),
-    0,
-    1,
-  );
-}
+// Compatibility exports keep the renderer API stable while the trajectories
+// themselves live on the neutral simulation side.
+export { scatteredDepth, spreadDepth };

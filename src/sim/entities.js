@@ -60,12 +60,22 @@ export function createIndividual(baseSeed, index, cols, rows) {
       touches: 0,
       boldnessDrift: 0,
       sociabilityDrift: 0,
+      socialMemory: [],
     },
     behavior: {
       current: "cruise",
       previous: "cruise",
       blend: 1,
       ageSeconds: sampleRange(seed, 14, 0, 40),
+    },
+    activity: {
+      current: "cruise",
+      previous: "cruise",
+      ageRealSeconds: sampleRange(seed, 15, 0, 12),
+      targetType: null,
+      targetId: null,
+      targetX: null,
+      targetY: null,
     },
     visual: {
       facing: direction,

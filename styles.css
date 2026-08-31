@@ -191,6 +191,23 @@ figcaption {
   border-top: 1px solid var(--line);
 }
 
+.debug-note {
+  margin: 0 0 0.65rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.personality-output {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  color: #c8d4cc;
+  font: 0.72rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--muted);

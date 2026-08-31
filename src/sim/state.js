@@ -1,7 +1,14 @@
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import { DEFAULT_SEED, DEFAULT_SETTINGS, orientationConfig } from "./config.js";
 import { clamp, createIndividual, createSchoolFish } from "./entities.js";
+import {
+  ACTIVITIES,
+  BEHAVIORS,
+  createActivityState,
+  defaultActivityForBehavior,
+} from "./fish-activities.js";
 import { MAX_FISH_PITCH_DEGREES } from "./fish-motion.js";
+import { affinitiesFromSeed, sanitizeSocialMemory } from "./fish-personality.js";
 import { createPlant, plantCountFor } from "./plants.js";
 import { hashSeed, mix32 } from "./prng.js";
 
@@ -72,13 +79,23 @@ export function applyTouch(state, x, y) {
       nearestIndex = index;
     }
     const direction = normalizeVector(safeX - fish.x, safeY - fish.y);
+    const glassAffinity = affinitiesFromSeed(fish.seed).glass;
     return {
       ...fish,
-      vx: direction.x * 0.72,
-      vy: direction.y * 0.44,
+      vx: direction.x * (0.58 + glassAffinity * 0.22),
+      vy: direction.y * (0.38 + glassAffinity * 0.14),
       drives: { ...fish.drives },
-      history: { ...fish.history },
+      history: {
+        ...fish.history,
+        socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, fish.seed),
+      },
       behavior: { ...fish.behavior },
+      activity: {
+        ...createActivityState(ACTIVITIES.touchReact, fish.activity?.current ?? fish.behavior.current),
+        targetType: "touch",
+        targetX: safeX,
+        targetY: safeY,
+      },
       visual: { ...fish.visual },
     };
   });
@@ -125,9 +142,19 @@ export function serializePersistentState(state) {
     timeOfDayHours: state.timeOfDayHours,
     settings: { ...state.settings },
     individuals: state.individuals.map((fish) => ({
-      ...fish,
+      seed: fish.seed,
+      x: fish.x,
+      y: fish.y,
+      vx: fish.vx,
+      vy: fish.vy,
       drives: { ...fish.drives },
-      history: { ...fish.history },
+      history: {
+        touches: fish.history.touches,
+        boldnessDrift: fish.history.boldnessDrift,
+        sociabilityDrift: fish.history.sociabilityDrift,
+        socialMemory: sanitizeSocialMemory(fish.history.socialMemory, fish.seed)
+          .map((entry) => ({ ...entry })),
+      },
       behavior: { ...fish.behavior },
       visual: { ...fish.visual },
     })),
@@ -156,6 +183,16 @@ function finite(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function stableSeed(value, fallback) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 0xffffffff
+    ? value >>> 0
+    : fallback >>> 0;
+}
+
+function validBehavior(value, fallback = "cruise") {
+  return BEHAVIORS.includes(value) ? value : fallback;
+}
+
 export function restorePersistentState(baseState, saved) {
   if (!saved || (saved.persistenceVersion !== 1 && saved.persistenceVersion !== PERSISTENCE_VERSION)) return baseState;
   if (saved.seed !== baseState.seed || saved.orientation !== baseState.orientation) return baseState;
@@ -163,10 +200,13 @@ export function restorePersistentState(baseState, saved) {
 
   const individuals = saved.individuals.slice(0, 8).map((fish, index) => {
     const fallback = baseState.individuals[index % baseState.individuals.length];
+    const seed = stableSeed(fish.seed, fallback.seed);
+    const currentBehavior = validBehavior(fish.behavior?.current);
+    const previousBehavior = validBehavior(fish.behavior?.previous, currentBehavior);
     return {
       ...fallback,
       ...fish,
-      seed: finite(fish.seed, fallback.seed) >>> 0,
+      seed,
       x: finite(fish.x, fallback.x),
       y: finite(fish.y, fallback.y),
       vx: finite(fish.vx, fallback.vx),
@@ -180,13 +220,18 @@ export function restorePersistentState(baseState, saved) {
         touches: Math.max(0, Math.round(finite(fish.history?.touches, 0))),
         boldnessDrift: clamp(finite(fish.history?.boldnessDrift, 0), 0, 0.18),
         sociabilityDrift: clamp(finite(fish.history?.sociabilityDrift, 0), 0, 0.12),
+        socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, seed),
       },
       behavior: {
-        current: typeof fish.behavior?.current === "string" ? fish.behavior.current : "cruise",
-        previous: typeof fish.behavior?.previous === "string" ? fish.behavior.previous : "cruise",
+        current: currentBehavior,
+        previous: previousBehavior,
         blend: clamp(finite(fish.behavior?.blend, 1), 0, 1),
         ageSeconds: Math.max(0, finite(fish.behavior?.ageSeconds, 0)),
       },
+      // Activity targets are visual intentions, not durable biology. Rebuild a
+      // safe broad-behavior default instead of resuming yesterday's bubble or
+      // retaining an object reference from a malformed save.
+      activity: createActivityState(defaultActivityForBehavior(currentBehavior)),
       visual: {
         facing: fish.visual?.facing === -1 ? -1 : fish.visual?.facing === 1 ? 1 : (finite(fish.vx, fallback.vx) < 0 ? -1 : 1),
         targetFacing: fish.visual?.targetFacing === -1 ? -1 : fish.visual?.targetFacing === 1
@@ -200,6 +245,14 @@ export function restorePersistentState(baseState, saved) {
   });
 
   if (individuals.length < 5) return baseState;
+  const availableSeeds = new Set(individuals.map((fish) => fish.seed));
+  const normalizedIndividuals = individuals.map((fish) => ({
+    ...fish,
+    history: {
+      ...fish.history,
+      socialMemory: sanitizeSocialMemory(fish.history.socialMemory, fish.seed, availableSeeds),
+    },
+  }));
 
   const plants = baseState.plants.map((fallback, index) => {
     const plant = saved.plants[index];
@@ -241,7 +294,7 @@ export function restorePersistentState(baseState, saved) {
     totalDays: Math.max(0, finite(saved.totalDays, 0)),
     timeOfDayHours: ((finite(saved.timeOfDayHours, baseState.timeOfDayHours) % 24) + 24) % 24,
     settings: { ...baseState.settings, ...(saved.settings ?? {}) },
-    individuals,
+    individuals: normalizedIndividuals,
     plants,
   };
 }
@@ -266,8 +319,13 @@ export function advanceOffline(state, realSeconds) {
         energy: clamp(fish.drives.energy * 0.7 + circadianEnergy * 0.3, 0.15, 0.85),
         social: clamp(fish.drives.social + days * 0.015, 0.15, 0.85),
       },
-      history: { ...fish.history },
+      history: {
+        ...fish.history,
+        socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, fish.seed)
+          .map((entry) => ({ ...entry })),
+      },
       behavior: { ...fish.behavior },
+      activity: createActivityState(defaultActivityForBehavior(fish.behavior.current)),
       visual: { ...fish.visual },
     })),
   };
