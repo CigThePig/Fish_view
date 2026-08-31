@@ -17,5 +17,8 @@ jobs:
       - name: Measure mature plant rendering
         run: node tools/measure-plants.mjs
 
+      - name: Inspect representative plant lab views
+        run: node tools/inspect-plant-lab.mjs
+
       - name: Run full test suite
         run: node --test
