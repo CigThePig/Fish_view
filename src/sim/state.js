@@ -1,6 +1,7 @@
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import { DEFAULT_SEED, DEFAULT_SETTINGS, orientationConfig } from "./config.js";
 import { clamp, createIndividual, createSchoolFish } from "./entities.js";
+import { MAX_FISH_PITCH_DEGREES } from "./fish-motion.js";
 import { createPlant, plantCountFor } from "./plants.js";
 import { hashSeed, mix32 } from "./prng.js";
 
@@ -192,6 +193,8 @@ export function restorePersistentState(baseState, saved) {
           ? 1
           : (finite(fish.vx, fallback.vx) < 0 ? -1 : 1),
         turnProgress: clamp(finite(fish.visual?.turnProgress, 1), 0, 1),
+        pitch: clamp(finite(fish.visual?.pitch, 0), -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES),
+        targetPitch: clamp(finite(fish.visual?.targetPitch, 0), -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES),
       },
     };
   });

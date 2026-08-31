@@ -59,7 +59,11 @@ test("individual facing uses hysteresis and a deterministic turn pose", () => {
   });
 
   const indecisive = tick(withVelocity(-0.05), 0.01).individuals[0];
-  assert.deepEqual(indecisive.visual, { facing: 1, targetFacing: 1, turnProgress: 1 });
+  assert.equal(indecisive.visual.facing, 1);
+  assert.equal(indecisive.visual.targetFacing, 1);
+  assert.equal(indecisive.visual.turnProgress, 1);
+  assert.ok(Number.isFinite(indecisive.visual.pitch));
+  assert.ok(Number.isFinite(indecisive.visual.targetPitch));
 
   const turning = tick(withVelocity(-0.7), 0.01).individuals[0];
   assert.equal(turning.visual.facing, 1);

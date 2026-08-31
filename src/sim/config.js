@@ -25,6 +25,10 @@ export const WATERLINE_ROWS = 2;
 // Keep the floor physically present without surrendering a fifth of landscape
 // mode to a decorative band. Terrain relief is applied around this baseline.
 export const SUBSTRATE_ROWS = 2;
+// Continuous visual depth can enlarge an individual beyond its authored logical
+// footprint. The simulation uses the same hard ceiling for conservative water
+// and substrate clearance without importing the renderer's depth module.
+export const INDIVIDUAL_VISUAL_SCALE_MAX = 1.26;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
 export const DEFAULT_SETTINGS = Object.freeze({

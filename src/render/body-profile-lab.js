@@ -2,6 +2,7 @@ import { normalizeRows } from "../art/mirror.js";
 import { spriteDimensions } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { glyphPixels } from "./bitmap-font.js";
+import { pitchCoordinate } from "./fish-pitch.js?v=phase1-pitch-20260830";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
 import { glyphBounds } from "./scene.js?v=opaque-bodies-20260830";
 
@@ -32,7 +33,7 @@ function spritePoints(sprite) {
       points.push({ char, column, row });
     }
   }
-  const result = Object.freeze({ width, height, points: Object.freeze(points) });
+  const result = Object.freeze({ id: sprite.id, width, height, points: Object.freeze(points) });
   spritePointCache.set(sprite.id, result);
   return result;
 }
@@ -42,6 +43,8 @@ function poseCoordinate(source, column, row, {
   phase = 0,
   deformationStrength = 1,
   turnScale = 1,
+  pitch = 0,
+  cellAspect = CELL_HEIGHT / CELL_WIDTH,
 } = {}) {
   const tail = source.width <= 1
     ? 0
@@ -54,10 +57,16 @@ function poseCoordinate(source, column, row, {
   const tailWeight = 0.1 + Math.pow(tail, 1.65) * 0.9;
   const bodyWave = Math.sin(phase - column * 0.22) * 0.145 * tailWeight * deformationStrength;
   const tailBeat = Math.sin(phase * 1.04 + 0.45) * 0.065 * Math.pow(tail, 3) * deformationStrength;
-  return {
-    x: localX,
-    y: localY + bodyWave + tailBeat,
-  };
+  return pitchCoordinate(localX, localY + bodyWave + tailBeat, {
+    facing,
+    pitch,
+    cellAspect,
+    spriteId: source.id,
+    column,
+    row,
+    width: source.width,
+    height: source.height,
+  });
 }
 
 function inkExtent(char) {
@@ -158,6 +167,7 @@ function bodyFill(sprite, metrics, profile, {
   facing,
   phase,
   deformationStrength,
+  pitch = 0,
   color,
 }) {
   const source = spritePoints(sprite);
@@ -168,7 +178,8 @@ function bodyFill(sprite, metrics, profile, {
   const radiusY = (box.radiusY + BODY_SWELL) * profile.radiusYScale;
   const sliceSourceWidth = (radiusX * 2) / BODY_SPANS;
   const glyphScaleX = 0.9 + turnScale * 0.1;
-  const pose = { facing, phase, deformationStrength, turnScale };
+  const cellAspect = metrics.cellHeight / metrics.cellWidth;
+  const pose = { facing, phase, deformationStrength, turnScale, pitch, cellAspect };
   const fill = [];
 
   for (let index = 0; index < BODY_SPANS; index += 1) {
@@ -195,19 +206,60 @@ function bodyFill(sprite, metrics, profile, {
       Math.max(geometricWidth, localInkWidth) * (0.6 + taper * 0.4) + BODY_SLICE_OVERLAP,
     );
     const centerX = (worldX + center.x) * metrics.cellWidth;
-    const left = Math.round(centerX - sliceWidth / 2);
-    const right = Math.round(centerX + sliceWidth / 2) + 1;
-    const spanTop = Math.round((worldY + Math.min(top.y, bottom.y)) * metrics.cellHeight);
-    const spanBottom = Math.round((worldY + Math.max(top.y, bottom.y)) * metrics.cellHeight) + 1;
+    let left;
+    let right;
+    let spanTop;
+    let spanBottom;
+    if (Math.abs(pitch) < 1e-12) {
+      left = Math.round(centerX - sliceWidth / 2);
+      right = Math.round(centerX + sliceWidth / 2) + 1;
+      spanTop = Math.round((worldY + Math.min(top.y, bottom.y)) * metrics.cellHeight);
+      spanBottom = Math.round((worldY + Math.max(top.y, bottom.y)) * metrics.cellHeight) + 1;
+    } else {
+      const corners = [
+        poseCoordinate(source, centerColumn + localLeft, centerRow - halfHeight, pose),
+        poseCoordinate(source, centerColumn + localLeft, centerRow + halfHeight, pose),
+        poseCoordinate(source, centerColumn + localRight, centerRow - halfHeight, pose),
+        poseCoordinate(source, centerColumn + localRight, centerRow + halfHeight, pose),
+      ];
+      const cornerLeft = (worldX + Math.min(...corners.map((point) => point.x))) * metrics.cellWidth;
+      const cornerRight = (worldX + Math.max(...corners.map((point) => point.x))) * metrics.cellWidth;
+      const cornerTop = (worldY + Math.min(...corners.map((point) => point.y))) * metrics.cellHeight;
+      const cornerBottom = (worldY + Math.max(...corners.map((point) => point.y))) * metrics.cellHeight;
+      const pitchFraction = Math.min(1, Math.abs(pitch) / 30);
+      // The level body deliberately preserves enough local glyph width to
+      // stay opaque through an edge-on turn. Once the body pitches, that
+      // same safety width can extend through the authored tail at the rear
+      // end. Inset only the trailing edge of the first two source slices,
+      // proportional to pitch, while leaving their noseward edge and every
+      // interior slice untouched.
+      const rearBaseInset = sliceWidth
+        * (index === 0 ? 0.42 : index === 1 ? 0.08 : 0)
+        * pitchFraction;
+      let baseLeft = centerX - sliceWidth / 2;
+      let baseRight = centerX + sliceWidth / 2;
+      if (facing < 0) baseRight -= rearBaseInset;
+      else baseLeft += rearBaseInset;
+      const fullLeft = Math.min(cornerLeft, baseLeft);
+      const fullRight = Math.max(cornerRight, baseRight);
+      // Bounding the slightly skewed authored slice as a rectangle still adds
+      // tiny empty corners. At the rear those corners can reach into the open
+      // ASCII tail, so taper only that trailing-side excess across the two rear
+      // slices while retaining full coverage through the enclosed body.
+      const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
+      if (facing < 0) {
+        left = Math.round(fullLeft);
+        right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
+      } else {
+        left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
+        right = Math.round(fullRight) + 1;
+      }
+      spanTop = Math.round(cornerTop);
+      spanBottom = Math.round(cornerBottom) + 1;
+    }
     if (right - left < 1 || spanBottom - spanTop < 1) continue;
 
-    fill.push({
-      x: left,
-      y: spanTop,
-      width: right - left,
-      height: spanBottom - spanTop,
-      color,
-    });
+    fill.push({ x: left, y: spanTop, width: right - left, height: spanBottom - spanTop, color });
   }
   return fill;
 }
@@ -245,6 +297,7 @@ export function applyBodyProfileToSpriteScene(scene, sprite, profile, {
   deformationStrength = 1,
   staticPose = false,
   turnScale = 1,
+  pitch = 0,
 } = {}) {
   const object = scene.objects.find((candidate) => candidate.id.startsWith(`lab:${sprite.id}:`));
   if (!object) return scene;
@@ -263,6 +316,7 @@ export function applyBodyProfileToSpriteScene(scene, sprite, profile, {
     facing: facing === "left" ? -1 : 1,
     phase,
     deformationStrength: effectiveDeformation,
+    pitch,
     color,
   });
 
@@ -275,6 +329,7 @@ export function applyBodyProfileToSpriteScene(scene, sprite, profile, {
     normalized.radiusYScale,
     normalized.rearShoulder,
     normalized.frontShoulder,
+    pitch,
   ].join(":")}`;
   return scene;
 }

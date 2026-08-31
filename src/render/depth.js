@@ -1,3 +1,4 @@
+import { INDIVIDUAL_VISUAL_SCALE_MAX } from "../sim/config.js";
 import { sample01, sampleRange } from "../sim/prng.js";
 
 // Fish View has always had a vertical axis - which water band a fish swims in -
@@ -20,8 +21,9 @@ export const DEPTH_LANES = 5;
 
 // Individuals carry the effect: a near fish is about 60% larger on screen than
 // the same sprite at the far wall, which is the single strongest cue available
-// without leaving the bitmap-glyph budget.
-const LANE_SCALE = Object.freeze([0.7, 0.84, 0.98, 1.12, 1.26]);
+// without leaving the bitmap-glyph budget. The near ceiling is shared with the
+// simulation so conservative surface/substrate clearance never imports render/.
+const LANE_SCALE = Object.freeze([0.7, 0.84, 0.98, 1.12, INDIVIDUAL_VISUAL_SCALE_MAX]);
 // School fish are already small and already numerous, so they take a narrower
 // spread. Their job is parallax, not silhouette.
 const SCHOOL_LANE_SCALE = Object.freeze([0.82, 0.9, 0.99, 1.08, 1.16]);

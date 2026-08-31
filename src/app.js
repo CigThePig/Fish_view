@@ -1,5 +1,5 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=visual-depth-20260830";
-import { render } from "./render/render.js?v=visual-depth-20260830";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
+import { render } from "./render/render.js?v=phase1-pitch-20260830";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { DEFAULT_SEED } from "./sim/config.js";
 import { hashSeed } from "./sim/prng.js";
