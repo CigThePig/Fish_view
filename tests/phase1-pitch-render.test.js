@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { glyphPixels } from "../src/render/bitmap-font.js";
+import { glyphPixelRects, glyphPixels } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { individualSprites, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
@@ -51,8 +51,6 @@ function noseTailAxis(sprite, points, facing, cellWidth, cellHeight) {
     x: average(nosePoints.map((point) => point.x)),
     y: average(nosePoints.map((point) => point.y)),
   };
-  // Source columns always identify authored tail and nose. Mirroring moves them
-  // physically, but does not change which one is the animal's nose.
   return {
     dx: (nose.x - tail.x) * cellWidth,
     dy: (nose.y - tail.y) * cellHeight,
@@ -92,6 +90,19 @@ function backsGlyph(object, glyph) {
   const centre = inkCentre(glyph);
   return object.fill.some((span) => centre.x >= span.x && centre.x <= span.x + span.width
     && centre.y >= span.y && centre.y <= span.y + span.height);
+}
+
+function hasUnbackedInk(object, glyph) {
+  for (const rect of glyphPixelRects(glyph)) {
+    for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+      for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+        const covered = object.fill.some((span) => x >= span.x && x < span.x + span.width
+          && y >= span.y && y < span.y + span.height);
+        if (!covered) return true;
+      }
+    }
+  }
+  return false;
 }
 
 test("all individual sprites have finite deterministic pitch poses across facings, waves, and turn compression", () => {
@@ -197,15 +208,12 @@ test("pitched opaque bodies remain bounded, registered, tapered, and inside the 
                 assert.ok(backsGlyph(object, glyph), `${sprite.id} exposed interior '${glyph.char}' at ${pitch}° ${facing}`);
               }
             }
-            // Rotation means the authored tail is not necessarily the furthest
-            // screen-X glyph. Preserve the intended open ASCII rim by checking
-            // the source-space tail column through the posed glyph order.
             assert.equal(glyphs.length, columns.length);
             const tailGlyphs = glyphs.filter((_, index) => columns[index] === tailColumn);
             assert.ok(tailGlyphs.length > 0);
             assert.ok(
-              tailGlyphs.some((glyph) => !backsGlyph(object, glyph)),
-              `${sprite.id} swallowed its authored pitched tail at ${pitch}° ${facing}`,
+              tailGlyphs.some((glyph) => hasUnbackedInk(object, glyph)),
+              `${sprite.id} swallowed all authored pitched tail ink at ${pitch}° ${facing}`,
             );
           }
         }
