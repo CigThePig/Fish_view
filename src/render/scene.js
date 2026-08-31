@@ -115,8 +115,29 @@ export function addGlyphObject(builder, { id, layer, glyphs, padding = 1, fill =
   return object;
 }
 
+// Individual fish use five coarse depth lanes for palette lookup, but their
+// apparent size still follows continuous distance. Two fish can therefore share
+// a layer while one is visibly nearer than the other. Their opaque bodies make
+// an ID-based tie-breaker incorrect: the farther fish can be painted last and
+// erase part of the nearer fish. scaleY is monotonic with the same continuous
+// depth value and is already hashed at 0.1% precision for damage tracking, so it
+// gives us a matching, effectively free within-lane occlusion key.
+function individualOcclusionOrder(builder, object) {
+  if (!object.id.startsWith("individual:") || object.glyphCount <= 0) return 0;
+  const firstGlyph = builder.glyphs[object.glyphStart];
+  return Math.round(firstGlyph.scaleY * 1000);
+}
+
 export function finalizeScene(builder) {
-  builder.objects.sort((left, right) => left.layer - right.layer || left.id.localeCompare(right.id));
+  builder.objects.sort((left, right) => {
+    const layerOrder = left.layer - right.layer;
+    if (layerOrder) return layerOrder;
+
+    const depthOrder = individualOcclusionOrder(builder, left) - individualOcclusionOrder(builder, right);
+    if (depthOrder) return depthOrder;
+
+    return left.id.localeCompare(right.id);
+  });
   return {
     type: "glyph-scene",
     width: builder.width,
