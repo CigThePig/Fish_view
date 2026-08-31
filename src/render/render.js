@@ -936,8 +936,23 @@ function bodyFill(sprite, metrics, {
       const cornerRight = (worldX + Math.max(...corners.map((point) => point.x)) * scale) * metrics.cellWidth;
       const cornerTop = (worldY + Math.min(...corners.map((point) => point.y)) * scale) * metrics.cellHeight;
       const cornerBottom = (worldY + Math.max(...corners.map((point) => point.y)) * scale) * metrics.cellHeight;
-      left = Math.round(Math.min(cornerLeft, centerX - sliceWidth / 2));
-      right = Math.round(Math.max(cornerRight, centerX + sliceWidth / 2)) + 1;
+      const baseLeft = centerX - sliceWidth / 2;
+      const baseRight = centerX + sliceWidth / 2;
+      const fullLeft = Math.min(cornerLeft, baseLeft);
+      const fullRight = Math.max(cornerRight, baseRight);
+      // Bounding a rotated vertical slice as a rectangle adds empty
+      // triangular corners. At the rear of the fish those corners can
+      // reach into the authored tail even though the ideal slice does
+      // not. Keep the full expansion through the body, but taper only
+      // the trailing-side AABB excess across the two rear slices.
+      const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
+      if (facing < 0) {
+        left = Math.round(fullLeft);
+        right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
+      } else {
+        left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
+        right = Math.round(fullRight) + 1;
+      }
       spanTop = Math.round(cornerTop);
       spanBottom = Math.round(cornerBottom) + 1;
     }
