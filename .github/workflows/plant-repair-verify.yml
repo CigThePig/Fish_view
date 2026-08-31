@@ -1,0 +1,24 @@
+name: Verify sampled plant repair
+
+on:
+  push:
+    branches: [fix/sampled-skeletal-plant-rendering]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Measure mature plant rendering
+        run: node tools/measure-plants.mjs
+
+      - name: Inspect representative plant lab views
+        run: node tools/inspect-plant-lab.mjs
+
+      - name: Run full test suite
+        run: node --test
