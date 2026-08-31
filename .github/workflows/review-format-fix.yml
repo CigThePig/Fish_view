@@ -1,0 +1,57 @@
+name: Clean review fix formatting
+
+on:
+  push:
+    branches: [feat/phase1-readable-fish-behavior]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: feat/phase1-readable-fish-behavior
+          fetch-depth: 0
+
+      - name: Normalize tick formatting
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/sim/tick.js')
+          text = path.read_text()
+          old = '''  // The permanent mid-water cast keeps the same clearance-adjusted
+          // swimming envelope it had before terrain-aware foraging. Applying the
+          // 68% ceiling to the raw water column lets large/pitched fish drift
+          // visibly deeper because their body clearance is ignored.
+          const protectedMaximumY = WATERLINE_ROWS
+            + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;'''
+          # YAML block indentation strips leading spaces from the heredoc body, so
+          # construct the intended JS indentation explicitly.
+          malformed = '''  // The permanent mid-water cast keeps the same clearance-adjusted
+// swimming envelope it had before terrain-aware foraging. Applying the
+// 68% ceiling to the raw water column lets large/pitched fish drift
+// visibly deeper because their body clearance is ignored.
+const protectedMaximumY = WATERLINE_ROWS
+  + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;'''
+          if malformed not in text:
+              raise SystemExit('malformed review block not found')
+          path.write_text(text.replace(malformed, old, 1))
+          PY
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Commit cleanup and remove workflow
+        shell: bash
+        run: |
+          rm .github/workflows/review-format-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/sim/tick.js .github/workflows/review-format-fix.yml
+          git commit -m 'Clean mid-water ceiling formatting'
+          git push origin HEAD:feat/phase1-readable-fish-behavior
