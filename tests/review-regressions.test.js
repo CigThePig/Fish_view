@@ -46,15 +46,22 @@ test("implicit terminal stems stay structural instead of becoming detached tip d
 
   assert.ok(terminalStems.length > 0);
   for (const point of terminalStems) {
-    const layout = plantAttachmentLayout(record.pose, point, metrics, scale);
-    assert.equal(layout.structural, true);
+    const layout = plantAttachmentLayout(record.plant, record.pose, point, metrics, scale);
     assert.ok(layout.progresses.length >= 1);
-    assert.ok(layout.progresses.every((progress) => progress > 0 && progress < 1));
+    // The final bone of an implicit terminal stem is painted like any other:
+    // filler along the span and the stem's own ink on the joint that ends it.
+    // It must never collapse to a lone tip decoration floating past the bone.
+    assert.equal(layout.progresses.at(-1), 1);
+    assert.ok(layout.progresses.every((progress) => progress > 0 && progress <= 1));
+    assert.ok(
+      layout.segmentLengthPixels <= layout.projectedCoveragePixels * 1.4 || layout.progresses.length > 1,
+      `terminal stem ${point.index} left a long bone on a single glyph`,
+    );
   }
 
   // Tall forkgrass should still be visually made from its authored stem
-  // vocabulary, even though long bones may now receive multiple attachments.
-  const structuralCount = record.attachmentStats.structuralAttachments;
-  assert.ok(structuralCount > 0);
-  assert.ok(record.glyphs.filter((glyph) => stemCharacters.has(glyph.char)).length >= structuralCount - 1);
+  // vocabulary, even though long bones now receive several attachments.
+  const stemInk = record.glyphs.filter((glyph) => stemCharacters.has(glyph.char)).length;
+  assert.ok(record.attachmentStats.fillerAttachments > 0);
+  assert.ok(stemInk >= record.attachmentStats.jointAttachments);
 });

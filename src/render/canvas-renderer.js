@@ -1,4 +1,4 @@
-import { glyphPixels } from "./bitmap-font.js";
+import { glyphPixelRects } from "./bitmap-font.js";
 import { calculateDamage, coalesceDamage, rectanglesOverlap } from "./damage.js";
 import { glyphBounds } from "./scene.js?v=opaque-bodies-20260830";
 
@@ -62,15 +62,9 @@ function positiveModulo(value, modulus) {
 }
 
 function drawGlyph(context, glyph) {
-  const originX = Math.round(glyph.x);
-  const originY = Math.round(glyph.y);
   context.fillStyle = glyph.fg;
-  for (const pixel of glyphPixels(glyph.char)) {
-    const x = originX + Math.round(pixel.x * glyph.scaleX);
-    const y = originY + Math.round(pixel.y * glyph.scaleY);
-    const width = Math.max(1, Math.round(pixel.width * glyph.scaleX));
-    const height = Math.max(1, Math.round(pixel.height * glyph.scaleY));
-    context.fillRect(x, y, width, height);
+  for (const rectangle of glyphPixelRects(glyph)) {
+    context.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
   }
 }
 

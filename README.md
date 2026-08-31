@@ -187,51 +187,78 @@ of scaling finished artwork. Those joints are the simulation skeleton only.
 They define topology, growth, sway, current response, and disturbance, but they
 are deliberately too sparse to dictate the final number of visible characters.
 
-Rendering is a second, still bounded resolution. Each posed structural bone is
-measured in physical panel pixels after the plant's depth scale has been applied.
-A short bone keeps one structural glyph. A bone whose scaled 5×7 ink would leave
-a visible hole receives a second attachment sampled directly between its current
-posed parent and child. Explicit decorations such as leaves, tips, beads,
-lanterns, and bells remain one authored glyph at their endpoint; an authored
-structural marker such as `Y` is likewise emitted once at the joint while stem
-attachments cover the incoming bone. Attachments have no stored animation or
-physics state. Their coordinates are derived from the posed bone every render,
-so growth and motion remain owned entirely by the sparse skeleton.
+Rendering is a second, still bounded resolution, and its unit is the bone rather
+than the joint. A bone is a length, so every posed bone is inked along its whole
+span: samples are laid from the parent joint to the child joint at a spacing
+taken from the glyph's own ink, and the last sample always lands exactly on the
+child joint. That final sample is the one that carries the species' authored ink
+- a fork's `Y`, a lantern's `*`, a leaf's blade - while the samples before it are
+the stroke leading into it. Because every bone ends on its own joint, and the
+next bone starts from that same joint, the chain has no seam where bones meet.
+Leaves, tips, beads, lanterns, and bells are bones like any other and are covered
+the same way; treating them as single marks painted at the far end of their own
+bone is what previously left a mature portrait fan grass with its blades hanging
+80 physical pixels clear of the stem they grow from. Attachments have no stored
+animation or physics state. Their coordinates are derived from the posed bone
+every render, so growth and motion remain owned entirely by the sparse skeleton.
 
-The continuity decision uses the bitmap font's real 10×21 lit-pixel envelope,
-not a guessed logical row count. The regression contract allows at most 12
-physical pixels of uncovered distance along a structural segment. Slight
-structural scaling remains secondary polish and is capped at 1.35 rather than
-being stretched into a vector-like bar. When a long first bone needs two
-attachments they begin near the buried root and continue up the segment, keeping
-vegetation visibly planted without reopening the old first-to-second-glyph gap.
+Spacing uses each glyph's real lit-pixel extent, not the font's maximum envelope:
+a hyphen is ten columns by three rows where a pipe is two by twenty-one, and
+treating them alike is what let a ladder leaf's blade drift off its stem. It also
+uses the distance that ink can actually bridge along the bone's direction, which
+is set by whichever axis of the ink box runs out first rather than by the sum of
+the two projections. A pipe carries a vertical bone a long way and a diagonal one
+barely at all; crediting it with the sideways reach it never paints is what left
+pearl sprout's leaf brackets detached under a strong current. The step into each
+joint is measured against the pair of glyphs that step joins, so a bone ending in
+thin ink is subdivided where a bone ending in tall ink is not.
+
+The regression contract is measured against the ink the renderer actually paints.
+The continuity test rasterizes each specimen through the same shared glyph
+rasterizer the canvas backend uses and walks every posed bone looking for a
+stretch with no lit pixel within three physical pixels; it allows at most six.
+Across all species, both orientations, three sizes, three current strengths, and
+the full growth range, the worst measured stretch is three pixels. Arithmetic
+about where glyphs were placed cannot satisfy that test - only ink can.
+
+That shared rasterizer also fixed a defect visible on every glyph in the scene,
+not only on plants. Each lit source pixel had its origin and its size rounded
+independently, so at any scale above 1 the three-pixel-tall source rows drifted
+apart and opened one-pixel seams inside a single character. Rounding the far edge
+instead makes neighbouring rows and columns tile exactly, and stems that were
+already sampled continuously stopped looking dashed.
 
 The three depth groups stay separated by size as well as by colour: a foreground
 specimen draws around 1.12 and a background one around 0.76, with seeded spread,
 while each species is mixed towards the water on the same fog ramp as the fish.
-The smaller background glyphs therefore request denser structural sampling only
-when their reduced physical ink actually needs it. Depth remains visually useful
-instead of being flattened back to scale 1.0 merely to hide sparse stems.
+The smaller background glyphs therefore request denser sampling only when their
+reduced physical ink actually needs it. Depth remains visually useful instead of
+being flattened back to scale 1.0 merely to hide sparse stems.
 
 `activeJoints` in render diagnostics still means active simulated skeletal
-joints. `glyphs` now means actual emitted render glyphs, and is intentionally
-allowed to be larger. Diagnostics also expose structural and decorative
-attachment counts plus the maximum attachments emitted by one segment. The
-algorithm is statically bounded at two sampled stem glyphs per structural bone,
-with one additional authored structural marker possible at the endpoint. With a
-12-joint simulation ceiling that gives an absolute renderer ceiling of 36 glyphs
-per specimen, though the measured mature scenes stay well below it.
+joints. `glyphs` means actual emitted render glyphs, and is intentionally allowed
+to be larger. Diagnostics expose `jointAttachments` - the glyphs sitting on
+joints, which equals the active joint count exactly - and `fillerAttachments`,
+everything painted along the bones between them, plus the maximum attachments
+emitted by one bone. The algorithm is statically bounded at eight samples per
+bone, which with the 12-joint simulation ceiling gives an absolute renderer
+ceiling of 96 glyphs per specimen; the measured mature scenes stay well below it.
 
 Five mature deterministic seeds (`5`, `29`, `83`, `147`, and `818`) measured at
-10 fps produce 186–196 plant glyphs in landscape, averaging 189, with a maximum
-of 14 glyphs on one specimen. Portrait produces 166–182, averaging 176, with a
-maximum specimen of 24 in the physically taller stress cases. The regression
-budgets remain deliberately above those measurements at 260 landscape glyphs
-and 210 portrait glyphs so normal seeded variation has room without making the
-limit meaningless. Before segment sampling the same five seeds produced
-182–193 glyphs in landscape, averaging 184.4, and 128–141 in portrait, averaging
-133.2. The larger portrait increase is the intended cost of covering long bones
-that previously appeared as dashed columns.
+10 fps produce 431–491 plant glyphs in landscape, averaging 468, with a maximum
+of 40 glyphs on one specimen. Portrait produces 546–556, averaging 546, with a
+maximum specimen of 71 in the physically taller stress cases. Before continuous
+bone coverage the same seeds produced 186–196 in landscape and 166–182 in
+portrait. The regression budgets sit above the measurements at 520 landscape and
+560 portrait so normal seeded variation has room without making the limit
+meaningless.
+
+Roughly two and a half times the glyphs is the honest cost, and it is paid in
+draw calls rather than in repainted pixels. Whole-scene damage over the same
+sample actually fell, from 49.5% to 44.0% average in landscape and from 68.2% to
+65.7% in portrait, with no full redraws in either: continuous ink clusters into
+tighter, more stable object bounds than scattered marks did, so the dirty
+rectangles it produces are smaller even though there are more glyphs inside them.
 
 There is no soft-body solver, recursion, per-pixel plant effect, rotation, or
 per-glyph collision work. Three low-frequency current samples are shared by the

@@ -12,7 +12,7 @@ import { calculateDamage } from "../src/render/damage.js";
 import { scenePalette } from "../src/render/palette.js";
 import {
   MAX_RENDERED_PLANT_GLYPHS,
-  MAX_STRUCTURAL_SAMPLES_PER_SEGMENT,
+  MAX_SAMPLES_PER_SEGMENT,
 } from "../src/render/plants.js";
 import { LAYERS, render, renderPlantLabScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
@@ -60,7 +60,10 @@ test("the shared library contains 28 bounded non-coral skeletal species", () => 
   assert.ok(PLANT_SPECIES.length >= 20 && PLANT_SPECIES.length <= 30);
   assert.equal(PLANT_SPECIES.length, 28);
   assert.ok(MAX_PLANT_JOINTS <= 12);
-  assert.ok(MAX_RENDERED_PLANT_GLYPHS <= 36);
+  // A bone is inked along its whole length, so the per-specimen ceiling is the
+  // joint budget times the sampling ceiling rather than one mark per joint.
+  assert.ok(MAX_SAMPLES_PER_SEGMENT <= 8);
+  assert.ok(MAX_RENDERED_PLANT_GLYPHS <= 96);
   const ids = new Set();
   for (const species of PLANT_SPECIES) {
     assert.equal(ids.has(species.id), false, "duplicate species " + species.id);
@@ -218,7 +221,10 @@ test("reduced-detail quality keeps the same skeleton while omitting leaf attachm
 });
 
 test("mature aquarium plants stay within joint, attachment, and scene budgets", () => {
-  for (const [orientation, maximumTotal] of [["landscape", 260], ["portrait", 210]]) {
+  // Continuous stems cost roughly twice the glyphs of the old dashed sampling,
+  // and buy back repainted pixels: whole-scene damage fell in both orientations
+  // because the ink now clusters into tighter, more stable object bounds.
+  for (const [orientation, maximumTotal] of [["landscape", 520], ["portrait", 560]]) {
     for (const seed of [5, 83, 147]) {
       const scene = render(matureState(orientation, seed));
       const objects = plantObjects(scene);
@@ -229,8 +235,11 @@ test("mature aquarium plants stay within joint, attachment, and scene budgets", 
       assert.ok(diagnostics.maximumActiveJoints <= MAX_PLANT_JOINTS);
       assert.ok(diagnostics.maximumGlyphs <= MAX_RENDERED_PLANT_GLYPHS);
       assert.ok(diagnostics.glyphs >= diagnostics.activeJoints);
-      assert.equal(diagnostics.glyphs, diagnostics.structuralAttachments + diagnostics.decorativeAttachments);
-      assert.ok(diagnostics.maximumAttachmentsPerSegment <= MAX_STRUCTURAL_SAMPLES_PER_SEGMENT + 1);
+      assert.equal(diagnostics.glyphs, diagnostics.jointAttachments + diagnostics.fillerAttachments);
+      // Every posed bone ends on its own joint, so joint ink and active joints
+      // match exactly and everything above that count is bone fill.
+      assert.equal(diagnostics.jointAttachments, diagnostics.activeJoints);
+      assert.ok(diagnostics.maximumAttachmentsPerSegment <= MAX_SAMPLES_PER_SEGMENT);
       for (const object of objects) {
         assert.ok(object.glyphCount > 0 && object.glyphCount <= MAX_RENDERED_PLANT_GLYPHS);
         assert.ok(Number.isFinite(object.bounds.x) && Number.isFinite(object.bounds.y));

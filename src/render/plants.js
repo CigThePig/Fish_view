@@ -2,30 +2,32 @@ import { MAX_PLANT_JOINTS } from "../art/plants.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { sample01 } from "../sim/prng.js";
 import { createPlantFrameContext, posePlant } from "../sim/plants.js";
-import { GLYPH_PIXEL_HEIGHT, GLYPH_PIXEL_WIDTH } from "./bitmap-font.js";
+import { glyphInkExtent } from "./bitmap-font.js";
 import { addGlyphObject, positionedGlyph } from "./scene.js";
 
-// Simulation joints deliberately stay sparse. Rendering may add a second stem
-// glyph to a long structural bone, but never more than two sampled fillers.
-// An explicitly authored structural marker such as Y may add one endpoint glyph,
-// so the absolute algorithmic ceiling remains tiny and statically bounded.
-export const MAX_STRUCTURAL_SAMPLES_PER_SEGMENT = 2;
-export const MAX_RENDERED_PLANT_GLYPHS = MAX_PLANT_JOINTS * (MAX_STRUCTURAL_SAMPLES_PER_SEGMENT + 1);
+// Simulation joints deliberately stay sparse, but a bone is a length, not a
+// point: every posed bone is inked along its whole span so the plant reads as a
+// connected stroke instead of a constellation of marks. Sampling is driven by
+// the glyph's own projected ink at the current scale and is statically bounded.
+export const MAX_SAMPLES_PER_SEGMENT = 8;
+export const MAX_RENDERED_PLANT_GLYPHS = MAX_PLANT_JOINTS * MAX_SAMPLES_PER_SEGMENT;
 
-// This is an uncovered physical-pixel allowance, not a target glyph spacing.
-// The 5x7 font has 21px of vertical ink inside its 24px authoring cell. A small
-// gap is perceptually continuous at panel distance; a whole blank text row is
-// not. Sampling uses the actual posed length and scaled ink projection below.
-export const MAX_STRUCTURAL_GAP_PX = 12;
+// Consecutive samples on one bone overlap slightly. Sampling always lands a
+// glyph on the child joint itself, so the parent's own joint glyph closes the
+// far end and bones join without a seam at the shared joint.
+export const SAMPLE_OVERLAP = 0.82;
 
-const STRUCTURAL_STRETCH_PER_WORLD_UNIT = 0.3;
-const STRUCTURAL_SCALE_CAP = 1.35;
+// The residual allowance used by the continuity tests: the largest stretch of a
+// bone that may carry no ink. The 5x7 font has 21px of vertical ink inside its
+// 24px authoring cell, so a few pixels read as a join and a whole blank text row
+// does not.
+export const MAX_STRUCTURAL_GAP_PX = 6;
 
 function seededChoice(values, seed, salt) {
   return values[Math.floor(sample01(seed, salt) * values.length) % values.length];
 }
 
-function stemGlyph(species, point, seed, attachmentIndex = 0) {
+function stemGlyph(species, point, seed) {
   // Geometry moves freely, but only a conservative portion of that bend is
   // allowed to affect glyph choice. This keeps orientation readable without
   // flickering between punctuation at every current zero-crossing.
@@ -36,7 +38,27 @@ function stemGlyph(species, point, seed, attachmentIndex = 0) {
     : horizontal < -0.28
       ? species.stemGlyphs.left
       : species.stemGlyphs.upright;
-  return seededChoice(family, seed, 410 + point.index * 3 + attachmentIndex);
+  return seededChoice(family, seed, 410 + point.index * 3);
+}
+
+// Leaf and petal bones are not part of the species' stem vocabulary, so their
+// filler follows the bone's real on-screen slope instead. Cells are twice as
+// tall as they are wide, so the decision has to be made in pixels: a bone that
+// looks diagonal in world units is nearly upright once it is drawn.
+function strokeGlyphForSlope(dxPixels, dyPixels) {
+  const horizontal = Math.abs(dxPixels);
+  const vertical = Math.abs(dyPixels);
+  if (vertical > horizontal * 2.2) return "|";
+  if (horizontal > vertical * 2.2) return "-";
+  return dxPixels * dyPixels < 0 ? "/" : "\\";
+}
+
+// The filler glyph for the span leading into a joint. One bone gets one stroke
+// so it reads as a single continuous line; the joint itself keeps its authored
+// ink, which is the only place a species' punctuation belongs.
+export function fillerGlyph(pose, point, seed, dxPixels, dyPixels) {
+  if (point.role === "leaf" || point.role === "bell") return strokeGlyphForSlope(dxPixels, dyPixels);
+  return stemGlyph(pose.species, point, seed);
 }
 
 export function glyphForPlantJoint(plant, pose, point) {
@@ -74,52 +96,61 @@ function colorForPoint(plant, pose, point, palette) {
   return palette.plants[species.layer][slot];
 }
 
-function structuralPoint(point) {
-  return !point.glyph || point.role === "stem" || point.role === "fork";
-}
-
-function structuralScale(baseScale, span) {
-  return Math.min(
-    STRUCTURAL_SCALE_CAP,
-    baseScale * (1 + Math.abs(span) * STRUCTURAL_STRETCH_PER_WORLD_UNIT),
-  );
-}
-
-function projectedInkCoveragePixels(metrics, dxPixels, dyPixels, scaleX, scaleY) {
+// How far one glyph's ink reaches along a bone. Ink is a box, so travelling
+// along the bone exhausts whichever axis of that box runs out first: a pipe is
+// twenty-one rows tall but only two columns wide, so it carries a vertical bone
+// a long way and a diagonal one barely at all. Summing the two projections
+// instead would credit that pipe with bridging a sideways offset it never
+// paints, which is how leaves ended up hanging clear of their stems.
+function projectedInkCoveragePixels(metrics, dxPixels, dyPixels, scale, char) {
   const segmentLength = Math.hypot(dxPixels, dyPixels);
   if (segmentLength <= 1e-9) return Number.POSITIVE_INFINITY;
   const unitX = Math.abs(dxPixels) / segmentLength;
   const unitY = Math.abs(dyPixels) / segmentLength;
-  const inkWidth = GLYPH_PIXEL_WIDTH * (metrics.cellWidth / CELL_WIDTH) * scaleX;
-  const inkHeight = GLYPH_PIXEL_HEIGHT * (metrics.cellHeight / CELL_HEIGHT) * scaleY;
-  return unitX * inkWidth + unitY * inkHeight;
+  const extent = glyphInkExtent(char);
+  const inkWidth = extent.width * (metrics.cellWidth / CELL_WIDTH) * scale;
+  const inkHeight = extent.height * (metrics.cellHeight / CELL_HEIGHT) * scale;
+  const alongX = unitX <= 1e-9 ? Number.POSITIVE_INFINITY : inkWidth / unitX;
+  const alongY = unitY <= 1e-9 ? Number.POSITIVE_INFINITY : inkHeight / unitY;
+  return Math.max(1, Math.min(alongX, alongY));
 }
 
-function structuralProgresses(point, sampleCount) {
-  if (sampleCount <= 1) return [point.parent === 0 ? 0.3 : 0.5];
-  // Keep the first root attachment low enough to read as planted while spacing
-  // the pair evenly enough that maximum-height portrait stems do not reopen an
-  // internal hole. Other bones use symmetric quarter points.
-  return point.parent === 0 ? [0.2, 0.72] : [0.25, 0.75];
+// Two neighbouring glyphs bridge the distance between them with half of each
+// one's ink, so the allowance for a step depends on the pair that step joins.
+// This is what stops a short leaf bone ending in a hyphen - three pixels of ink
+// where a pipe has twenty-one - from being declared covered by one glyph.
+function pairAllowance(left, right) {
+  return ((left + right) / 2) * SAMPLE_OVERLAP;
 }
 
-function singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels) {
-  const progress = point.parent === 0 ? 0.3 : 0.5;
-  const edgeDistance = Math.max(progress, 1 - progress) * segmentLengthPixels;
-  return Math.max(0, edgeDistance - projectedCoveragePixels / 2);
+function sampleCountForSpan(span, entryCoverage, fillerCoverage, jointCoverage, limit) {
+  for (let steps = 1; steps < limit; steps += 1) {
+    const step = span / steps;
+    // With one step the bone runs straight from its parent's ink to its own
+    // joint; with more, the interior steps join filler to filler.
+    const entry = pairAllowance(entryCoverage, steps === 1 ? jointCoverage : fillerCoverage);
+    const exit = pairAllowance(steps === 1 ? entryCoverage : fillerCoverage, jointCoverage);
+    const interior = steps > 2 ? fillerCoverage * SAMPLE_OVERLAP : Number.POSITIVE_INFINITY;
+    if (step <= Math.min(entry, exit, interior)) return steps;
+  }
+  return Math.max(1, limit);
 }
 
-// This is the render-resolution boundary of the plant system. The pose remains
-// a sparse hierarchy; this helper decides how much typographic ink one posed
-// bone needs at the current physical glyph scale. Tests use the same layout to
-// verify coverage rather than pinning a particular attachment count.
-export function plantAttachmentLayout(pose, point, metrics, baseScale) {
+// This is the render-resolution boundary of the plant system. The pose stays a
+// sparse hierarchy; this helper decides where along one posed bone glyphs have
+// to land for the bone to read as a continuous stroke at the current scale.
+//
+// The last sample is always the joint itself, which is where the species' own
+// authored ink belongs, and which is also the point the child bone starts from.
+// Bones therefore meet at their shared joint and the chain has no seams.
+export function plantAttachmentLayout(plant, pose, point, metrics, baseScale) {
   const parent = pose.points[point.parent];
   if (!parent) {
     return {
-      structural: false,
-      authoredStructuralGlyph: false,
+      grounded: false,
       progresses: [1],
+      fillerChar: null,
+      jointChar: glyphForPlantJoint(plant, pose, point),
       scaleX: baseScale,
       scaleY: baseScale,
       segmentLengthPixels: 0,
@@ -127,52 +158,46 @@ export function plantAttachmentLayout(pose, point, metrics, baseScale) {
     };
   }
 
-  const structural = structuralPoint(point);
-  if (!structural) {
-    return {
-      structural: false,
-      authoredStructuralGlyph: false,
-      progresses: [1],
-      scaleX: baseScale,
-      scaleY: baseScale,
-      segmentLengthPixels: Math.hypot(
-        (point.x - parent.x) * metrics.cellWidth,
-        (point.y - parent.y) * metrics.cellHeight,
-      ),
-      projectedCoveragePixels: 0,
-    };
+  const dxPixels = (point.x - parent.x) * metrics.cellWidth;
+  const dyPixels = (point.y - parent.y) * metrics.cellHeight;
+  const segmentLengthPixels = Math.hypot(dxPixels, dyPixels);
+
+  const fillerChar = fillerGlyph(pose, point, plant.seed, dxPixels, dyPixels);
+  const jointChar = glyphForPlantJoint(plant, pose, point);
+  const coverage = (char) => projectedInkCoveragePixels(metrics, dxPixels, dyPixels, baseScale, char);
+  const fillerCoverage = coverage(fillerChar);
+  const jointCoverage = coverage(jointChar);
+
+  // The root carries no glyph of its own, so a bone rising out of the substrate
+  // has to place its own first sample low enough to touch the ground rather
+  // than starting a coverage step above it. Every other bone starts from the
+  // ink its parent already painted on their shared joint.
+  const grounded = point.parent === 0;
+  const entryCoverage = grounded
+    ? fillerCoverage
+    : coverage(glyphForPlantJoint(plant, pose, parent));
+  const startProgress = grounded && segmentLengthPixels > 1e-9
+    ? Math.min(0.5, (fillerCoverage * 0.3) / segmentLengthPixels)
+    : 0;
+
+  const span = (1 - startProgress) * segmentLengthPixels;
+  const limit = MAX_SAMPLES_PER_SEGMENT - (grounded ? 1 : 0);
+  const steps = sampleCountForSpan(span, entryCoverage, fillerCoverage, jointCoverage, limit);
+
+  const progresses = grounded ? [startProgress] : [];
+  for (let step = 1; step <= steps; step += 1) {
+    progresses.push(startProgress + (1 - startProgress) * (step / steps));
   }
 
-  const dx = point.x - parent.x;
-  const dy = point.y - parent.y;
-  const scaleX = structuralScale(baseScale, dx);
-  const scaleY = structuralScale(baseScale, dy);
-  const dxPixels = dx * metrics.cellWidth;
-  const dyPixels = dy * metrics.cellHeight;
-  const segmentLengthPixels = Math.hypot(dxPixels, dyPixels);
-  const projectedCoveragePixels = projectedInkCoveragePixels(
-    metrics,
-    dxPixels,
-    dyPixels,
-    scaleX,
-    scaleY,
-  );
-  // Measure the actual one-glyph placement instead of assuming every sample is
-  // centred. The grounded first glyph deliberately sits at 30% of its bone, so
-  // its child-side gap can require subdivision sooner than an ordinary segment.
-  const sampleCount = singleAttachmentGap(point, segmentLengthPixels, projectedCoveragePixels)
-      <= MAX_STRUCTURAL_GAP_PX
-    ? 1
-    : MAX_STRUCTURAL_SAMPLES_PER_SEGMENT;
-
   return {
-    structural: true,
-    authoredStructuralGlyph: Boolean(point.glyph),
-    progresses: structuralProgresses(point, sampleCount),
-    scaleX,
-    scaleY,
+    grounded,
+    progresses,
+    fillerChar,
+    jointChar,
+    scaleX: baseScale,
+    scaleY: baseScale,
     segmentLengthPixels,
-    projectedCoveragePixels,
+    projectedCoveragePixels: Math.min(fillerCoverage, jointCoverage),
   };
 }
 
@@ -207,57 +232,47 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
   });
   const scale = plantGlyphScale(plant, pose.species.layer);
   const glyphs = [];
-  let structuralAttachments = 0;
-  let decorativeAttachments = 0;
+  let jointAttachments = 0;
+  let fillerAttachments = 0;
   let maximumAttachmentsPerSegment = 0;
 
   for (const point of pose.joints) {
     const parent = pose.points[point.parent];
-    const layout = plantAttachmentLayout(pose, point, metrics, scale);
+    const layout = plantAttachmentLayout(plant, pose, point, metrics, scale);
     const fg = colorForPoint(plant, pose, point, palette);
 
-    if (!layout.structural || !parent) {
+    if (!parent) {
       glyphs.push(positionedGlyph(metrics, {
-        char: glyphForPlantJoint(plant, pose, point),
+        char: layout.jointChar,
         worldX: point.x,
         worldY: point.y,
         fg,
         scaleX: scale,
         scaleY: scale,
       }));
-      decorativeAttachments += 1;
+      jointAttachments += 1;
       maximumAttachmentsPerSegment = Math.max(maximumAttachmentsPerSegment, 1);
       continue;
     }
 
+    const terminal = layout.progresses.length - 1;
+
     for (let attachmentIndex = 0; attachmentIndex < layout.progresses.length; attachmentIndex += 1) {
+      // Only the sample that lands on the joint carries the species' authored
+      // ink: a fork's Y, a lantern's *, a leaf's blade. Everything before it is
+      // the stroke that leads into it, which is what makes the bone visible.
+      const isJoint = attachmentIndex === terminal;
       glyphs.push(glyphAtProgress(metrics, point, parent, layout.progresses[attachmentIndex], {
-        char: stemGlyph(pose.species, point, plant.seed, attachmentIndex),
+        char: isJoint ? layout.jointChar : layout.fillerChar,
         fg,
         scaleX: layout.scaleX,
         scaleY: layout.scaleY,
       }));
-      structuralAttachments += 1;
+      if (isJoint) jointAttachments += 1;
+      else fillerAttachments += 1;
     }
 
-    // A fork marker is structural information, not a leaf decoration. Keep it
-    // authored exactly once at the actual joint while sampled stem glyphs cover
-    // the bone that leads into it. This preserves Y-shaped topology without
-    // repeating Y down the branch.
-    if (layout.authoredStructuralGlyph) {
-      glyphs.push(glyphAtProgress(metrics, point, parent, 1, {
-        char: glyphForPlantJoint(plant, pose, point),
-        fg,
-        scaleX: scale,
-        scaleY: scale,
-      }));
-      structuralAttachments += 1;
-    }
-
-    maximumAttachmentsPerSegment = Math.max(
-      maximumAttachmentsPerSegment,
-      layout.progresses.length + (layout.authoredStructuralGlyph ? 1 : 0),
-    );
+    maximumAttachmentsPerSegment = Math.max(maximumAttachmentsPerSegment, layout.progresses.length);
   }
 
   return {
@@ -268,8 +283,8 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
     pose,
     renderScale: scale,
     attachmentStats: {
-      structuralAttachments,
-      decorativeAttachments,
+      jointAttachments,
+      fillerAttachments,
       maximumAttachmentsPerSegment,
     },
   };
@@ -292,8 +307,8 @@ export function createPlantRenderRecords(state, palette, metrics, options = {}) 
     maximumActiveJoints: records.reduce((maximum, record) => Math.max(maximum, record.pose.activeJointCount), 0),
     maximumGlyphs: records.reduce((maximum, record) => Math.max(maximum, record.glyphs.length, 0), 0),
     structuralCapacity: records.reduce((sum, record) => sum + record.pose.maximumJointCount, 0),
-    structuralAttachments: records.reduce((sum, record) => sum + record.attachmentStats.structuralAttachments, 0),
-    decorativeAttachments: records.reduce((sum, record) => sum + record.attachmentStats.decorativeAttachments, 0),
+    jointAttachments: records.reduce((sum, record) => sum + record.attachmentStats.jointAttachments, 0),
+    fillerAttachments: records.reduce((sum, record) => sum + record.attachmentStats.fillerAttachments, 0),
     maximumAttachmentsPerSegment: records.reduce(
       (maximum, record) => Math.max(maximum, record.attachmentStats.maximumAttachmentsPerSegment),
       0,
