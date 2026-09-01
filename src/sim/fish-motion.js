@@ -7,16 +7,21 @@ import {
 import { spriteForFish } from "./fish-growth.js";
 import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
-import { sampleRange } from "./prng.js";
+import { sample01, sampleRange } from "./prng.js";
 
 export const MAX_FISH_PITCH_DEGREES = 32;
-export const FORAGE_PITCH_BIAS_DEGREES = 8;
-export const SURFACE_PITCH_BIAS_DEGREES = -6;
-export const FORAGE_SEARCH_DISTANCE_ROWS = 0.72;
+export const FORAGE_PITCH_BIAS_DEGREES = 20;
+export const SURFACE_PITCH_BIAS_DEGREES = -10;
+export const FORAGE_SEARCH_DISTANCE_ROWS = 0.82;
 
 const MAX_PITCH_RADIANS = MAX_FISH_PITCH_DEGREES * Math.PI / 180;
 const CLEARANCE_MARGIN_ROWS = 0.18;
-const PECK_WINDOW = 0.2;
+const PECK_PATTERNS = Object.freeze([
+  Object.freeze([0.08, 0.38, 0.49, 0.76]),
+  Object.freeze([0.1, 0.22, 0.55]),
+  Object.freeze([0.07, 0.43, 0.68, 0.79]),
+]);
+const DEBRIS_TAIL_SECONDS = 0.82;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -67,9 +72,11 @@ export function surfaceSafeY(fish, state, worldX = fish.x) {
   return waterSurfaceY(state, worldX) + fishVerticalClearanceRows(fish);
 }
 
-// Forage contact has no persistent animation state. Search and peck phases are
-// reconstructed from behavior age + seed, which keeps saves compact and makes
-// the substrate puff renderer observe exactly the same event as the simulation.
+// Forage contact has no persistent animation state. Search and clustered peck
+// phases are reconstructed from activity age + seed, which keeps saves compact
+// and makes the substrate puff renderer observe exactly the same event as the
+// simulation. The deliberately uneven patterns read as feeding rather than a
+// metronome: single pecks, close pairs, a lateral scoot, then a longer pause.
 export function forageActivity(fish, index, state) {
   const eligible = forageEligible(index);
   const surfaceY = substrateSurfaceY(state, fish.x);
@@ -80,19 +87,65 @@ export function forageActivity(fish, index, state) {
     && distanceRows <= FORAGE_SEARCH_DISTANCE_ROWS;
 
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
-  const period = sampleRange(fish.seed, 4600, 4.2, 6.6) * (1.08 - substrateAffinity * 0.24);
+  const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);
   const offset = sampleRange(fish.seed, 4601, 0, period);
-  const cycle = positiveModulo((fish.behavior?.ageRealSeconds ?? 0) + offset, period) / period;
-  const peckPhase = searching && cycle < PECK_WINDOW ? cycle / PECK_WINDOW : null;
+  const age = Math.max(0, fish.activity?.current === "substrate-search"
+    && Number.isFinite(fish.activity?.ageRealSeconds)
+    ? fish.activity.ageRealSeconds
+    : fish.behavior?.ageRealSeconds ?? 0);
+  const absoluteClock = age + offset;
+  const cycleIndex = Math.floor(absoluteClock / period);
+  const cycleSeconds = positiveModulo(absoluteClock, period);
+  const pattern = PECK_PATTERNS[Math.floor(sample01(fish.seed, 4602) * PECK_PATTERNS.length)
+    % PECK_PATTERNS.length];
+  let peckPhase = null;
+  let peckEvent = null;
+  let debrisPhase = null;
+  let debrisEvent = null;
+  for (let event = 0; event < pattern.length; event += 1) {
+    const start = pattern[event] * period;
+    const duration = sampleRange(fish.seed, 4610 + event, 0.3, 0.46);
+    const elapsed = cycleSeconds - start;
+    if (searching && elapsed >= 0 && elapsed < duration) {
+      peckPhase = elapsed / duration;
+      peckEvent = event;
+    }
+    const debrisAge = elapsed - duration * 0.34;
+    if (searching && debrisAge >= 0 && debrisAge < DEBRIS_TAIL_SECONDS
+      && (debrisPhase === null || debrisAge < debrisPhase * DEBRIS_TAIL_SECONDS)) {
+      debrisPhase = debrisAge / DEBRIS_TAIL_SECONDS;
+      debrisEvent = event;
+    }
+  }
   const peck = peckPhase === null ? 0 : Math.sin(Math.PI * clamp(peckPhase, 0, 1));
+  const sizeFactor = clamp(fishVerticalClearanceRows(fish) / 2.2, 0.88, 1.04);
+  const displacementAmplitude = (0.3 + substrateAffinity * 0.1) * sizeFactor;
+  const eventSeed = (cycleIndex * 7 + (peckEvent ?? debrisEvent ?? 0)) >>> 0;
+  const scootDirection = sample01(fish.seed ^ eventSeed, 4630) < 0.5 ? -1 : 1;
+  const recovery = peckPhase === null ? 0 : smoothRecovery(peckPhase);
 
   return {
     eligible,
     searching,
     peck,
     peckPhase,
+    peckEvent,
+    peckDisplacement: peck * displacementAmplitude,
+    displacementAmplitude,
+    recovery,
+    debrisPhase,
+    debrisEvent,
+    eventSeed,
+    scootDirection,
+    clusterSize: pattern.length,
+    clusterProgress: cycleSeconds / period,
     surfaceY,
     targetY,
     distanceRows,
   };
+}
+
+function smoothRecovery(peckPhase) {
+  const progress = clamp((peckPhase - 0.52) / 0.48, 0, 1);
+  return Math.sin(progress * Math.PI);
 }

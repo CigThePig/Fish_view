@@ -9,6 +9,10 @@ import {
 } from "./config.js";
 import { advanceAquariumHistory } from "./aquarium-history.js";
 import { clamp, createSchoolFish, traitsFromSeed } from "./entities.js";
+import {
+  chaseEvasionForFish,
+  steerActivityVelocity,
+} from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import { createBubbleWorldRecords } from "./bubbles.js";
 import {
@@ -24,6 +28,7 @@ import {
   surfaceSafeY,
 } from "./fish-motion.js";
 import { affinitiesFromSeed, updateSocialMemories } from "./fish-personality.js";
+import { sampleRange } from "./prng.js";
 
 // Hunger above this point is discomfort rather than appetite.
 const HUNGER_COMFORT = 0.62;
@@ -41,6 +46,19 @@ const PITCH_EASE_RATE = 3.6;
 function smoothstep(edge0, edge1, value) {
   const amount = clamp((value - edge0) / (edge1 - edge0), 0, 1);
   return amount * amount * (3 - 2 * amount);
+}
+
+function positiveModulo(value, modulus) {
+  return ((value % modulus) + modulus) % modulus;
+}
+
+function behaviorBout(fish, state, salt, minimumPeriod, maximumPeriod, windowFraction) {
+  const period = sampleRange(fish.seed, salt, minimumPeriod, maximumPeriod);
+  const offset = sampleRange(fish.seed, salt + 1, 0, period);
+  const phase = positiveModulo(state.elapsedRealSeconds + offset, period) / period;
+  if (phase >= windowFraction) return 0;
+  const progress = phase / windowFraction;
+  return Math.sin(progress * Math.PI);
 }
 
 export function daylightFactor(hour) {
@@ -197,6 +215,22 @@ export function behaviorUtilities(
     forage: fish.drives.hunger * (0.68 + traits.activity * 0.28 + affinities.substrate * 0.13),
     rest: (1 - fish.drives.energy) * (0.72 + (1 - traits.activity) * 0.38) + (1 - daylight) * 0.16,
   };
+  // Drives remain the reason a behavior can happen. Small real-time bout
+  // windows let a meaningful need become visible within a watching session
+  // instead of waiting hours for a hundredth-place drive change. The pulses
+  // are seed-derived, bounded, and unable to manufacture hunger, fatigue, or
+  // social need when those drives are low.
+  if (allowForage) {
+    const forageReadiness = clamp((fish.drives.hunger - 0.42) / 0.2, 0, 1);
+    utilities.forage += behaviorBout(fish, state, 8700, 142, 218, 0.24)
+      * forageReadiness * (0.48 + affinities.substrate * 0.18);
+  }
+  const socialReadiness = clamp((fish.drives.social - 0.38) / 0.3, 0, 1);
+  utilities.social += behaviorBout(fish, state, 8710, 118, 188, 0.22)
+    * socialReadiness * (0.07 + traits.sociability * 0.1);
+  const restReadiness = clamp((0.58 - fish.drives.energy) / 0.28, 0, 1);
+  utilities.rest += behaviorBout(fish, state, 8720, 176, 264, 0.2)
+    * restReadiness * (0.34 + (1 - traits.activity) * 0.22);
   // Only a fish that can actually reach the substrate is steered by hunger. The
   // mid-water cast never forages, so damping its alternatives would buy nothing
   // and simply park it in a permanent rest.
@@ -230,7 +264,7 @@ export function trajectoryPitchDegrees(vx, vy) {
   return Math.sign(vy) * clamp(normal + extra, 0, MAX_FISH_PITCH_DEGREES);
 }
 
-function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0) {
+function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0, choreography = null) {
   const initialFacing = fish.vx < 0 ? -1 : 1;
   const source = fish.visual ?? {};
   let facing = source.facing === -1 ? -1 : source.facing === 1 ? 1 : initialFacing;
@@ -252,12 +286,22 @@ function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0) {
     }
   }
 
-  turnProgress = clamp(turnProgress + realDelta / 0.68, 0, 1);
+  const turnDuration = clamp(
+    Number.isFinite(choreography?.turnDuration) ? choreography.turnDuration : 0.68,
+    0.2,
+    1.5,
+  );
+  turnProgress = clamp(turnProgress + realDelta / turnDuration, 0, 1);
   if (turnProgress >= 1) facing = targetFacing;
 
   const trajectory = trajectoryPitchDegrees(nextVx, nextVy);
+  const pitchScale = clamp(
+    Number.isFinite(choreography?.pitchScale) ? choreography.pitchScale : 1,
+    0,
+    1.5,
+  );
   const targetPitch = clamp(
-    trajectory + (Number.isFinite(postureBias) ? postureBias : 0),
+    trajectory * pitchScale + (Number.isFinite(postureBias) ? postureBias : 0),
     -MAX_FISH_PITCH_DEGREES,
     MAX_FISH_PITCH_DEGREES,
   );
@@ -266,7 +310,12 @@ function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0) {
     -MAX_FISH_PITCH_DEGREES,
     MAX_FISH_PITCH_DEGREES,
   );
-  const response = 1 - Math.exp(-realDelta * PITCH_EASE_RATE);
+  const pitchResponse = clamp(
+    Number.isFinite(choreography?.pitchResponse) ? choreography.pitchResponse : PITCH_EASE_RATE,
+    1,
+    7,
+  );
+  const response = 1 - Math.exp(-realDelta * pitchResponse);
   const pitch = clamp(
     previousPitch + (targetPitch - previousPitch) * response,
     -MAX_FISH_PITCH_DEGREES,
@@ -336,14 +385,14 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   });
   const { target } = activityFrame;
 
-  const direction = safeNormalize(target.x - fish.x, target.y - fish.y, fish.vx < 0 ? -1 : 1, 0);
-  const targetSpeed = target.speed * motionScale;
-  const easing = 1 - Math.exp(-realDelta * (0.7 + behavior.blend * 0.8));
-  let vx = fish.vx + (direction.x * targetSpeed - fish.vx) * easing;
-  let vy = fish.vy + (direction.y * targetSpeed * 0.7 - fish.vy) * easing;
-  const limited = limitVelocity(vx, vy, 0.055, 0.82 * motionScale, fish.vx < 0 ? -1 : 1);
-  vx = limited.vx;
-  vy = limited.vy;
+  const evasion = chaseEvasionForFish(fishWithBehavior, state);
+  const steered = steerActivityVelocity(fish, target, {
+    realDelta,
+    motionScale,
+    behaviorBlend: behavior.blend,
+    evasion,
+  });
+  let { vx, vy } = steered;
 
   const halfWidth = fishSpriteWidth(fish) / 2;
   let x = fish.x + vx * realDelta;
@@ -360,7 +409,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   const minimumY = surfaceSafeY(fish, state, x);
   const baseMaximumY = substrateSafeY(fish, state, x);
   const peckAllowance = behavior.current === "forage" && target.forageSearching
-    ? (target.peck ?? 0) * 0.14
+    ? Math.max(0, target.peckDisplacement ?? 0)
     : 0;
   const terrainMaximumY = baseMaximumY + peckAllowance;
   // The permanent mid-water cast keeps the same clearance-adjusted
@@ -399,7 +448,14 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     history,
     behavior,
     activity: activityFrame.activity,
-    visual: tickVisualPose(fish, vx, vy, realDelta, target.postureBias),
+    visual: tickVisualPose(
+      fish,
+      vx,
+      vy,
+      realDelta,
+      target.postureBias,
+      target.choreography,
+    ),
   };
 }
 
