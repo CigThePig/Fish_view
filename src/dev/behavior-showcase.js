@@ -154,9 +154,10 @@ function socialPair(individuals, state, activity, { chase = false } = {}) {
   const direction = 1;
   const companionX = state.cols * 0.56;
   const gap = chase ? 5.2 : activity === ACTIVITIES.individualFollow ? 5.5 : 1.1;
+  const verticalGap = activity === ACTIVITIES.companionCruise ? 1.85 : 0;
   individuals[COMPANION_INDEX] = posedFish(companion, state, {
     x: companionX,
-    y: centerY + (activity === ACTIVITIES.companionCruise ? 0.48 : 0),
+    y: centerY + verticalGap,
     vx: direction * (chase ? 0.34 : 0.38),
     vy: 0,
     behavior: activity === ACTIVITIES.companionCruise ? "social" : "cruise",
@@ -167,7 +168,7 @@ function socialPair(individuals, state, activity, { chase = false } = {}) {
   });
   individuals[SUBJECT_INDEX] = posedFish(chaser, state, {
     x: companionX - gap,
-    y: centerY - (activity === ACTIVITIES.companionCruise ? 0.48 : 0),
+    y: centerY - verticalGap,
     vx: direction * (chase ? 0.46 : 0.3),
     vy: 0,
     behavior: "social",

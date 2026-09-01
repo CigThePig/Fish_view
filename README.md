@@ -139,6 +139,28 @@ also be made directly in GitHub's mobile editor. Every push to `main` runs the
 test suite and deploys the repository through the Pages workflow in
 `.github/workflows/pages.yml`.
 
+### Behaviour readability workflow
+
+The choreography lab is backed by a repeatable capture tool that runs the real
+scene composer, bitmap glyph renderer, body fills, depth ordering, and
+dirty-rectangle canvas renderer without a browser. It writes deterministic
+landscape and portrait contact sheets plus a machine-readable snapshot manifest:
+
+```sh
+npm install
+npm run capture:behaviors
+```
+
+Captures go to the ignored `.behavior-captures/` directory. Narrow a tuning pass
+to one activity, keep native resolution, or also emit an animated loop with:
+
+```sh
+npm run capture:behaviors -- --scenario bubble-investigate --orientation portrait --scale 1 --gif
+```
+
+`@napi-rs/canvas` is development-only; the aquarium and GitHub Pages build still
+have no runtime dependency or build step.
+
 ## Architecture boundary
 
 `src/sim/` and the pure `render(state)` scene composer have no DOM, canvas,
@@ -365,14 +387,14 @@ representative signatures are:
 | Cruise | 0.34 peak speed, 0.0° max pitch | 0.34, 0.0° |
 | Bubble pursuit | 1.00, 32.0°, 1.55-row intercept | 1.00, 32.0°, 1.57-row intercept |
 | Plant weave | 0.43, 25.7°, four alternating stages | 0.44, 30.2°, four alternating stages |
-| Companion cruise | 0.37, 9.1°, 1.11-row mean spacing | 0.37, 9.1°, 1.11-row mean spacing |
-| Playful chase | 0.83, 33 evasion frames | 0.84, 35 evasion frames |
+| Companion cruise | 0.49, 3.6°, 3.69-row mean spacing | 0.49, 3.6°, 3.69-row mean spacing |
+| Playful chase | 0.84, 50 evasion frames | 0.84, 50 evasion frames |
 | Substrate search | 0.59, 32.0°, 3 pecks | 0.57, 32.0°, 5 pecks |
 | Surface investigation | 0.68, 32.0°, 6.36 rows vertical travel | 0.68, 32.0°, 7.46 rows |
 | Open-water rest | 0.04 peak / 0.02 average speed | 0.04 / 0.02 |
 
 With the default seed at noon, the ordinary ten-minute diagnostic recorded six
-to eight bubble investigations, three playful chases, four companion cruises,
+to eight bubble investigations, three playful chases, three companion cruises,
 eight individual follows, one substrate-search bout with 11-14 visible pecks,
 four plant/rest-shelter visits, and six open-water rests in each orientation;
 portrait also reached two surface investigations. These are opportunity audits,
@@ -384,11 +406,11 @@ at nine fills. The 2,190 forced readability transitions also report zero full
 redraws. Compared with the pre-overhaul tree, ordinary average damage changed
 from 22.18% to 21.92% in landscape and 24.35% to 23.59% in portrait; bubble-heavy
 changed from 20.87% to 20.84% and 17.55% to 17.24%. The deliberately dense
-plant/social case changed from 32.87% to 32.80% in landscape and 58.19% to 61.88%
+plant/social case changed from 32.87% to 33.38% in landscape and 58.19% to 61.17%
 in portrait, with the existing 96% portrait maximum unchanged. At the mature
 day-420 population, average damage is 50.11% landscape and 74.48% portrait,
 within 0.31 percentage points of the pre-overhaul measurements. The slowest
-current Node `tick + render` average in those established scenarios was 2.52 ms;
+current Node `tick + render` average in those established scenarios was 4.01 ms;
 this is comparative developer evidence, not an ESP32 hardware benchmark.
 
 The persistence schema remains version 2. Choreography profiles are constants;

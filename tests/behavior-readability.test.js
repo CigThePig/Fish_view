@@ -106,7 +106,7 @@ test("school, deliberate follow, companion formation, and chase expose different
   assert.ok(school.velocityX !== 0 || school.velocityY !== 0);
   assert.ok(followRear < -2, "individual follow lost its clear trailing offset");
   assert.ok(Math.abs(besideRear) < Math.abs(followRear) * 0.45);
-  assert.ok(besideSide > 0.5, "companion cruise lost its side-by-side slot");
+  assert.ok(besideSide > 3, "companion cruise bodies overlap instead of occupying visible side-by-side slots");
   assert.ok(beside.choreography.velocityMatch > follow.choreography.velocityMatch);
   assert.ok(chase.speed > follow.speed * 1.35);
   assert.ok(chase.choreography.turningResponse > school.choreography.turningResponse * 2);

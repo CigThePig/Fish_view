@@ -196,7 +196,7 @@ const PROFILE_OVERRIDES = Object.freeze({
   }),
 });
 
-export const CHASE_RECOGNITION_RADIUS = 4.5;
+export const CHASE_RECOGNITION_RADIUS = 4.9;
 export const CHASE_BREAK_SECONDS = 4.8;
 
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {

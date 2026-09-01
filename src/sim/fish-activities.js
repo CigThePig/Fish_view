@@ -579,18 +579,37 @@ function companionOffset(fish, companion, activity) {
   // Stable pair slots put two mutual companions on opposite sides of the same
   // formation instead of making both chase one shared offset.
   const pairSide = sample01(pairSeed, 8500) < 0.5 ? -1 : 1;
-  const side = pairSide * (fish.seed < companion.seed ? -1 : 1);
-  const perpendicular = { x: -velocity.y * side, y: velocity.x * side };
+  const seededSide = pairSide * (fish.seed < companion.seed ? -1 : 1);
+  const basePerpendicular = { x: -velocity.y, y: velocity.x };
   const combinedWidth = fishSpriteWidth(fish) + fishSpriteWidth(companion);
   const trailing = activity === ACTIVITIES.individualFollow
     ? clamp(combinedWidth * 0.35, 2.25, 3.7)
     : clamp(combinedWidth * 0.09, 0.45, 0.9);
+  const mutualCompanion = activity === ACTIVITIES.companionCruise
+    && companion.activity?.current === ACTIVITIES.companionCruise
+    && companion.activity?.targetId === fish.seed;
+  const existingSide = (fish.x - companion.x) * basePerpendicular.x
+    + (fish.y - companion.y) * basePerpendicular.y;
+  // Once a pair already has an above/below ordering, preserve it. Crossing
+  // both ASCII bodies merely to reach a seed-selected slot reads as collision,
+  // not cooperation. A near-tie still uses the stable pair seed.
+  const side = mutualCompanion && Math.abs(existingSide) > 0.18
+    ? Math.sign(existingSide)
+    : seededSide;
+  const perpendicular = {
+    x: basePerpendicular.x * side,
+    y: basePerpendicular.y * side,
+  };
+  // Mutual companions each steer to the same full center spacing. A unilateral
+  // cruiser uses that visible spacing too. Both cases keep the authored
+  // ASCII bodies adjacent rather than compositing them into one tangled fish.
   const beside = activity === ACTIVITIES.companionCruise
-    ? sampleRange(pairSeed, 8501, 1.05, 1.42)
+    ? sampleRange(pairSeed, 8501, 3.35, 3.75)
     : sampleRange(pairSeed, 8501, 0.22, 0.46);
   return {
     x: companion.x - velocity.x * trailing + perpendicular.x * beside,
-    y: companion.y - velocity.y * trailing + perpendicular.y * beside * 0.55,
+    y: companion.y - velocity.y * trailing
+      + perpendicular.y * beside * (activity === ACTIVITIES.companionCruise ? 1 : 0.55),
   };
 }
 
@@ -1112,7 +1131,7 @@ export function socialEngagement(fish, state, school = state.school) {
   if ([ACTIVITIES.individualFollow, ACTIVITIES.companionCruise, ACTIVITIES.playfulChase].includes(activity.current)) {
     const companion = findFish(state, activity.targetId, fish.seed);
     if (!companion) return 0;
-    const radius = activity.current === ACTIVITIES.companionCruise ? 3.5 : 4.3;
+    const radius = activity.current === ACTIVITIES.companionCruise ? 5.4 : 4.3;
     return clamp(1 - Math.hypot(fish.x - companion.x, fish.y - companion.y) / radius, 0, 1);
   }
   return 0;
