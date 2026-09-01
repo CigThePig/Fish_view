@@ -10,20 +10,28 @@ const DAY_MASK = Object.freeze({
 // Night keeps one warm hue family so silhouettes read as shape rather than as
 // competing colours. Only W stays bright: the eye is the single night accent.
 const NIGHT_MASK = Object.freeze({
-  c: "#1d1710", C: "#241d15", r: "#251a12", R: "#2c2016",
-  y: "#261e13", Y: "#2e2417", b: "#1c1811", B: "#231e16",
-  g: "#1d1a12", G: "#242017", m: "#231a14", M: "#2a2119", W: "#7d6642",
+  c: "#110d09", C: "#15110c", r: "#150f0a", R: "#1a130d",
+  y: "#16110b", Y: "#1b150d", b: "#100e0a", B: "#14110d",
+  g: "#110f0a", G: "#15130d", m: "#140f0c", M: "#18130e", W: "#7d6642",
 });
 
 const DAY_WATER = Object.freeze(["#123f46", "#0e373f", "#0b3039", "#082933", "#07232d", "#061d27"]);
 // A single amber ramp that only loses value with depth. The previous night
 // ramp drifted from warm brown to cold green, which read as muddy banding.
-const NIGHT_WATER = Object.freeze(["#5e4a33", "#54422d", "#493a28", "#3e3123", "#33281d", "#282017"]);
+//
+// It is also a night ramp, and the earlier one was brighter than the daytime
+// teal it replaced: the tank lit up at bedtime and every fish sank into a flat
+// sepia wash. The panel is the nightlight, so this stays a filled, glowing
+// field rather than sparse ink on black - that part of the brief is right and
+// the hardware backlight does its own dimming on top. What changes is the
+// value: down by about a third, which is what puts the silhouettes back on
+// top of the water and stops night outshining noon.
+const NIGHT_WATER = Object.freeze(["#3b2f21", "#352a1c", "#2d2519", "#271e17", "#211912", "#19140f"]);
 // Day teal and night amber sit on opposite sides of the colour wheel, so
 // interpolating straight between them drains all the colour out of dusk. The
 // water is routed through an explicit green twilight instead: it is the short
 // way round the wheel, and it keeps every stage of the arc saturated.
-const TWILIGHT_WATER = Object.freeze(["#1c4a3d", "#193f35", "#16362e", "#132e28", "#112722", "#0e201c"]);
+const TWILIGHT_WATER = Object.freeze(["#163a30", "#143129", "#112a24", "#0f241f", "#0d1e1b", "#0b1916"]);
 
 const DAY_PLANTS = Object.freeze({
   background: Object.freeze(["#315f54", "#3a6757", "#456b51"]),
@@ -36,33 +44,33 @@ const DAY_PLANTS = Object.freeze({
 // Vegetation becomes low-contrast moving shadow at night. The two special tip
 // colours are still subdued; only rare species can request glowTip.
 const NIGHT_PLANTS = Object.freeze({
-  background: Object.freeze(["#211a12", "#251e14", "#271f15"]),
-  midground: Object.freeze(["#271f15", "#2a2217", "#2d2318"]),
-  foreground: Object.freeze(["#2c2317", "#302619", "#33291b"]),
-  growthTip: "#382c1d",
-  glowTip: "#493821",
+  background: Object.freeze(["#19140e", "#1c170f", "#1e1810"]),
+  midground: Object.freeze(["#1e1810", "#201a11", "#221b12"]),
+  foreground: Object.freeze(["#211b11", "#241d13", "#271f15"]),
+  growthTip: "#2b2116",
+  glowTip: "#3a2d1a",
 });
 
 // Fish bodies are opaque: each water band gets one pre-darkened companion so a
 // fish occludes whatever swims or grows behind it without a per-frame mix.
 const DAY_BODY_SHADOW = "#03161d";
-const NIGHT_BODY_SHADOW = "#171006";
+const NIGHT_BODY_SHADOW = "#0c0803";
 const BODY_SHADE = 0.44;
 
 // Sunlight entering the tank. The shafts are painted as background rectangles,
 // so they need a colour rather than an alpha, and they have to stay on the
 // water's own hue or they read as a lens flare pasted over the scene.
 const DAY_SHAFT = "#8fe3d8";
-const NIGHT_SHAFT = "#9d7d4c";
+const NIGHT_SHAFT = "#5b492c";
 // The floor recedes: the crest where terrain meets water is the far edge and
 // stays in shadow, while the strip nearest the bottom of the panel is the part
 // closest to the viewer and picks up the most light.
 const DAY_FLOOR_NEAR = "#26403a";
-const NIGHT_FLOOR_NEAR = "#2b2318";
+const NIGHT_FLOOR_NEAR = "#120f0a";
 // Corners of the tank. A little falloff at the left and right edges is what
 // turns six horizontal bands into a volume with a front pane.
 const DAY_EDGE = "#04161c";
-const NIGHT_EDGE = "#150f08";
+const NIGHT_EDGE = "#0f0a06";
 
 export const MASK_SYMBOLS = Object.freeze(["c", "C", "r", "R", "y", "Y", "b", "B", "g", "G", "m", "M"]);
 export const PALETTE_STEPS = 12;
@@ -104,7 +112,10 @@ export function scenePalette(state) {
     ? mixColor(color, TWILIGHT_WATER[index], night * 2)
     : mixColor(TWILIGHT_WATER[index], NIGHT_WATER[index], (night - 0.5) * 2)));
   const bodyShadow = mixColor(DAY_BODY_SHADOW, NIGHT_BODY_SHADOW, night);
-  const bodyFills = waterBands.map((color) => mixColor(color, bodyShadow, BODY_SHADE));
+  // Night is a silhouette palette: the markings are meant to sink into the body
+  // and leave the eye as the single accent. That only works if the body itself
+  // still stands off the water, so the shade deepens as the light goes.
+  const bodyFills = waterBands.map((color) => mixColor(color, bodyShadow, BODY_SHADE + night * 0.18));
   // Everything distant is seen through water, so "distant" is a mix towards the
   // water rather than a mix towards grey. One representative mid-band stands in
   // for the whole column: the vertical ramp is gentle enough that a per-band fog
@@ -161,18 +172,18 @@ export function scenePalette(state) {
     // A small real air/glass strip now sits above the visible water boundary.
     // It stays darker than the water so the surface reads immediately without
     // spending valuable panel height on a decorative header.
-    airBg: mixColor("#09282c", "#1d1710", night),
-    waterline: mixColor("#58c3c4", "#8a7048", night),
+    airBg: mixColor("#09282c", "#110e0a", night),
+    waterline: mixColor("#58c3c4", "#5f4d31", night),
     school,
     plants,
     plantBack: plants.background[0],
     plantFront: plants.foreground[0],
     // The floor is deliberately subdued and closer to the vegetation palette.
     // With only two rows of depth it reads as terrain rather than a brown panel.
-    substrateBg: mixColor("#142522", "#211b14", night),
-    substrateFg: mixColor("#536a55", "#30271c", night),
-    ripple: mixColor("#e6d992", "#9a7d4e", night),
-    ambient: mixColor("#74abae", "#3c2f1e", night),
+    substrateBg: mixColor("#142522", "#120f0a", night),
+    substrateFg: mixColor("#536a55", "#1e1811", night),
+    ripple: mixColor("#e6d992", "#725c3a", night),
+    ambient: mixColor("#74abae", "#2a2115", night),
     masks,
     recommendedBacklight: 0.2 + (1 - night) * 0.8,
   };

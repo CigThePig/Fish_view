@@ -7,6 +7,7 @@ import {
   plantRenderRecord,
 } from "../src/render/plants.js";
 import { scenePalette } from "../src/render/palette.js";
+import { render } from "../src/render/render.js";
 import { orientationConfig } from "../src/sim/config.js";
 import {
   ACTIVITIES,
@@ -16,7 +17,7 @@ import {
   socialEngagement,
 } from "../src/sim/fish-activities.js";
 import { steerActivityVelocity } from "../src/sim/fish-choreography.js";
-import { forageActivity, substrateSafeY } from "../src/sim/fish-motion.js";
+import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import {
   SHOWCASE_DEFAULT_SEED,
   SHOWCASE_SEED_LABEL,
@@ -160,7 +161,7 @@ test("debris keeps the seed of the peck that raised it when the next peck overla
   const resting = state.individuals[index];
   const fish = {
     ...resting,
-    y: substrateSafeY(resting, state, resting.x),
+    y: substrateGrazeY(resting, state, resting.x),
     behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
   };
   const phaseAt = (ageRealSeconds) => forageActivity(fish, index, state, {
@@ -194,7 +195,7 @@ test("the forage phase a fish moves to is the one its debris and pitch are drawn
   const resting = state.individuals[index];
   const fish = {
     ...resting,
-    y: substrateSafeY(resting, state, resting.x),
+    y: substrateGrazeY(resting, state, resting.x),
     behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
     activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: 0 },
   };
@@ -229,4 +230,49 @@ test("the choreography lab and its capture tools open the same tank", () => {
     createShowcaseState({ orientation: "landscape", scenario: "substrate-search" }).seed,
     SHOWCASE_DEFAULT_SEED,
   );
+});
+
+function colorLuminance(color) {
+  const channel = (offset) => Number.parseInt(color.slice(offset, offset + 2), 16);
+  return channel(1) * 0.2126 + channel(3) * 0.7152 + channel(5) * 0.0722;
+}
+
+test("a feeding puff stands off the sand it is lifted from", () => {
+  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  const index = 3;
+  const resting = state.individuals[index];
+  const fish = {
+    ...resting,
+    y: substrateGrazeY(resting, state, resting.x),
+    behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
+  };
+  const palette = scenePalette(state);
+  const sand = colorLuminance(palette.substrateFg);
+
+  let sampled = 0;
+  for (let age = 0; age < 24; age += 0.05) {
+    const posed = {
+      ...fish,
+      activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: age },
+    };
+    const scene = render({
+      ...state,
+      individuals: state.individuals.map((value, i) => (i === index ? posed : value)),
+    });
+    const debris = scene.objects.find((object) => object.id === `forage-debris:${index}:${fish.seed}`);
+    if (!debris) continue;
+    sampled += 1;
+    const glyphs = scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount);
+    // The substrate carries its own static speckle in the sand's colour. Silt
+    // in the water has to be visibly lighter than that or a meal looks like
+    // more floor, which is what it looked like before.
+    for (const glyph of glyphs) {
+      const separation = (colorLuminance(glyph.fg) - sand) / sand;
+      assert.ok(
+        separation > 0.25,
+        `debris glyph sat ${(separation * 100).toFixed(0)}% off the substrate it was lifted from`,
+      );
+    }
+  }
+  assert.ok(sampled > 0, "seed 9 never raised any debris to measure");
 });

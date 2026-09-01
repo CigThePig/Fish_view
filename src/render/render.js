@@ -273,6 +273,7 @@ function poseCoordinate(source, column, row, {
     row,
     width: source.width,
     height: source.height,
+    turnScale,
   });
   return {
     x: pitched.x,
@@ -1116,23 +1117,55 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
 function drawForageDebris(builder, state, palette, metrics) {
   state.individuals.forEach((fish, index) => {
     const activity = forageActivity(fish, index, state);
-    if (activity.debrisPhase === null) return;
-    const progress = activity.debrisPhase;
+    const striking = activity.peck > 0.35;
+    // The contact mark leads the puff: debris only begins a third of the way
+    // into a strike, and the mouth reaches the sand before that.
+    if (activity.debrisPhase === null && !striking) return;
+    const progress = activity.debrisPhase ?? 1;
     const salt = (activity.debrisSeed % 97) * 61;
-    const count = 2 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
+    // Debris is the only part of a meal that stays on screen after the strike,
+    // and the substrate it rises from is already speckled with static marks in
+    // the sand's own colour. Silt lifted into the water catches the light: the
+    // puff is mixed towards the ripple highlight so it reads as something that
+    // just happened rather than as more of the floor.
+    const silt = mixColor(palette.substrateFg, palette.ripple, 0.62);
+    const settled = mixColor(palette.substrateFg, palette.ripple, 0.3);
+    // The puff belongs to the mouth, not to the middle of the fish. A cloud
+    // centred on the body reads as sediment the fish happens to be above.
+    const facing = fish.visual?.facing ?? 1;
+    const mouthX = fish.x
+      + facing * spriteDimensions(spriteForFish(fish)).width * 0.5 * 0.62;
+    const count = activity.debrisPhase === null
+      ? 0
+      : 5 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
     const glyphs = [];
     for (let particle = 0; particle < count; particle += 1) {
-      const rise = progress * sampleRange(fish.seed, 4710 + salt + particle, 0.34, 0.88);
-      const spread = sampleSigned(fish.seed, 4720 + salt + particle) * (0.16 + progress * 0.5);
+      const rise = progress * sampleRange(fish.seed, 4710 + salt + particle, 0.5, 1.35);
+      const spread = sampleSigned(fish.seed, 4720 + salt + particle) * (0.2 + progress * 0.8);
       const charChoice = sample01(fish.seed, 4730 + salt + particle);
-      const char = charChoice < 0.5 ? "." : charChoice < 0.78 ? "," : "'";
+      const char = charChoice < 0.42 ? "." : charChoice < 0.72 ? "," : charChoice < 0.88 ? "'" : ":";
       glyphs.push(positionedGlyph(metrics, {
         char,
-        worldX: fish.x + spread,
+        worldX: mouthX + spread,
         worldY: activity.surfaceY - 0.04 - rise,
-        fg: mixColor(palette.substrateBg, palette.substrateFg, 0.72),
-        scaleX: sampleRange(fish.seed, 4740 + salt + particle, 0.42, 0.62) * (1 - progress * 0.18),
-        scaleY: sampleRange(fish.seed, 4750 + salt + particle, 0.42, 0.62) * (1 - progress * 0.18),
+        // The cloud fades back towards the floor as it settles, so the puff
+        // reads as one event with a beginning and an end.
+        fg: mixColor(silt, settled, progress),
+        scaleX: sampleRange(fish.seed, 4740 + salt + particle, 0.58, 0.86) * (1 - progress * 0.24),
+        scaleY: sampleRange(fish.seed, 4750 + salt + particle, 0.58, 0.86) * (1 - progress * 0.24),
+      }));
+    }
+    // The contact itself: a bright mark where the mouth meets the sand, alive
+    // only for the frames of the strike. It is what makes the puff legible as
+    // the fish's doing rather than as drifting sediment.
+    if (striking) {
+      glyphs.push(positionedGlyph(metrics, {
+        char: activity.peck > 0.72 ? "*" : "x",
+        worldX: mouthX,
+        worldY: activity.surfaceY - 0.12,
+        fg: mixColor(palette.substrateFg, palette.ripple, 0.85),
+        scaleX: 0.62 + activity.peck * 0.34,
+        scaleY: 0.62 + activity.peck * 0.34,
       }));
     }
     addGlyphObject(builder, {

@@ -203,7 +203,14 @@ const REVERSAL_LIMIT_RADIANS = Math.PI - 0.09;
 const REVERSAL_DOT = Math.cos(REVERSAL_LIMIT_RADIANS);
 
 export const CHASE_RECOGNITION_RADIUS = 4.9;
-export const CHASE_BREAK_SECONDS = 4.8;
+export const CHASE_BREAK_SECONDS = 6.2;
+// How close the chaser has to get before the chased fish actually breaks.
+// Recognition reaches across the whole radius above - the fish knows it is
+// being followed long before it reacts - but bolting at that range meant
+// fleeing from five rows away, which no chaser can close, and the pair simply
+// ran the tank at a fixed distance. Reacting late is what lets the gap shut.
+const CHASE_PANIC_NEAR_ROWS = 1.3;
+const CHASE_PANIC_FAR_ROWS = 3.6;
 
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
   const length = Math.hypot(x, y);
@@ -269,7 +276,7 @@ export function chaseEvasionForFish(fish, state) {
     const distance = Math.hypot(dx, dy);
     if (!Number.isFinite(distance) || distance > CHASE_RECOGNITION_RADIUS + 0.18) continue;
 
-    const proximity = 1 - smoothstep(CHASE_RECOGNITION_RADIUS - 0.55, CHASE_RECOGNITION_RADIUS + 0.18, distance);
+    const proximity = 1 - smoothstep(CHASE_PANIC_NEAR_ROWS, CHASE_PANIC_FAR_ROWS, distance);
     const recognition = smoothstep(0.3, 0.82, age);
     const breakFade = 1 - smoothstep(CHASE_BREAK_SECONDS - 0.35, CHASE_BREAK_SECONDS + 0.9, age);
     const strength = proximity * recognition * breakFade;
@@ -287,10 +294,14 @@ export function chaseEvasionForFish(fish, state) {
       dodgeSign * 0.4,
     );
     const traits = traitsFromSeed(fish.seed, fish.history);
+    // Evasion is a burst, not a cruise. Fleeing at a steady speed just holds
+    // the gap the chaser arrived with, and a chase whose distance never changes
+    // reads as two fish swimming in formation. The break comes when the chaser
+    // is closest, which is what opens the gap again after every pass.
     best = {
       x: direction.x,
       y: direction.y,
-      speed: 0.58 + traits.activity * 0.2 + strength * 0.1,
+      speed: 0.5 + traits.activity * 0.18 + proximity * 0.46,
       weight: 0.42 + strength * 0.5,
       strength,
       sourceSeed: chaser.seed,

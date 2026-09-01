@@ -13,6 +13,18 @@ export const MAX_FISH_PITCH_DEGREES = 32;
 export const FORAGE_PITCH_BIAS_DEGREES = 20;
 export const SURFACE_PITCH_BIAS_DEGREES = -10;
 export const FORAGE_SEARCH_DISTANCE_ROWS = 0.82;
+// How far the belly is allowed to meet the substrate crest while grazing, and
+// how far the strike itself drives the fish down. Both are authored against the
+// drawn artwork rather than the swimming envelope: a feeding fish that keeps
+// its swimming clearance hovers a row above the sand and never reads as eating.
+export const FORAGE_GRAZE_CONTACT_ROWS = 0.16;
+export const FORAGE_PECK_ROWS = 0.44;
+// The furthest ahead a grazing fish will chase its route point. The forage
+// route drifts across the tank faster than a fish creeping along at a tenth of
+// a row per second can follow, and an unreachable target makes the steering
+// direction almost purely horizontal - which is what used to leave nothing of
+// the peck for the vertical axis.
+export const FORAGE_ROUTE_LEAD_COLUMNS = 1.15;
 
 const MAX_PITCH_RADIANS = MAX_FISH_PITCH_DEGREES * Math.PI / 180;
 const CLEARANCE_MARGIN_ROWS = 0.18;
@@ -68,6 +80,25 @@ export function substrateSafeY(fish, state, worldX = fish.x) {
   return substrateSurfaceY(state, worldX) - fishVerticalClearanceRows(fish);
 }
 
+// Grazing is measured against the artwork, not against the swimming envelope.
+// The envelope above reserves room for a full-pitch rotation that the authored
+// pitch pose only partly performs, and reserves it at the largest depth scale
+// any fish can be drawn at; both are the right call for a fish crossing open
+// water and both are wrong for one working the substrate, where the reserve
+// simply parks it in mid-water with its debris falling out of reach below.
+export function fishGrazeClearanceRows(fishOrSprite) {
+  const sprite = spriteFor(fishOrSprite);
+  const { height } = spriteDimensions(sprite);
+  return Math.max(
+    0.2,
+    height / 2 * INDIVIDUAL_VISUAL_SCALE_MAX - FORAGE_GRAZE_CONTACT_ROWS,
+  );
+}
+
+export function substrateGrazeY(fish, state, worldX = fish.x) {
+  return substrateSurfaceY(state, worldX) - fishGrazeClearanceRows(fish);
+}
+
 export function surfaceSafeY(fish, state, worldX = fish.x) {
   return waterSurfaceY(state, worldX) + fishVerticalClearanceRows(fish);
 }
@@ -85,7 +116,7 @@ export function surfaceSafeY(fish, state, worldX = fish.x) {
 export function forageActivity(fish, index, state, activity = fish?.activity) {
   const eligible = forageEligible(index);
   const surfaceY = substrateSurfaceY(state, fish.x);
-  const targetY = surfaceY - fishVerticalClearanceRows(fish);
+  const targetY = surfaceY - fishGrazeClearanceRows(fish);
   const distanceRows = Math.abs(fish.y - targetY);
   const searching = eligible
     && fish.behavior?.current === "forage"
@@ -124,7 +155,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   }
   const peck = peckPhase === null ? 0 : Math.sin(Math.PI * clamp(peckPhase, 0, 1));
   const sizeFactor = clamp(fishVerticalClearanceRows(fish) / 2.2, 0.88, 1.04);
-  const displacementAmplitude = (0.3 + substrateAffinity * 0.1) * sizeFactor;
+  const displacementAmplitude = (FORAGE_PECK_ROWS + substrateAffinity * 0.14) * sizeFactor;
   const eventSeed = (cycleIndex * 7 + (peckEvent ?? debrisEvent ?? 0)) >>> 0;
   // Close peck pairs overlap: the previous peck's debris is still rising when
   // the next peck starts. Salting the debris with the peck event would swap the

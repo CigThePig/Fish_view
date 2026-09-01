@@ -5,9 +5,11 @@ import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import {
   FORAGE_PITCH_BIAS_DEGREES,
+  FORAGE_ROUTE_LEAD_COLUMNS,
   SURFACE_PITCH_BIAS_DEGREES,
   forageActivity,
   forageEligible,
+  substrateGrazeY,
   substrateSafeY,
   surfaceSafeY,
 } from "./fish-motion.js";
@@ -938,7 +940,14 @@ export function resolveActivityTarget(fish, index, state, activity, {
 
       const toward = safeNormalize(companion.x - fish.x, companion.y - fish.y, fish.vx < 0 ? -1 : 1, 0);
       const lead = phase === "approach" ? 0.72 : 1.02;
-      const standoff = phase === "approach" ? 0.9 : 1.15;
+      // A chase is read from the distance between two fish, not from their
+      // speed: two fish holding a fixed gap are a formation however fast they
+      // travel. The pursuit therefore lunges - the chaser asks to be right on
+      // the companion, eases off, and comes again - and the evader answers with
+      // a burst of its own, so the gap closes and opens while they run.
+      const lunge = Math.sin(activity.ageRealSeconds * 2.35
+        + sampleRange(fish.seed, 8521, 0, TAU)) * 0.5 + 0.5;
+      const standoff = phase === "approach" ? 0.9 : 1.45 - lunge * 1.05;
       const curve = Math.sin(activity.ageRealSeconds * 1.72
         + sampleRange(fish.seed, 8520, 0, TAU)) * (phase === "approach" ? 0.2 : 0.42);
       return choreographed(activity.current, {
@@ -946,7 +955,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
         y: companion.y + companion.vy * lead - toward.y * standoff + curve,
         speed: phase === "approach"
           ? 0.58 + traits.activity * 0.2
-          : 0.75 + traits.activity * 0.2,
+          : 0.78 + traits.activity * 0.18 + lunge * 0.24,
         postureBias: 0,
         companionTarget: true,
         playfulChase: true,
@@ -989,17 +998,36 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const descentX = clamp(routeX, fish.x - 2.35, fish.x + 2.35);
     const recoveryScoot = forage.recovery * forage.scootDirection
       * (0.52 + affinities.substrate * 0.34);
-    const x = forage.searching
-      ? clamp(routeX + recoveryScoot, halfWidth, state.cols - halfWidth)
-      : descentX;
-    const dip = forage.searching ? forage.peckDisplacement : 0;
+    // A grazing fish creeps at about a tenth of a row per second while the
+    // route point sweeps the tank; asking it to steer at a point ten columns
+    // away spends the entire steering direction on the horizontal and leaves
+    // nothing for the descent. The patch still leads the fish, only never by
+    // further than it can answer.
+    const grazeX = clamp(
+      clamp(routeX + recoveryScoot, fish.x - FORAGE_ROUTE_LEAD_COLUMNS, fish.x + FORAGE_ROUTE_LEAD_COLUMNS),
+      halfWidth,
+      state.cols - halfWidth,
+    );
+    const x = forage.searching ? grazeX : descentX;
     return choreographed(activity.current, {
       x,
-      y: substrateSafeY(fish, state, x) + dip,
+      // The graze line is the target for the descent as well as for the meal.
+      // Stopping the descent at the swimming envelope would leave the fish too
+      // far off the substrate to ever count as searching, and it would wait
+      // there for a contact that can only begin once it is closer.
+      //
+      // The strike is not part of this target. Steering towards a dipped point
+      // spreads a quarter-second lunge over the several seconds the fish needs
+      // to answer a position request, which is how a peck ended up moving the
+      // fish by a single pixel. tickIndividual() drives the plunge directly.
+      y: substrateGrazeY(fish, state, x),
       speed: forage.searching
         ? 0.105 + traits.activity * 0.075 + affinities.substrate * 0.035
         : 0.36 + traits.activity * 0.18,
-      postureBias: forage.searching ? FORAGE_PITCH_BIAS_DEGREES + forage.peck * 6 : 0,
+      // The strike snaps the nose down as well as the body: posture is the cue
+      // that survives when the fish is small on the panel.
+      postureBias: forage.searching ? FORAGE_PITCH_BIAS_DEGREES + forage.peck * 11 : 0,
+      forageGrazing: true,
       forageSearching: forage.searching,
       peck: forage.peck,
       peckDisplacement: forage.peckDisplacement,
