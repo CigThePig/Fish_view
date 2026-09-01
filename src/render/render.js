@@ -48,12 +48,44 @@ import {
 } from "./scene.js?v=opaque-bodies-20260830";
 
 const TAU = Math.PI * 2;
+const BODY_MOTION_BY_ACTIVITY = Object.freeze({
+  cruise: Object.freeze({ rate: 1, deformation: 1, bob: 1 }),
+  "open-water-wander": Object.freeze({ rate: 1.03, deformation: 1, bob: 0.9 }),
+  "plant-investigate": Object.freeze({ rate: 0.76, deformation: 0.72, bob: 0.48 }),
+  "plant-weave": Object.freeze({ rate: 1.2, deformation: 1.08, bob: 0.68 }),
+  "bubble-investigate": Object.freeze({ rate: 1.36, deformation: 1.22, bob: 0.7 }),
+  "surface-investigate": Object.freeze({ rate: 0.95, deformation: 0.9, bob: 0.42 }),
+  "school-follow": Object.freeze({ rate: 0.94, deformation: 0.9, bob: 0.68 }),
+  "individual-follow": Object.freeze({ rate: 0.86, deformation: 0.84, bob: 0.58 }),
+  "companion-cruise": Object.freeze({ rate: 0.7, deformation: 0.66, bob: 0.4 }),
+  "playful-chase": Object.freeze({ rate: 1.56, deformation: 1.34, bob: 0.68 }),
+  "substrate-search": Object.freeze({ rate: 0.7, deformation: 0.76, bob: 0.24 }),
+  "open-water-rest": Object.freeze({ rate: 0.4, deformation: 0.48, bob: 0.18 }),
+  "plant-shelter": Object.freeze({ rate: 0.34, deformation: 0.42, bob: 0.14 }),
+  "touch-react": Object.freeze({ rate: 1.24, deformation: 1.12, bob: 0.74 }),
+  "arrival-enter": Object.freeze({ rate: 1.04, deformation: 1, bob: 0.8 }),
+});
 const BAYER_4 = Object.freeze([
   Object.freeze([0, 8, 2, 10]),
   Object.freeze([12, 4, 14, 6]),
   Object.freeze([3, 11, 1, 9]),
   Object.freeze([15, 7, 13, 5]),
 ]);
+
+export function bodyMotionForFish(fish) {
+  const base = BODY_MOTION_BY_ACTIVITY[fish.activity?.current]
+    ?? BODY_MOTION_BY_ACTIVITY.cruise;
+  const speed = Math.hypot(fish.vx ?? 0, fish.vy ?? 0);
+  const energetic = fish.activity?.current === "playful-chase"
+    || fish.activity?.current === "bubble-investigate"
+    || fish.activity?.current === "touch-react";
+  const speedLift = energetic ? clamp((speed - 0.42) / 0.48, 0, 1) : 0;
+  return {
+    rate: base.rate + speedLift * 0.16,
+    deformation: base.deformation + speedLift * 0.1,
+    bob: base.bob,
+  };
+}
 
 export const LAYERS = Object.freeze({
   // Sunlight is behind everything, the water surface included: a shaft is the
@@ -1005,17 +1037,23 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   // has finished growing.
   const sprite = spriteForFish(fish);
   const turning = turnPose(fish);
+  const bodyMotion = bodyMotionForFish(fish);
+  const activityDeformation = deformationStrength * bodyMotion.deformation;
   const masks = lane === null ? palette.masks : palette.depthLanes[lane].masks;
-  const frequency = sampleRange(fish.seed, 100, 0.55, 0.78) * (0.64 + palette.daylight * 0.36);
+  const frequency = sampleRange(fish.seed, 100, 0.55, 0.78)
+    * (0.64 + palette.daylight * 0.36)
+    * bodyMotion.rate;
   const phase = state.elapsedRealSeconds * TAU * frequency + sampleRange(fish.seed, 101, 0, TAU);
   const bob = Math.sin(state.elapsedRealSeconds * TAU * sampleRange(fish.seed, 102, 0.12, 0.19)
-    + sampleRange(fish.seed, 103, 0, TAU)) * sampleRange(fish.seed, 104, 0.045, 0.085);
+    + sampleRange(fish.seed, 103, 0, TAU))
+    * sampleRange(fish.seed, 104, 0.045, 0.085)
+    * bodyMotion.bob;
   const pitch = Number.isFinite(fish.visual?.pitch) ? fish.visual.pitch : 0;
   const cellAspect = metrics.cellHeight / metrics.cellWidth;
   const points = poseSprite(sprite, {
     facing: turning.facing,
     phase,
-    deformationStrength,
+    deformationStrength: activityDeformation,
     turnScale: turning.widthScale,
     pitch,
     cellAspect,
@@ -1034,7 +1072,7 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     turnScale: turning.widthScale,
     facing: turning.facing,
     phase,
-    deformationStrength,
+    deformationStrength: activityDeformation,
     pitch,
     scale,
     color: bodyFillForDepth(palette, verticalDepth, lane),
@@ -1078,22 +1116,23 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
 function drawForageDebris(builder, state, palette, metrics) {
   state.individuals.forEach((fish, index) => {
     const activity = forageActivity(fish, index, state);
-    if (activity.peckPhase === null) return;
-    const progress = activity.peckPhase;
-    const count = 1 + Math.floor(sample01(fish.seed, 4700) * 4);
+    if (activity.debrisPhase === null) return;
+    const progress = activity.debrisPhase;
+    const salt = (activity.eventSeed % 97) * 61;
+    const count = 2 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
     const glyphs = [];
     for (let particle = 0; particle < count; particle += 1) {
-      const rise = progress * sampleRange(fish.seed, 4710 + particle, 0.24, 0.62);
-      const spread = sampleSigned(fish.seed, 4720 + particle) * (0.12 + progress * 0.34);
-      const charChoice = sample01(fish.seed, 4730 + particle);
+      const rise = progress * sampleRange(fish.seed, 4710 + salt + particle, 0.34, 0.88);
+      const spread = sampleSigned(fish.seed, 4720 + salt + particle) * (0.16 + progress * 0.5);
+      const charChoice = sample01(fish.seed, 4730 + salt + particle);
       const char = charChoice < 0.5 ? "." : charChoice < 0.78 ? "," : "'";
       glyphs.push(positionedGlyph(metrics, {
         char,
         worldX: fish.x + spread,
         worldY: activity.surfaceY - 0.04 - rise,
         fg: mixColor(palette.substrateBg, palette.substrateFg, 0.72),
-        scaleX: sampleRange(fish.seed, 4740 + particle, 0.42, 0.58),
-        scaleY: sampleRange(fish.seed, 4750 + particle, 0.42, 0.58),
+        scaleX: sampleRange(fish.seed, 4740 + salt + particle, 0.42, 0.62) * (1 - progress * 0.18),
+        scaleY: sampleRange(fish.seed, 4750 + salt + particle, 0.42, 0.62) * (1 - progress * 0.18),
       }));
     }
     addGlyphObject(builder, {

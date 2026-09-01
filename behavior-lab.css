@@ -1,0 +1,126 @@
+.behavior-lab-page {
+  overflow: auto;
+}
+
+.behavior-lab {
+  width: min(1060px, 100%);
+  min-height: 100svh;
+  margin: 0 auto;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 1rem;
+}
+
+.behavior-lab__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.behavior-lab__header h1 {
+  margin: 0.1rem 0 0.3rem;
+  color: #eef5ef;
+  font-size: clamp(1.35rem, 4vw, 2rem);
+}
+
+.behavior-lab__header p:not(.eyebrow),
+.behavior-lab__note {
+  max-width: 66ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.behavior-lab__header a {
+  flex: none;
+  color: var(--accent);
+}
+
+.behavior-lab__stage {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.behavior-lab__stage canvas {
+  max-height: min(66svh, 800px);
+}
+
+.behavior-lab__controls {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.behavior-lab__controls label {
+  display: grid;
+  gap: 0.32rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.behavior-lab__controls select {
+  min-height: 42px;
+  min-width: 13rem;
+  padding: 0.55rem 2rem 0.55rem 0.8rem;
+  text-transform: none;
+}
+
+.behavior-lab__readout {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgb(12 22 19 / 82%);
+}
+
+.behavior-lab__readout div {
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-right: 1px solid var(--line);
+}
+
+.behavior-lab__readout div:last-child {
+  border-right: 0;
+}
+
+.behavior-lab__readout span,
+.behavior-lab__readout strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.behavior-lab__readout span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.behavior-lab__readout strong {
+  margin-top: 0.2rem;
+  color: #e8f2ea;
+  font: 0.82rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@media (max-width: 720px) {
+  .behavior-lab__header {
+    display: grid;
+  }
+
+  .behavior-lab__readout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .behavior-lab__readout div {
+    border-bottom: 1px solid var(--line);
+  }
+}

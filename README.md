@@ -32,7 +32,8 @@ persistent simulation.
   with the school or a companion instead of merely selecting the word `social`.
 - Substrate-aware foraging. Eligible individuals approach the real deterministic
   terrain contour, slow into a lateral search, carry a deliberate nose-down
-  bias, make small seeded peck/dip motions, and kick up a sparse 1-4 glyph puff.
+  bias, perform uneven clusters of several-pixel peck/dip motions, and kick up a
+  sparse 2-5 glyph puff synchronized to contact.
   Hunger relief begins only after the fish actually reaches that search zone.
   The first three permanently visible mid-water individuals do not select forage,
   which keeps the visibility invariant without phantom feeding above the floor.
@@ -103,6 +104,10 @@ persistent simulation.
   showing every static source sprite beside animated right- and left-facing
   poses, with phase, pitch intent (-35°..+35°), turn compression, palette, deformation,
   anchor, bounds, damage, and live body-profile controls.
+- A deterministic [behaviour choreography lab](https://cigthepig.github.io/Fish_view/behaviors.html)
+  that forces every major activity through the production simulation and renderer
+  in either orientation, with phase, speed, pitch, spacing, and loop diagnostics
+  kept outside the aquarium canvas.
 - A deterministic [skeletal plant lab](https://cigthepig.github.io/Fish_view/plants.html)
   showing all 28 species as seedlings and mature specimens, with day/night,
   orientation, size, current, disturbance, quality, bounds, damage, and bone
@@ -133,6 +138,28 @@ Because every source file is plain HTML, CSS, or JavaScript, small changes can
 also be made directly in GitHub's mobile editor. Every push to `main` runs the
 test suite and deploys the repository through the Pages workflow in
 `.github/workflows/pages.yml`.
+
+### Behaviour readability workflow
+
+The choreography lab is backed by a repeatable capture tool that runs the real
+scene composer, bitmap glyph renderer, body fills, depth ordering, and
+dirty-rectangle canvas renderer without a browser. It writes deterministic
+landscape and portrait contact sheets plus a machine-readable snapshot manifest:
+
+```sh
+npm install
+npm run capture:behaviors
+```
+
+Captures go to the ignored `.behavior-captures/` directory. Narrow a tuning pass
+to one activity, keep native resolution, or also emit an animated loop with:
+
+```sh
+npm run capture:behaviors -- --scenario bubble-investigate --orientation portrait --scale 1 --gif
+```
+
+`@napi-rs/canvas` is development-only; the aquarium and GitHub Pages build still
+have no runtime dependency or build step.
 
 ## Architecture boundary
 
@@ -281,6 +308,114 @@ activity clocks are transient and safely reconstructed after power loss, so an o
 Phase 1 save simply starts with empty familiarity. The hidden tuning panel includes
 a developer-only per-fish line showing seed, behavior/activity, target, top
 affinities, and strongest familiarity; none of it enters the aquarium view.
+
+### Visual choreography and the two-second rule
+
+Activity selection already knew whether a fish was inspecting a plant, chasing a
+bubble, following a companion, or feeding. The readability failure was one layer
+lower: nearly every activity became a target point and speed, then passed through
+the same normalized steering and vertical damping. Correct intentions therefore
+collapsed into the same smooth swim.
+
+`src/sim/fish-choreography.js` inserts one small data-driven layer without
+replacing the behavior/activity model:
+
+```text
+behavior -> activity -> target + choreography -> locomotion -> visual pose
+```
+
+An activity target can now carry bounded acceleration and turning response,
+vertical speed scale, minimum/maximum speed, approach radius and slowdown,
+position gain, target-velocity matching, pitch scale/response, and turn duration.
+`steerActivityVelocity()` applies the same compact vector equations to every
+profile; an activity does not own a private physics engine. The renderer reads a
+similarly small body-motion profile to make the existing ASCII tail/body wave
+quieter at rest and more energetic during bubble pursuit and play. No shader,
+spline library, pathfinder, dynamic mesh, or unbounded particle system was added.
+
+Short visible stages are derived from activity age, distance, seeded clocks, and
+live target records rather than persisted animation state:
+
+- Bubble interest visibly acquires and pitches toward a real bubble, predicts its
+  rise while pursuing from below/behind, then slows into a small hover/lunge. A
+  nearby pop produces only a brief overshoot/search.
+- Play is reciprocal. The chaser closes and leads the companion; once it enters a
+  bounded recognition radius, the other fish receives a derived acceleration and
+  curved vertical dodge while keeping its own biological behavior. Pursuit breaks
+  after 4.8 seconds and the evasion fades, so neither fish is corrupted or saved
+  in a chase sub-state.
+- School follow trails one stable school member and matches part of its velocity;
+  individual follow maintains a rear offset; mutual companion cruise occupies
+  stable staggered side slots with strong velocity matching; chase alone uses the
+  high-energy burst and sharp-turn profile.
+- Forage commits horizontally while descending, follows the actual terrain at
+  low speed with a 20-degree search bias, and uses three deterministic uneven
+  peck-cluster patterns. A peck displaces 0.30-0.45 logical rows, adds up to six
+  degrees of feeding pitch, rebounds/scoots, and shares its event phase with a
+  bounded 2-5 glyph debris puff.
+- Plant investigation slows into seeded vertical stations and alternating head
+  sweeps around one specimen. Plant weave follows five asymmetric, alternating
+  route points across one or two plants. Surface investigation commits to an
+  ascent, slows below the live meniscus, probes upward, and remains clamped to
+  conservative body clearance. Open-water and plant rest use near-level posture,
+  very low velocity, slow turns, and reduced body wave.
+
+Personality still decides what wins. Affinity only restrains the choreography:
+bubble affinity slightly increases pursuit enthusiasm, substrate affinity widens
+the search and tightens cluster timing, plant affinity extends inspection, and
+activity/sociability tune chase and formation energy. Bounded seed-derived
+real-time opportunity windows now give a genuine hunger, fatigue, or social need
+a chance to become visible during a normal viewing session; they cannot create a
+need when its drive is low. Play, bubble, weave, follow, and surface utility
+windows were also widened modestly without bypassing the utility selector.
+
+The developer lab at `behaviors.html` loops the acquisition and close-range
+portions of eleven representative activities. The numerical companion is:
+
+```sh
+npm run measure:readability
+```
+
+It records average/peak speed, average/peak absolute pitch, vertical travel, a
+turn-rate proxy, social spacing, bubble intercept distance, peck starts, chase
+evasion frames, damage, full redraws, and `tick + render` time. It also runs an
+ordinary deterministic ten-minute watch rather than only forced poses. Current
+representative signatures are:
+
+| Activity | Landscape signature | Portrait signature |
+| --- | --- | --- |
+| Cruise | 0.34 peak speed, 0.0° max pitch | 0.34, 0.0° |
+| Bubble pursuit | 1.00, 32.0°, 1.55-row intercept | 1.00, 32.0°, 1.57-row intercept |
+| Plant weave | 0.43, 25.7°, four alternating stages | 0.44, 30.2°, four alternating stages |
+| Companion cruise | 0.49, 3.6°, 3.69-row mean spacing | 0.49, 3.6°, 3.69-row mean spacing |
+| Playful chase | 0.84, 50 evasion frames | 0.84, 50 evasion frames |
+| Substrate search | 0.59, 32.0°, 3 pecks | 0.57, 32.0°, 5 pecks |
+| Surface investigation | 0.68, 32.0°, 6.36 rows vertical travel | 0.68, 32.0°, 7.46 rows |
+| Open-water rest | 0.04 peak / 0.02 average speed | 0.04 / 0.02 |
+
+With the default seed at noon, the ordinary ten-minute diagnostic recorded six
+to eight bubble investigations, three playful chases, three companion cruises,
+eight individual follows, one substrate-search bout with 11-14 visible pecks,
+four plant/rest-shelter visits, and six open-water rests in each orientation;
+portrait also reached two surface investigations. These are opportunity audits,
+not quotas: other personalities and world seeds retain their own mix.
+
+The established Phase 1, Phase 2, and Phase 4 measurement scripts still report
+zero full redraws across all 3,200 transitions and keep the opaque-body ceiling
+at nine fills. The 2,190 forced readability transitions also report zero full
+redraws. Compared with the pre-overhaul tree, ordinary average damage changed
+from 22.18% to 21.92% in landscape and 24.35% to 23.59% in portrait; bubble-heavy
+changed from 20.87% to 20.84% and 17.55% to 17.24%. The deliberately dense
+plant/social case changed from 32.87% to 33.38% in landscape and 58.19% to 61.17%
+in portrait, with the existing 96% portrait maximum unchanged. At the mature
+day-420 population, average damage is 50.11% landscape and 74.48% portrait,
+within 0.31 percentage points of the pre-overhaul measurements. The slowest
+current Node `tick + render` average in those established scenarios was 4.01 ms;
+this is comparative developer evidence, not an ESP32 hardware benchmark.
+
+The persistence schema remains version 2. Choreography profiles are constants;
+bubble offsets, route stages, peck micro-phases, chase evasion, and pop responses
+are all reconstructed transiently after reload.
 
 The repeatable 200-frame, 10 fps measurement compares the Phase 1 merge against
 Phase 2 with the same seed and forced representative opportunities:
@@ -1016,9 +1151,11 @@ src/art/       extracted art data and glyph-aware mirroring
 src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose,
                derived fish growth, and the shared long-horizon
                aquarium-history resolver
+src/dev/       deterministic production-state setup for visual choreography QA
 src/render/    scene composition, depth lanes, plant glyph mapping, palette,
                font, damage
 src/platform/  browser-only persistence adapter
+tools/         local server plus repeatable damage, performance, and readability measurements
 tests/         deterministic simulation, art, persistence, and renderer checks
 ```
 

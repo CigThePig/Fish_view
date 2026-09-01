@@ -279,8 +279,8 @@ test("active forage pecks emit one tiny deterministic debris object and approach
     };
     candidate.y = substrateSafeY(candidate, base, candidate.x);
     const activity = forageActivity(candidate, index, base);
-    if (activity.peckPhase !== null && !activeFish) activeFish = candidate;
-    if (activity.searching && activity.peckPhase === null && !quietFish) quietFish = candidate;
+    if (activity.peckPhase !== null && activity.debrisPhase !== null && !activeFish) activeFish = candidate;
+    if (activity.searching && activity.peckPhase === null && activity.debrisPhase === null && !quietFish) quietFish = candidate;
     if (activeFish && quietFish) break;
   }
   assert.ok(activeFish && quietFish);
@@ -291,7 +291,7 @@ test("active forage pecks emit one tiny deterministic debris object and approach
   assert.deepEqual(first, second);
   const debris = first.objects.filter((object) => object.id.startsWith(`forage-debris:${index}:`));
   assert.equal(debris.length, 1);
-  assert.ok(debris[0].glyphCount >= 1 && debris[0].glyphCount <= 4);
+  assert.ok(debris[0].glyphCount >= 2 && debris[0].glyphCount <= 5);
 
   const quiet = render(withFish(quietFish));
   assert.equal(quiet.objects.some((object) => object.id.startsWith("forage-debris:")), false);

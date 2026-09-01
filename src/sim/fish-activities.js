@@ -1,6 +1,7 @@
 import { WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { plantRootY } from "./environment.js";
+import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import {
   FORAGE_PITCH_BIAS_DEGREES,
@@ -379,6 +380,13 @@ function choice(activity, utility, target = {}) {
   };
 }
 
+function choreographed(activity, target, overrides = {}) {
+  return {
+    ...target,
+    choreography: choreographyFor(activity, overrides),
+  };
+}
+
 function activityChoices(fish, index, state, {
   traits = traitsFromSeed(fish.seed, fish.history),
   affinities = affinitiesFromSeed(fish.seed),
@@ -412,6 +420,14 @@ function activityChoices(fish, index, state, {
   }
   if (behavior === "social") {
     const companion = preferredCompanion(fish, index, state, traits);
+    const followPeriod = sampleRange(fish.seed, 8390, 44, 72);
+    const followPhase = positiveModulo(
+      state.elapsedRealSeconds + sampleRange(fish.seed, 8391, 0, followPeriod),
+      followPeriod,
+    ) / followPeriod;
+    const followOpportunity = followPhase < 0.34
+      ? Math.sin((followPhase / 0.34) * Math.PI)
+      : 0;
     const choices = [choice(
       ACTIVITIES.schoolFollow,
       0.21 + affinities.school * 0.72 + traits.sociability * 0.17
@@ -422,13 +438,14 @@ function activityChoices(fish, index, state, {
       choices.push(choice(
         ACTIVITIES.individualFollow,
         0.23 + traits.sociability * 0.24 + companion.score * 0.58
+          + followOpportunity * (0.1 + traits.sociability * 0.12 + companion.compatibility * 0.06)
           + continuity(ACTIVITIES.individualFollow) + jitter(ACTIVITIES.individualFollow),
         { targetType: "fish", targetId: companion.fish.seed },
       ));
       if (companion.familiarity >= 0.045) {
         choices.push(choice(
           ACTIVITIES.companionCruise,
-          0.18 + traits.sociability * 0.2 + companion.familiarity * 0.98 + companion.compatibility * 0.14
+          0.23 + traits.sociability * 0.22 + companion.familiarity * 1.08 + companion.compatibility * 0.16
             + continuity(ACTIVITIES.companionCruise) + jitter(ACTIVITIES.companionCruise),
           { targetType: "fish", targetId: companion.fish.seed },
         ));
@@ -440,11 +457,11 @@ function activityChoices(fish, index, state, {
       ) / playPeriod;
       const daylight = state.timeOfDayHours >= 6 && state.timeOfDayHours < 20;
       if (fish.activity?.current !== ACTIVITIES.playfulChase
-        && daylight && playWindow < 0.16 && fish.drives.energy > 0.48
-        && traits.activity > 0.48 && traits.sociability > 0.44 && companion.familiarity >= 0.035) {
+        && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
+        && traits.activity > 0.38 && traits.sociability > 0.34 && companion.familiarity >= 0.018) {
         choices.push(choice(
           ACTIVITIES.playfulChase,
-          0.42 + traits.activity * 0.34 + traits.sociability * 0.18 + companion.familiarity * 0.2
+          0.5 + traits.activity * 0.36 + traits.sociability * 0.2 + companion.familiarity * 0.24
             + continuity(ACTIVITIES.playfulChase) + jitter(ACTIVITIES.playfulChase),
           { targetType: "fish", targetId: companion.fish.seed },
         ));
@@ -475,9 +492,18 @@ function activityChoices(fish, index, state, {
         { targetType: "plant", targetId: plant.plant.seed },
       ));
       if (secondWeavePlant(fish, plant.plant, state)) {
+        const weavePeriod = sampleRange(fish.seed, 8380, 38, 62);
+        const weavePhase = positiveModulo(
+          state.elapsedRealSeconds + sampleRange(fish.seed, 8381, 0, weavePeriod),
+          weavePeriod,
+        ) / weavePeriod;
+        const weaveOpportunity = weavePhase < 0.36
+          ? Math.sin((weavePhase / 0.36) * Math.PI)
+          : 0;
         choices.push(choice(
           ACTIVITIES.plantWeave,
-          0.13 + affinities.plant * 0.58 + traits.activity * 0.14 + plant.score * 0.17
+          0.2 + affinities.plant * 0.62 + traits.activity * 0.24 + plant.score * 0.18
+            + weaveOpportunity * (0.08 + traits.activity * 0.14)
             + continuity(ACTIVITIES.plantWeave) + jitter(ACTIVITIES.plantWeave),
           { targetType: "plant", targetId: plant.plant.seed },
         ));
@@ -488,7 +514,7 @@ function activityChoices(fish, index, state, {
     if (bubble) {
       choices.push(choice(
         ACTIVITIES.bubbleInvestigate,
-        0.16 + affinities.bubble * 0.78 + traits.curiosity * 0.17 + bubble.score * 0.27
+        0.22 + affinities.bubble * 0.82 + traits.curiosity * 0.18 + bubble.score * 0.3
           + continuity(ACTIVITIES.bubbleInvestigate) + jitter(ACTIVITIES.bubbleInvestigate),
         { targetType: "bubble", targetId: bubble.bubble.id },
       ));
@@ -503,7 +529,7 @@ function activityChoices(fish, index, state, {
         const point = waypointFor(fish, index, state, traits, affinities, "surface");
         choices.push(choice(
           ACTIVITIES.surfaceInvestigate,
-          0.12 + affinities.surface * 0.8 + traits.curiosity * 0.16
+          0.24 + affinities.surface * 0.86 + traits.curiosity * 0.18
             + continuity(ACTIVITIES.surfaceInvestigate) + jitter(ACTIVITIES.surfaceInvestigate),
           { targetType: "surface", targetX: point.x, targetY: point.y },
         ));
@@ -550,13 +576,97 @@ function companionOffset(fish, companion, activity) {
   const pairSeed = mix32(Math.min(fish.seed, companion.seed)
     ^ Math.imul(Math.max(fish.seed, companion.seed), 0x27d4eb2f));
   const velocity = safeNormalize(companion.vx, companion.vy, companion.vx < 0 ? -1 : 1, 0);
-  const side = sample01(pairSeed, 8500) < 0.5 ? -1 : 1;
-  const perpendicular = { x: -velocity.y * side, y: velocity.x * side };
-  const trailing = activity === ACTIVITIES.individualFollow ? 1.7 : 0.9;
-  const beside = activity === ACTIVITIES.companionCruise ? 1.35 : 0.65;
+  // Stable pair slots put two mutual companions on opposite sides of the same
+  // formation instead of making both chase one shared offset.
+  const pairSide = sample01(pairSeed, 8500) < 0.5 ? -1 : 1;
+  const seededSide = pairSide * (fish.seed < companion.seed ? -1 : 1);
+  const basePerpendicular = { x: -velocity.y, y: velocity.x };
+  const combinedWidth = fishSpriteWidth(fish) + fishSpriteWidth(companion);
+  const trailing = activity === ACTIVITIES.individualFollow
+    ? clamp(combinedWidth * 0.35, 2.25, 3.7)
+    : clamp(combinedWidth * 0.09, 0.45, 0.9);
+  const mutualCompanion = activity === ACTIVITIES.companionCruise
+    && companion.activity?.current === ACTIVITIES.companionCruise
+    && companion.activity?.targetId === fish.seed;
+  const existingSide = (fish.x - companion.x) * basePerpendicular.x
+    + (fish.y - companion.y) * basePerpendicular.y;
+  // Once a pair already has an above/below ordering, preserve it. Crossing
+  // both ASCII bodies merely to reach a seed-selected slot reads as collision,
+  // not cooperation. A near-tie still uses the stable pair seed.
+  const side = mutualCompanion && Math.abs(existingSide) > 0.18
+    ? Math.sign(existingSide)
+    : seededSide;
+  const perpendicular = {
+    x: basePerpendicular.x * side,
+    y: basePerpendicular.y * side,
+  };
+  // Mutual companions each steer to the same full center spacing. A unilateral
+  // cruiser uses that visible spacing too. Both cases keep the authored
+  // ASCII bodies adjacent rather than compositing them into one tangled fish.
+  const beside = activity === ACTIVITIES.companionCruise
+    ? sampleRange(pairSeed, 8501, 3.35, 3.75)
+    : sampleRange(pairSeed, 8501, 0.22, 0.46);
   return {
     x: companion.x - velocity.x * trailing + perpendicular.x * beside,
-    y: companion.y - velocity.y * trailing + perpendicular.y * beside * 0.55,
+    y: companion.y - velocity.y * trailing
+      + perpendicular.y * beside * (activity === ACTIVITIES.companionCruise ? 1 : 0.55),
+  };
+}
+
+function boundedPlantPoint(fish, state, x, y) {
+  const halfWidth = spriteHalfWidth(fish);
+  const boundedX = clamp(x, halfWidth, state.cols - halfWidth);
+  const top = surfaceSafeY(fish, state, boundedX);
+  const bottom = substrateSafeY(fish, state, boundedX);
+  return {
+    x: boundedX,
+    y: clamp(y, Math.min(top, bottom), Math.max(top, bottom)),
+  };
+}
+
+function inspectionPoint(fish, plant, state, activity) {
+  const base = plantTargetPosition(fish, plant, state);
+  const distance = Math.hypot(base.x - fish.x, base.y - fish.y);
+  if (distance > 1.75 || activity.ageRealSeconds < 1.1) {
+    return { ...base, phase: "approach", distance };
+  }
+
+  const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(plant.seed >>> 0, 0xc2b2ae35));
+  const inspectAge = Math.max(0, activity.ageRealSeconds - 1.1);
+  const station = Math.floor(inspectAge / 2.35);
+  const height = Math.min(1.2, Math.max(0.42, plantHeight(plant) * 0.16));
+  const verticalStation = sampleSigned(pairSeed, 8140 + positiveModulo(station, 11)) * height;
+  const headSweep = Math.sin(inspectAge * 2.25 + sampleRange(pairSeed, 8155, 0, TAU)) * 0.34;
+  const hover = Math.sin(inspectAge * 1.18 + sampleRange(pairSeed, 8156, 0, TAU)) * 0.2;
+  return {
+    ...boundedPlantPoint(fish, state, base.x + headSweep, base.y + verticalStation + hover),
+    phase: "inspect",
+    distance,
+  };
+}
+
+function weavePoint(fish, primary, state, activity) {
+  const secondary = secondWeavePlant(fish, primary, state);
+  const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(primary.seed >>> 0, 0x85ebca6b));
+  const stageSeconds = sampleRange(pairSeed, 8160, 2.55, 3.05);
+  const stage = Math.floor(Math.max(0, activity.ageRealSeconds) / stageSeconds) % 5;
+  const route = [
+    { plant: primary, alternate: false, lift: -0.65 },
+    { plant: primary, alternate: true, lift: 0.55 },
+    { plant: secondary ?? primary, alternate: false, lift: -0.85 },
+    { plant: secondary ?? primary, alternate: true, lift: 0.28 },
+    { plant: primary, alternate: false, lift: 0.72 },
+  ];
+  const waypoint = route[stage];
+  const base = plantTargetPosition(fish, waypoint.plant, state, {
+    alternateSide: waypoint.alternate,
+  });
+  const asymmetry = sampleSigned(pairSeed, 8170 + stage) * 0.18;
+  return {
+    ...boundedPlantPoint(fish, state, base.x, base.y + waypoint.lift + asymmetry),
+    stage,
+    stageSeconds,
+    plant: waypoint.plant,
   };
 }
 
@@ -570,34 +680,37 @@ export function resolveActivityTarget(fish, index, state, activity, {
     if (!state.reaction) return null;
     const away = safeNormalize(fish.x - state.reaction.x, fish.y - state.reaction.y, fish.vx < 0 ? -1 : 1, 0);
     const standoff = 0.2 + (1 - affinities.glass) * 0.82;
-    return {
+    return choreographed(activity.current, {
       x: state.reaction.x + away.x * standoff,
       y: state.reaction.y + away.y * standoff,
       speed: 0.56 + affinities.glass * 0.25,
       postureBias: 0,
       touchReact: true,
-    };
+      choreographyPhase: "approach",
+    });
   }
   if (activity.current === ACTIVITIES.wander) {
     if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
-    return {
+    return choreographed(activity.current, {
       x: activity.targetX,
       y: activity.targetY,
       speed: 0.27 + traits.curiosity * 0.24 + affinities.wander * 0.08,
       postureBias: 0,
-    };
+      choreographyPhase: "travel",
+    });
   }
   // Joining the aquarium is just swimming: ordinary pitch, turn, and body
   // deformation carry it. No text, no marker, no cinematic.
   if (activity.current === ACTIVITIES.arrivalEnter) {
     if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
-    return {
+    return choreographed(activity.current, {
       x: activity.targetX,
       y: activity.targetY,
       speed: 0.3 + traits.activity * 0.16,
       postureBias: 0,
       arrivalEntry: true,
-    };
+      choreographyPhase: "enter",
+    });
   }
   if (activity.current === ACTIVITIES.plantInvestigate
     || activity.current === ACTIVITIES.plantShelter
@@ -605,64 +718,192 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const primary = findPlant(state, activity.targetId);
     const shelter = activity.current === ACTIVITIES.plantShelter;
     if (!primary || !suitablePlant(primary, { shelter })) return null;
-    let targetPlant = primary;
-    let alternateSide = false;
-    if (activity.current === ACTIVITIES.plantWeave && activity.ageRealSeconds > 6.4) {
-      targetPlant = secondWeavePlant(fish, primary, state);
-      if (!targetPlant) return null;
-      alternateSide = true;
-    }
-    const point = plantTargetPosition(fish, targetPlant, state, { shelter, alternateSide });
     const cautious = 0.7 + traits.boldness * 0.3;
-    return {
-      x: point.x,
-      y: point.y,
-      speed: shelter
-        ? 0.075 + traits.activity * 0.055
-        : (0.18 + traits.curiosity * 0.16) * cautious,
-      postureBias: shelter ? 0 : 0,
+    if (activity.current === ACTIVITIES.plantInvestigate) {
+      const point = inspectionPoint(fish, primary, state, activity);
+      const inspecting = point.phase === "inspect";
+      return choreographed(activity.current, {
+        x: point.x,
+        y: point.y,
+        speed: inspecting
+          ? (0.12 + traits.curiosity * 0.08 + affinities.plant * 0.035) * cautious
+          : (0.26 + traits.curiosity * 0.18) * cautious,
+        postureBias: 0,
+        plantTarget: true,
+        choreographyPhase: point.phase,
+      }, inspecting ? {
+        approachRadius: 0.72,
+        arrivalSpeedScale: 0.42,
+        accelerationResponse: 1.55,
+        turningResponse: 2.25,
+      } : {});
+    }
+
+    if (activity.current === ACTIVITIES.plantWeave) {
+      const point = weavePoint(fish, primary, state, activity);
+      return choreographed(activity.current, {
+        x: point.x,
+        y: point.y,
+        speed: (0.4 + traits.activity * 0.15 + affinities.plant * 0.04) * cautious,
+        postureBias: 0,
+        plantTarget: true,
+        weaveStage: point.stage,
+        choreographyPhase: `weave-${point.stage + 1}`,
+      });
+    }
+
+    const point = plantTargetPosition(fish, primary, state, { shelter: true });
+    const distance = Math.hypot(point.x - fish.x, point.y - fish.y);
+    const settled = distance < 1.15;
+    const driftPhase = activity.ageRealSeconds * 0.52 + sampleRange(fish.seed, 8180, 0, TAU);
+    const restingPoint = settled
+      ? boundedPlantPoint(
+        fish,
+        state,
+        point.x + Math.sin(driftPhase) * 0.1,
+        point.y + Math.sin(driftPhase * 0.71) * 0.07,
+      )
+      : point;
+    return choreographed(activity.current, {
+      x: restingPoint.x,
+      y: restingPoint.y,
+      speed: settled ? 0.032 + traits.activity * 0.025 : 0.15 + traits.activity * 0.09,
+      postureBias: 0,
       plantTarget: true,
-    };
+      choreographyPhase: settled ? "shelter" : "settle",
+    }, settled ? {} : {
+      accelerationResponse: 1,
+      turningResponse: 1.05,
+      maximumSpeed: 0.38,
+      verticalSpeedScale: 0.64,
+    });
   }
   if (activity.current === ACTIVITIES.bubbleInvestigate) {
-    const bubble = bubbles.find((record) => record.id === activity.targetId && record.phase === "rise");
+    const bubble = bubbles.find((record) => record.id === activity.targetId
+      && (record.phase === "rise" || record.phase === "pop"));
     if (!bubble || !["stream", "isolated", "touch"].includes(bubble.kind)) return null;
-    const away = safeNormalize(fish.x - bubble.worldX, fish.y - bubble.worldY, fish.vx < 0 ? -1 : 1, 0);
-    const standoff = 0.18 + (1 - traits.boldness) * 0.82;
+    const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(bubble.seed >>> 0, 0x9e3779b1));
+    if (bubble.phase === "pop") {
+      const overshoot = (fish.visual?.targetFacing === -1 ? -1 : 1)
+        * (0.28 + traits.curiosity * 0.22) * (1 - bubble.progress);
+      return choreographed(activity.current, {
+        x: bubble.worldX + overshoot,
+        y: bubble.worldY + 0.28 + bubble.progress * 0.16,
+        speed: 0.07 + traits.curiosity * 0.045,
+        postureBias: -3 * (1 - bubble.progress),
+        bubbleTarget: true,
+        bubblePop: true,
+        choreographyPhase: "pop-search",
+      }, {
+        accelerationResponse: 0.8,
+        turningResponse: 1.15,
+        verticalSpeedScale: 0.72,
+        minimumSpeed: 0.018,
+        maximumSpeed: 0.3,
+        approachRadius: 0.8,
+        arrivalSpeedScale: 0.12,
+        pitchResponse: 3.4,
+        turnDuration: 0.72,
+      });
+    }
+
+    const distance = Math.hypot(bubble.worldX - fish.x, bubble.worldY - fish.y);
+    const acquiring = activity.ageRealSeconds < 0.78;
+    const inspecting = !acquiring && distance < 1.65;
+    const phase = acquiring ? "acquire" : inspecting ? "inspect" : "pursue";
+    const lookAhead = acquiring ? 0.34 : inspecting ? 0.18 : 0.58 + affinities.bubble * 0.42;
+    const stableSide = (sample01(pairSeed, 8190) < 0.5 ? -1 : 1)
+      * sampleRange(pairSeed, 8191, 0.24, 0.52);
+    const inspectClock = activity.ageRealSeconds * sampleRange(pairSeed, 8192, 1.65, 2.2)
+      + sampleRange(pairSeed, 8193, 0, TAU);
+    const curiousLunge = inspecting
+      ? Math.max(0, Math.sin(inspectClock * 0.56)) ** 5
+      : 0;
+    const below = inspecting
+      ? 0.48 - curiousLunge * 0.34 + Math.sin(inspectClock) * 0.22
+      : 0.58 + (1 - traits.boldness) * 0.36;
     const socialProof = nearbyFishCount(state, bubble.worldX, bubble.worldY, 2.8, fish.seed) > 0;
-    return {
-      x: bubble.worldX + away.x * standoff,
-      y: bubble.worldY + away.y * standoff,
-      speed: (0.26 + traits.curiosity * 0.2 + affinities.bubble * 0.08)
-        * (0.72 + traits.boldness * 0.28 + (socialProof ? (1 - traits.boldness) * 0.12 : 0)),
-      postureBias: 0,
+    const enthusiasm = 0.78 + traits.boldness * 0.18
+      + affinities.bubble * 0.16
+      + (socialProof ? (1 - traits.boldness) * 0.1 : 0);
+    const predictedX = bubble.worldX + stableSide
+      + (inspecting ? Math.sin(inspectClock * 1.37) * 0.18 : 0);
+    const predictedY = bubble.worldY - (bubble.speed ?? 0.4) * lookAhead + below;
+    return choreographed(activity.current, {
+      ...boundedPlantPoint(fish, state, predictedX, predictedY),
+      speed: inspecting
+        ? (0.16 + traits.curiosity * 0.08 + curiousLunge * 0.22) * enthusiasm
+        : (acquiring ? 0.5 : 0.63) + traits.curiosity * 0.14 + affinities.bubble * 0.12,
+      postureBias: acquiring ? -4 : inspecting ? -2 : -5,
       bubbleTarget: true,
-    };
+      predictedBubble: true,
+      choreographyPhase: phase,
+    }, inspecting ? {
+      accelerationResponse: 1.9,
+      turningResponse: 2.55,
+      verticalSpeedScale: 1.12,
+      minimumSpeed: 0.045,
+      maximumSpeed: 0.62,
+      approachRadius: 0.9,
+      arrivalSpeedScale: 0.38,
+    } : {});
   }
   if (activity.current === ACTIVITIES.surfaceInvestigate) {
     if (index < 3 || !Number.isFinite(activity.targetX)) return null;
-    const y = surfaceSafeY(fish, state, activity.targetX);
-    const near = Math.abs(fish.y - y) < 1.1;
-    return {
-      x: activity.targetX,
-      y,
-      speed: near ? 0.1 + traits.activity * 0.04 : 0.22 + traits.curiosity * 0.15,
-      postureBias: SURFACE_PITCH_BIAS_DEGREES,
+    const lateralPhase = activity.ageRealSeconds * (0.5 + traits.curiosity * 0.18)
+      + sampleRange(fish.seed, 8200, 0, TAU);
+    const halfWidth = spriteHalfWidth(fish);
+    const x = clamp(
+      activity.targetX + Math.sin(lateralPhase) * (0.75 + affinities.surface * 0.72),
+      halfWidth,
+      state.cols - halfWidth,
+    );
+    const safeY = surfaceSafeY(fish, state, x);
+    const near = Math.abs(fish.y - safeY) < 1.12;
+    const probe = near ? Math.max(0, Math.sin(activity.ageRealSeconds * 2.35
+      + sampleRange(fish.seed, 8201, 0, TAU))) : 0;
+    return choreographed(activity.current, {
+      x,
+      // The steering intent reaches slightly through the meniscus, but the
+      // conservative simulation clamp keeps the body below it. This produces
+      // a visible upward probe without ever allowing surface clipping.
+      y: safeY - probe * (0.24 + affinities.surface * 0.12),
+      speed: near ? 0.11 + traits.activity * 0.055 + probe * 0.04 : 0.39 + traits.curiosity * 0.17,
+      postureBias: near
+        ? SURFACE_PITCH_BIAS_DEGREES - 5 - probe * 7
+        : SURFACE_PITCH_BIAS_DEGREES,
       surfaceInspect: true,
-    };
+      surfaceProbe: probe,
+      choreographyPhase: near ? "probe" : "ascend",
+    }, near ? {
+      accelerationResponse: 1.2,
+      turningResponse: 1.35,
+      verticalSpeedScale: 1.08,
+      maximumSpeed: 0.38,
+      approachRadius: 0.75,
+      arrivalSpeedScale: 0.34,
+    } : {});
   }
   if (activity.current === ACTIVITIES.schoolFollow) {
-    const center = schoolSummary(school, state);
-    const direction = safeNormalize(center.vx, center.vy, sample01(fish.seed, 8510) < 0.5 ? -1 : 1, 0);
-    const trailing = sampleRange(fish.seed, 8511, -1.5, 2.3);
-    const vertical = sampleSigned(fish.seed, 8512) * 1.15;
-    return {
-      x: center.x - direction.x * trailing,
-      y: center.y + vertical,
+    const members = school ?? [];
+    if (!members.length) return null;
+    const memberIndex = Math.floor(sample01(fish.seed, 8510) * members.length) % members.length;
+    const member = members[memberIndex];
+    const direction = safeNormalize(member.vx, member.vy, sample01(fish.seed, 8513) < 0.5 ? -1 : 1, 0);
+    const side = sampleSigned(fish.seed, 8512) * 0.62;
+    const perpendicular = { x: -direction.y, y: direction.x };
+    const trailing = sampleRange(fish.seed, 8511, 1.65, 2.45);
+    return choreographed(activity.current, {
+      x: member.x - direction.x * trailing + perpendicular.x * side,
+      y: member.y - direction.y * trailing + perpendicular.y * side * 0.55,
       speed: 0.28 + traits.sociability * 0.22 + affinities.school * 0.07,
+      velocityX: member.vx * 0.46,
+      velocityY: member.vy * 0.46,
       postureBias: 0,
       schoolTarget: true,
-    };
+      schoolMemberIndex: memberIndex,
+      choreographyPhase: "join",
+    });
   }
   if (activity.current === ACTIVITIES.individualFollow
     || activity.current === ACTIVITIES.companionCruise
@@ -670,68 +911,151 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const companion = findFish(state, activity.targetId, fish.seed);
     if (!companion) return null;
     if (activity.current === ACTIVITIES.playfulChase) {
-      return {
-        x: companion.x + companion.vx * 1.15,
-        y: companion.y + companion.vy * 0.7,
-        speed: clamp(0.45 + traits.activity * 0.22, 0.5, 0.68),
+      const distance = Math.hypot(companion.x - fish.x, companion.y - fish.y);
+      const phase = chasePhase(activity.ageRealSeconds, distance);
+      if (phase === "break") {
+        const glide = safeNormalize(fish.vx, fish.vy, fish.x < state.cols / 2 ? -1 : 1, 0);
+        return choreographed(activity.current, {
+          x: fish.x + glide.x * 2.4,
+          y: fish.y + glide.y * 1.3,
+          speed: 0.18 + traits.activity * 0.08,
+          postureBias: 0,
+          companionTarget: true,
+          playfulChase: true,
+          choreographyPhase: "break",
+        }, {
+          accelerationResponse: 0.85,
+          turningResponse: 0.9,
+          verticalSpeedScale: 0.62,
+          minimumSpeed: 0.045,
+          maximumSpeed: 0.42,
+          approachRadius: 0,
+          arrivalSpeedScale: 1,
+          pitchResponse: 2.8,
+          turnDuration: 0.78,
+        });
+      }
+
+      const toward = safeNormalize(companion.x - fish.x, companion.y - fish.y, fish.vx < 0 ? -1 : 1, 0);
+      const lead = phase === "approach" ? 0.72 : 1.02;
+      const standoff = phase === "approach" ? 0.9 : 1.15;
+      const curve = Math.sin(activity.ageRealSeconds * 1.72
+        + sampleRange(fish.seed, 8520, 0, TAU)) * (phase === "approach" ? 0.2 : 0.42);
+      return choreographed(activity.current, {
+        x: companion.x + companion.vx * lead - toward.x * standoff,
+        y: companion.y + companion.vy * lead - toward.y * standoff + curve,
+        speed: phase === "approach"
+          ? 0.58 + traits.activity * 0.2
+          : 0.75 + traits.activity * 0.2,
         postureBias: 0,
         companionTarget: true,
-      };
+        playfulChase: true,
+        choreographyPhase: phase,
+      });
     }
     const point = companionOffset(fish, companion, activity.current);
-    return {
+    const mutualCompanion = activity.current === ACTIVITIES.companionCruise
+      && companion.activity?.current === ACTIVITIES.companionCruise
+      && companion.activity?.targetId === fish.seed;
+    return choreographed(activity.current, {
       x: point.x,
       y: point.y,
       speed: activity.current === ACTIVITIES.companionCruise
-        ? 0.27 + traits.sociability * 0.18
-        : 0.3 + traits.sociability * 0.2,
+        ? 0.3 + traits.sociability * 0.14
+        : 0.36 + traits.sociability * 0.17,
+      velocityX: companion.vx,
+      velocityY: companion.vy,
       postureBias: 0,
       companionTarget: true,
-    };
+      mutualCompanion,
+      choreographyPhase: activity.current === ACTIVITIES.companionCruise ? "beside" : "trail",
+    }, mutualCompanion ? {
+      velocityMatch: 0.97,
+      accelerationResponse: 0.82,
+      turningResponse: 1,
+    } : {});
   }
   if (activity.current === ACTIVITIES.substrateSearch) {
     if (!forageEligible(index)) return null;
     const forage = forageActivity(fish, index, state);
     const halfWidth = spriteHalfWidth(fish);
     const searchSpan = Math.min(6.8, state.cols * (0.065 + affinities.substrate * 0.055));
-    const searchPhase = (fish.behavior.ageRealSeconds ?? 0) * (0.15 + traits.activity * 0.075)
+    const searchPhase = (activity.ageRealSeconds ?? 0) * (0.13 + traits.activity * 0.065)
       + sampleRange(fish.seed, 25, 0, TAU);
     const patchCenter = state.cols * (
       0.5 + 0.34 * Math.sin(state.elapsedRealSeconds / 97 + sampleRange(fish.seed, 26, 0, TAU))
     );
-    const x = clamp(patchCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
-    const dip = forage.searching ? forage.peck * 0.14 : 0;
-    return {
+    const routeX = clamp(patchCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
+    const descentX = clamp(routeX, fish.x - 2.35, fish.x + 2.35);
+    const recoveryScoot = forage.recovery * forage.scootDirection
+      * (0.52 + affinities.substrate * 0.34);
+    const x = forage.searching
+      ? clamp(routeX + recoveryScoot, halfWidth, state.cols - halfWidth)
+      : descentX;
+    const dip = forage.searching ? forage.peckDisplacement : 0;
+    return choreographed(activity.current, {
       x,
       y: substrateSafeY(fish, state, x) + dip,
       speed: forage.searching
-        ? 0.07 + traits.activity * 0.075 + affinities.substrate * 0.025
-        : 0.23 + traits.activity * 0.22,
-      postureBias: forage.searching ? FORAGE_PITCH_BIAS_DEGREES + forage.peck * 4 : 0,
+        ? 0.105 + traits.activity * 0.075 + affinities.substrate * 0.035
+        : 0.36 + traits.activity * 0.18,
+      postureBias: forage.searching ? FORAGE_PITCH_BIAS_DEGREES + forage.peck * 6 : 0,
       forageSearching: forage.searching,
       peck: forage.peck,
-    };
+      peckDisplacement: forage.peckDisplacement,
+      forageEventSeed: forage.eventSeed,
+      choreographyPhase: forage.searching ? (forage.peck > 0 ? "peck" : "search") : "descend",
+    }, forage.searching ? {
+      accelerationResponse: 1.55,
+      turningResponse: 1.5,
+      verticalSpeedScale: 1.05,
+      minimumSpeed: 0.025,
+      maximumSpeed: 0.34,
+      approachRadius: 0.65,
+      arrivalSpeedScale: 0.42,
+      pitchResponse: 5,
+    } : {});
   }
   if (activity.current === ACTIVITIES.openWaterRest) {
     if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
-    return {
-      x: activity.targetX,
-      y: activity.targetY,
-      speed: 0.085 + traits.activity * 0.06,
+    const distance = Math.hypot(activity.targetX - fish.x, activity.targetY - fish.y);
+    const settled = distance < 1.15;
+    const driftPhase = activity.ageRealSeconds * 0.34 + sampleRange(fish.seed, 8530, 0, TAU);
+    const point = settled
+      ? boundedPlantPoint(
+        fish,
+        state,
+        activity.targetX + Math.sin(driftPhase) * 0.12,
+        activity.targetY + Math.sin(driftPhase * 0.63) * 0.055,
+      )
+      : { x: activity.targetX, y: activity.targetY };
+    return choreographed(activity.current, {
+      x: point.x,
+      y: point.y,
+      speed: settled ? 0.035 + traits.activity * 0.026 : 0.17 + traits.activity * 0.09,
       postureBias: 0,
-    };
+      choreographyPhase: settled ? "drift" : "settle",
+    }, settled ? {} : {
+      accelerationResponse: 0.95,
+      turningResponse: 0.9,
+      verticalSpeedScale: 0.62,
+      maximumSpeed: 0.38,
+      approachRadius: 1.2,
+      arrivalSpeedScale: 0.24,
+    });
   }
 
   // Cruise stays a moving broad behavior, not a waypoint activity.
   const top = surfaceSafeY(fish, state, fish.x);
   const bottom = substrateSafeY(fish, state, fish.x);
   const preferredY = top + Math.max(0, bottom - top) * traits.preferredDepth;
-  return {
+  return choreographed(ACTIVITIES.cruise, {
     x: fish.vx < 0 ? 0 : state.cols,
     y: preferredY + Math.sin(state.elapsedRealSeconds / 33 + sampleRange(fish.seed, 23, 0, TAU)) * 0.8,
     speed: 0.2 + traits.activity * 0.32,
     postureBias: 0,
-  };
+    choreographyPhase: "cruise",
+  });
 }
 
 function naturalCompletion(fish, activity, target, dwell) {
@@ -807,7 +1131,7 @@ export function socialEngagement(fish, state, school = state.school) {
   if ([ACTIVITIES.individualFollow, ACTIVITIES.companionCruise, ACTIVITIES.playfulChase].includes(activity.current)) {
     const companion = findFish(state, activity.targetId, fish.seed);
     if (!companion) return 0;
-    const radius = activity.current === ACTIVITIES.companionCruise ? 3.5 : 4.3;
+    const radius = activity.current === ACTIVITIES.companionCruise ? 5.4 : 4.3;
     return clamp(1 - Math.hypot(fish.x - companion.x, fish.y - companion.y) / radius, 0, 1);
   }
   return 0;
