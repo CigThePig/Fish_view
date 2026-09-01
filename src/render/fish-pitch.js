@@ -32,6 +32,10 @@ const PITCH_POSES = Object.freeze({
     columnRise: Object.freeze([-0.5, -0.27, -0.01, 0.25, 0.5]),
     rowLean: Object.freeze([0.05, 0, -0.05]),
   }),
+  "twin-sail": Object.freeze({
+    columnRise: Object.freeze([-0.72, -0.5, -0.27, -0.03, 0.21, 0.46, 0.72]),
+    rowLean: Object.freeze([0.05, 0, -0.05]),
+  }),
   "box-fin": Object.freeze({
     columnRise: Object.freeze([-0.49, -0.25, 0, 0.25, 0.49]),
     rowLean: Object.freeze([0.05, 0, -0.05]),

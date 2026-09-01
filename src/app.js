@@ -1,5 +1,5 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
-import { render } from "./render/render.js?v=phase3-history-20260831";
+import { render } from "./render/render.js?v=phase4-growth-20260901";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
 import { DEFAULT_SEED } from "./sim/config.js";
@@ -95,6 +95,21 @@ function updateHistoryDiagnostics(state) {
   document.querySelector("#history-output").textContent = lines.join("\n");
 }
 
+// Growth is deliberately illegible inside a session, which makes it exactly the
+// thing a developer cannot check by looking at the tank. Ages, stages, paces and
+// the stage each fish will stop at are therefore readable here and nowhere else.
+function updateGrowthDiagnostics(state) {
+  const lines = historyDiagnostics(state).growth.map((fish, index) => [
+    `${index + 1} / ${fish.seed.toString(16)}`,
+    `${fish.speciesId} ${fish.label}`,
+    `stage ${fish.stageIndex}/${fish.stageCount - 1}`,
+    fish.grown ? `stops here (${fish.terminalStage})` : `grows to ${fish.terminalStage}`,
+    `age ${fish.ageDays.toFixed(1)}d`,
+    fish.nextStageDay === null ? "finished" : `next at ${fish.nextStageDay.toFixed(1)}d`,
+  ].join(" · "));
+  document.querySelector("#growth-output").textContent = lines.join("\n");
+}
+
 function visibleOrientations() {
   return currentMode === "compare" ? ["portrait", "landscape"] : [currentMode];
 }
@@ -146,6 +161,7 @@ function updateMetrics(timestamp) {
     : "0";
   updatePersonalityDiagnostics(state);
   updateHistoryDiagnostics(state);
+  updateGrowthDiagnostics(state);
   sampledFrames = 0;
   sampledDamage = 0;
   sampledTotal = 0;

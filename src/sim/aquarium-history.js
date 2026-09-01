@@ -31,8 +31,14 @@
  */
 
 import { RARE_PLANT_IDS } from "../art/plants.js";
-import { clamp, createIndividualFromSeed, individualSeedFor, spriteForSeed } from "./entities.js";
+import { clamp, createIndividualFromSeed, individualSeedFor } from "./entities.js";
 import { ACTIVITIES, createActivityState } from "./fish-activities.js";
+import {
+  fishAgeDays,
+  fishGrowth,
+  fishSpriteWidth,
+  initialFishAgeDays,
+} from "./fish-growth.js";
 import { fishVerticalClearanceRows, substrateSafeY, surfaceSafeY } from "./fish-motion.js";
 import {
   createPlantFromSeed,
@@ -188,9 +194,27 @@ export function migrateContent(totalDays) {
   };
 }
 
-function spriteHalfWidth(seed) {
-  const sprite = spriteForSeed(seed);
-  return Math.max(...sprite.shape.map((row) => [...row].length)) / 2;
+// How old a fish in a save written before growth existed must be today.
+//
+// A fish's age is reconstructable rather than guessable, because every fish in
+// an aquarium got there in one of exactly two ways. The initial cast was
+// created with the aquarium and has been aging ever since, so it is its seeded
+// starting age plus the aquarium's age. An arrival hatched on its own milestone
+// day, which the schedule still knows. Nothing else can be in the roster.
+export function inferredFishAgeDays(aquariumSeed, fishSeed, totalDays) {
+  const days = Number.isFinite(totalDays) ? Math.max(0, totalDays) : 0;
+  const arrival = contentSchedule(aquariumSeed).find((milestone) => (
+    milestone.type === "fish-arrival" && (milestone.fishSeed >>> 0) === (fishSeed >>> 0)
+  ));
+  if (arrival) return Math.max(0, days - arrival.day);
+  return initialFishAgeDays(fishSeed) + days;
+}
+
+// An arrival is a fry, so it is measured as one. Using the adult silhouette
+// here would hold a newly hatched fish several columns off the glass it
+// actually entered through.
+function arrivalHalfWidth(seed) {
+  return fishSpriteWidth({ seed, ageDays: 0 }) / 2;
 }
 
 // --- spacing and composition -------------------------------------------------
@@ -294,14 +318,14 @@ export function arrivalPlacement(state, milestone, seed) {
   // Deliberately posed against a still surface: an arrival's entry pose must
   // not depend on how many real seconds the app happened to have been running.
   const world = { seed: state.seed, cols, rows, elapsedRealSeconds: 0 };
-  const fish = { seed };
+  const fish = { seed, ageDays: 0 };
   const event = milestone.eventSeed;
   // The entry side alternates strictly by ordinal from one seeded choice made
   // for the aquarium as a whole. Deriving it per event instead would let both
   // arrivals pick the same edge, which matters when a migration or a very large
   // accelerated jump resolves them in the same instant.
   const side = (sample01(state.seed, 3401) < 0.5 ? -1 : 1) * (milestone.ordinal % 2 === 0 ? 1 : -1);
-  const halfWidth = spriteHalfWidth(seed);
+  const halfWidth = arrivalHalfWidth(seed);
   const x = clamp(
     side < 0 ? halfWidth + 0.25 : cols - halfWidth - 0.25,
     halfWidth,
@@ -342,6 +366,11 @@ function resolveFishArrival(context, milestone) {
   context.individuals = [
     ...context.individuals,
     createIndividualFromSeed(seed, index, context.cols, context.rows, {
+      // An arrival is a hatchling, not a full-grown fish dropped into the tank.
+      // It enters at the size of the school it swims through and becomes its own
+      // species over the following months, which is the whole point of the
+      // event: the aquarium gained something that is still going to change.
+      ageDays: 0,
       x: placement.x,
       y: placement.y,
       vx: placement.vx,
@@ -463,6 +492,15 @@ function agePlants(plants, days) {
   return plants.map((plant) => ({ ...plant, ageDays: plant.ageDays + days }));
 }
 
+// A fish ages on exactly the same clock as a plant, and for the same reason: a
+// week passes while the device is off whether or not anything was watching.
+// Growth itself is derived from this age, so nothing about which stage a fish
+// has reached is stored, replayed, or able to drift between two devices.
+function ageIndividuals(individuals, days) {
+  if (days <= 0) return individuals;
+  return individuals.map((fish) => ({ ...fish, ageDays: fishAgeDays(fish) + days }));
+}
+
 function historyBoundaries(state, content, fromDay, toDay) {
   const schedule = contentSchedule(state.seed);
   const boundaries = [];
@@ -517,6 +555,7 @@ export function advanceAquariumHistory(state, deltaDays) {
       ...state,
       totalDays: toDay,
       plants: agePlants(state.plants, days),
+      individuals: ageIndividuals(state.individuals, days),
       content,
     };
   }
@@ -541,6 +580,10 @@ export function advanceAquariumHistory(state, deltaDays) {
     const step = boundary.day - cursorDay;
     if (step > 0) {
       context.plants = agePlants(context.plants, step);
+      // Carried to the boundary before it is evaluated, exactly like plant age:
+      // a fish that arrives at day 50 inside a jump to day 180 is a hundred and
+      // thirty days old at the end of it, not newly hatched.
+      context.individuals = ageIndividuals(context.individuals, step);
       cursorDay = boundary.day;
     }
     if (boundary.milestone) {
@@ -558,7 +601,7 @@ export function advanceAquariumHistory(state, deltaDays) {
     ...state,
     totalDays: toDay,
     plants: remainder > 0 ? agePlants(context.plants, remainder) : context.plants,
-    individuals: context.individuals,
+    individuals: remainder > 0 ? ageIndividuals(context.individuals, remainder) : context.individuals,
     content: {
       version: CONTENT_VERSION,
       propagationEpoch: safeEpoch(Math.max(propagationEpoch, Math.floor(toDay / PROPAGATION_EPOCH_DAYS))),
@@ -586,6 +629,20 @@ export function historyDiagnostics(state) {
     })(),
     individualCount: state.individuals.length,
     individualCap: MAX_INDIVIDUALS,
+    growth: state.individuals.map((fish) => {
+      const growth = fishGrowth(fish);
+      return {
+        seed: fish.seed >>> 0,
+        speciesId: growth.sprite.speciesId ?? growth.sprite.id,
+        label: growth.label,
+        stageIndex: growth.stageIndex,
+        terminalStage: growth.terminalStage,
+        stageCount: growth.stageCount,
+        ageDays: growth.ageDays,
+        nextStageDay: growth.nextStageDay,
+        grown: growth.grown,
+      };
+    }),
     arrivedSeeds: state.individuals
       .filter((fish) => !baseSeeds.has(fish.seed >>> 0))
       .map((fish) => fish.seed >>> 0),

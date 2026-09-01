@@ -1,5 +1,5 @@
-import { individualSprites } from "../art/sprites.js";
 import { MIN_BEHAVIOR_REAL_SECONDS, SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
+import { initialFishAgeDays, speciesForSeed } from "./fish-growth.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 export function clamp(value, minimum, maximum) {
@@ -16,8 +16,12 @@ export function traitsFromSeed(seed, history = { boldnessDrift: 0, sociabilityDr
   });
 }
 
+// The fish's species, which is also the artwork it is drawn from once it has
+// finished growing. Anything measuring or drawing a *live* fish wants
+// spriteForFish() instead: until then the fish is at one of its earlier growth
+// stages and is smaller than this.
 export function spriteForSeed(seed) {
-  return individualSprites[seed % individualSprites.length];
+  return speciesForSeed(seed);
 }
 
 export function createSchoolFish(baseSeed, index, cols, rows) {
@@ -52,6 +56,9 @@ export function createIndividual(baseSeed, index, cols, rows) {
 // so an arrival is an ordinary persistent individual from its first frame.
 export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {}) {
   const seed = rawSeed >>> 0;
+  // Vertical placement is measured against the fish this individual will grow
+  // into, so a fry does not drift out of the band its adult form belongs to as
+  // it develops.
   const sprite = spriteForSeed(seed);
   const height = sprite.shape.length;
   const waterBottom = rows - SUBSTRATE_ROWS;
@@ -66,6 +73,9 @@ export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {
 
   return {
     seed,
+    // Aquarium days lived, not days since the app was installed. Growth reads
+    // it, the shared history resolver advances it, and persistence keeps it.
+    ageDays: Number.isFinite(options.ageDays) ? Math.max(0, options.ageDays) : initialFishAgeDays(seed),
     x: Number.isFinite(options.x) ? options.x : sampleRange(seed, 8, 4, Math.max(5, cols - 5)),
     y: Number.isFinite(options.y) ? options.y : y,
     vx,

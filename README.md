@@ -690,7 +690,7 @@ array grows with aquarium age.
 
 ### Phase 3 test coverage
 
-`npm test` runs 194 tests. The 46 added by Phase 3 live in
+`npm test` runs 216 tests. The 46 added by Phase 3 live in
 `tests/phase3-timeline.test.js`, `tests/phase3-arrivals.test.js`,
 `tests/phase3-plants.test.js`, `tests/phase3-persistence.test.js`, and
 `tests/phase3-mature-render.test.js`, and cover schedule determinism across 80
@@ -703,6 +703,199 @@ seedling and bloom novelty, dynamic and corrupt plant persistence, Phase 2 save
 migration, offline catch-up, and mature maximum-population rendering. The
 existing multi-month accelerated determinism tests are retained and extended
 with Phase 3 assertions rather than weakened.
+
+## Phase 4 fish growth
+
+Phase 3 gave the aquarium a history made of arrivals and vegetation. Phase 4
+gives it to the cast: a fish is hatched as a speck, develops fins over a
+season, and stops growing somewhere its own seed decided. Nothing about it is a
+score, a level, or a reward. A fish is larger because it is older, there is no
+way to make it grow faster, and the only way to see any of it is to keep the
+aquarium.
+
+Growth is deliberately illegible inside a single sitting. It is the same
+contract the plants already make - the tank looks the same this evening as it
+did this morning, and different from how it looked last month.
+
+### A fish now stores its age
+
+`ageDays` is the one field added to an individual, and it is the only thing
+about growth that is ever written to disk. Everything else - the fish's pace,
+the day each of its stages opens, and the stage it will stop at forever - is
+derived in `src/sim/fish-growth.js` from the seed that already decides its
+traits, affinities, colours, and species. This is the same rule Phase 2
+established for personality: *store identity and learned history, derive fixed
+characteristics.*
+
+Age advances on the aquarium clock, inside the shared long-horizon resolver,
+one line away from the plants:
+
+```text
+advanceAquariumHistory(state, deltaDays)
+  -> plants aged, fish aged, boundaries resolved, cursor updated
+```
+
+That placement is the whole of the offline story. A week passes while the
+device is off whether or not anything was watching, so `tick()` and
+`advanceOffline()` grow fish identically, a month away costs nothing, and
+reaching day 300 in one step, sixty steps, or three hundred steps produces the
+same fish at the same stages. Ages are carried to each event boundary before
+that boundary is evaluated, exactly as plant ages are, so a fish that arrives
+on day 50 inside a jump to day 180 ends that jump a hundred and thirty days
+old rather than newly hatched.
+
+Growth is *not* subject to `MAX_DRIVE_HOURS_PER_REAL_SECOND`. That cap exists
+because answering hunger is a swim rather than a calculation; getting older is
+not something a fish has to find time to do.
+
+### The growth ladder
+
+`src/art/sprites.js` holds one ordered stage list per species, youngest first.
+Most species begin at the shared fry forms the school is drawn from - `·`,
+`>>`, `><>` - and then develop their own anatomy:
+
+```text
+double-fin   ><>  →  young-juvenile  →  juvenile  →  subadult  →  max
+twin-sail    ><>  →  young-juvenile  →  juvenile  →  subadult  →  max
+round-fin    ><>  →  young-juvenile  →  juvenile  →  subadult  →  max
+single-fin   ><>  →  young-juvenile  →  juvenile  →  max
+comma-tail   ·  →  >>  →  ><>  →  juvenile  →  max
+tiny-dart    ·  →  >>  →  ><>  →  juvenile  →  max
+box-fin      <o>  →  juvenile  →  max
+```
+
+**The last stage of every list is the adult sprite object itself, not a copy of
+it.** A fully grown aquarium is therefore drawn from exactly the artwork it was
+drawn from before growth existed, and the renderer's per-id sprite point cache,
+body box, authored pitch pose, and tuned body profile all still resolve against
+the sprite they were calibrated against. An eighth-cell width limit, mask
+dimensions, and glyph-aware mirroring hold for every stage, not only the adults.
+
+Mask digits stay on the same anatomy from stage to stage (1/2/3 fins, 4 eye,
+5 mouth, 6 tail, 7 body), so a fish keeps its seeded colours as it grows
+instead of being recoloured every time it develops a fin.
+
+The smallest stages are marked `body: false` and carry no opaque body underlay.
+A speck has no silhouette to make opaque, and a solid slab behind three
+characters reads as a rendering fault rather than as a young fish, so a fry is
+drawn as open ink exactly like the school it is the size of. The nine-rectangle
+body ceiling is unchanged for everything that does have a body.
+
+### Pace
+
+A stage takes a week or more. `MINIMUM_STAGE_DAYS = 7` is a floor rather than a
+target: a seeded per-fish pace spreads one stage over roughly one to three and
+a half weeks, so two fish of the same species hatched on the same day reach the
+same fin at different times, and a five-stage species takes between about a
+month and three months to finish. A fish cannot be watched changing.
+
+### Not every fry becomes an adult
+
+A seeded terminal stage stops roughly two fish in five permanently short of
+their species' maximum, and the aquarium never revisits that decision - ten
+simulated years later the fish is exactly where it stopped. This is what keeps
+a mature tank a population of different sizes instead of eight identical
+silhouettes, and it is why growth cannot be read as progress: there is nothing
+to complete, and a fish that stops early is simply a small fish. Nothing in the
+aquarium treats it as stunted, unwell, or failed.
+
+The shared fry forms are excluded from that choice. A permanent speck would
+read as a rendering fault, so every species develops recognisable anatomy
+before its first stoppable stage.
+
+### Day one is still an aquarium
+
+An aquarium is handed over as an established tank rather than as six eggs. A
+starting age is a seeded fraction of the fish's own growth span, so about four
+in five of the initial cast are already finished growing, roughly one fish in
+ten starts as a fry, and about half of aquariums have a visibly young fish on
+the first day. Phase 3's two arrivals hatch at `ageDays = 0` and grow up inside
+the tank, which is the point of the event: the aquarium gained something that
+is still going to change.
+
+### The seventh species
+
+`twin-sail` is drawn for Fish View in the same eight-cell vocabulary rather
+than lifted from asciiquarium, and is appended last so every existing sprite
+keeps its roster index, its authored body profile, and its pitch pose. It has
+its own body profile and pitch pose and passes the same body-registration,
+taper, open-tail, and mirroring regressions as the original six.
+
+Species selection is still `individualSprites[seed % individualSprites.length]`,
+so a seven-species roster changes which species a given aquarium seed draws.
+A fish's identity is untouched - same seed, traits, affinities, memories,
+relationships, position, and saved history - but an existing aquarium may find
+one of its fish now wears different artwork. Species has never been persisted
+and is always derived, so no save is invalidated by this.
+
+### What growth touches elsewhere
+
+Everything that asks how big a fish is now asks the stage it has grown to
+rather than the species adult: vertical clearance and the substrate/surface
+envelope, the tank-edge margin in `tick`, exhale placement, activity geometry,
+and the renderer. A fry legitimately fits closer to the substrate and the
+surface than the adult it becomes, and an arrival is placed at the glass with a
+fry's half-width instead of hovering three columns off it.
+
+Nothing else changes. Behaviour, activity selection, foraging eligibility, the
+protected mid-water trio, relationship learning, and the eight-fish ceiling are
+all exactly as Phase 3 left them; a small fish is not a different kind of
+character.
+
+### Persistence and migration
+
+Persistence stays at **version 2**. The only addition is `ageDays` on each
+saved individual - no stage, no pace, no terminal stage, and no growth log.
+
+A save written before Phase 4 carries no ages, and they are reconstructed
+rather than reset, because every fish in a roster got there in exactly one of
+two ways: the initial cast was created with the aquarium and has aged ever
+since (its seeded starting age plus the aquarium's age), and an arrival hatched
+on its own milestone day, which the deterministic schedule still knows. A
+long-lived Phase 3 aquarium therefore comes back with the grown fish it earned
+rather than a tank of newborns. A non-finite, negative, or non-numeric age is
+clamped like every other restored field.
+
+### Phase 4 performance
+
+`tools/measure-phase4.mjs` reproduces the scenarios against any supplied tree,
+so `main` and this branch are directly comparable: 200 frames at 10 fps, seeds
+5/83/147, after a 40-frame settle, at three aquarium ages.
+
+| Orientation / age | Fish | `main` avg | Phase 4 avg | `main` max | Phase 4 max | Full redraws | Fish glyphs (main → Phase 4) | Max body fill |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Landscape day 0 | 6 | 28.13% | 25.29% | 58.16% | 59.28% | 0 | 75.0 → 61.0 | 9 |
+| Landscape day 120 | 8 | 49.79% | 47.91% | 92.29% | 92.29% | 0 | 98.3 → 90.3 | 9 |
+| Landscape day 420 | 8 | 51.97% | 50.09% | 92.50% | 92.50% | 0 | 98.3 → 91.0 | 9 |
+| Portrait day 0 | 6 | 34.43% | 27.02% | 94.50% | 67.75% | 0 | 75.0 → 61.0 | 9 |
+| Portrait day 120 | 8 | 72.09% | 70.89% | 96.00% | 96.00% | 0 | 98.3 → 90.3 | 9 |
+| Portrait day 420 | 8 | 74.48% | 74.17% | 96.00% | 96.00% | 0 | 98.3 → 91.0 | 9 |
+
+Growth cannot cost more than `main`, and the reason is structural rather than
+lucky: a stage is never larger than the adult that used to be drawn, so a fully
+grown aquarium is at worst identical and is in practice slightly cheaper
+because some fish stop short of maximum. A young aquarium is cheaper still. No
+full-frame redraw is requested in any of the 3,600 measured transitions and the
+maximum individual body fill stays at exactly nine rectangles.
+
+Per-frame bookkeeping is a comparison against the fish's own stage thresholds.
+The derived plan is memoized against a sixteen-entry cache - twice the roster
+ceiling - which is cleared wholesale rather than evicted entry by entry, so no
+Phase 4 structure grows with aquarium age.
+
+### Phase 4 test coverage
+
+The 22 tests in `tests/phase4-growth.test.js` cover stage ordering and adult
+identity, stage mirroring, mask dimensions and the eight-cell limit, the
+one-week floor and pace variation, the terminal-stage distribution and its
+permanence, monotonic stage progression, day-one population shape, aging in
+step with plants, step-size invariance across 300 days, offline/accelerated
+equivalence, arrivals hatching as fry and growing up, fry clearance and tank
+bounds, stage-accurate rendering with no body under a fry, a growing fish
+repainting only itself, exact save round-tripping, pre-growth save migration,
+age reconstruction for both ways a fish can be in the roster, corrupt-age
+safety, and the save staying one number per fish. The existing Phase 1-3
+suites are retained unchanged.
 
 ## Skeletal plants and ESP32 portability
 
@@ -821,7 +1014,8 @@ turning plant motion into full-frame redraws.
 ```text
 src/art/       extracted art data and glyph-aware mirroring
 src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose,
-               and the shared long-horizon aquarium-history resolver
+               derived fish growth, and the shared long-horizon
+               aquarium-history resolver
 src/render/    scene composition, depth lanes, plant glyph mapping, palette,
                font, damage
 src/platform/  browser-only persistence adapter
@@ -831,5 +1025,7 @@ tests/         deterministic simulation, art, persistence, and renderer checks
 ## Artwork and license
 
 Fish artwork comes from `asciiquarium` 1.1 by Kirk Baucom, with most ASCII art
-credited to Joan Stark. See `THIRD_PARTY_NOTICES.md`. This repository is
-licensed under GPL v2 or later; see `LICENSE`.
+credited to Joan Stark. The `twin-sail` species and every pre-adult growth
+stage were drawn for Fish View in the same eight-cell vocabulary. See
+`THIRD_PARTY_NOTICES.md`. This repository is licensed under GPL v2 or later;
+see `LICENSE`.

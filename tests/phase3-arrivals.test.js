@@ -10,7 +10,8 @@ import {
   contentSchedule,
 } from "../src/sim/aquarium-history.js";
 import { WATERLINE_ROWS } from "../src/sim/config.js";
-import { individualSeedFor, spriteForSeed, traitsFromSeed } from "../src/sim/entities.js";
+import { individualSeedFor, traitsFromSeed } from "../src/sim/entities.js";
+import { fishSpriteWidth } from "../src/sim/fish-growth.js";
 import {
   ACTIVITIES,
   activityUtilities,
@@ -40,9 +41,10 @@ function atDay(day, { orientation = "landscape", seed = SEED } = {}) {
   return advanceAquariumHistory(createAquariumState({ orientation, seed }), day);
 }
 
-function halfWidth(seed) {
-  const sprite = spriteForSeed(seed);
-  return Math.max(...sprite.shape.map((row) => [...row].length)) / 2;
+// An arrival hatches as a fry, so it is bounded by the artwork it is drawn
+// from now rather than by the adult it grows into.
+function halfWidth(fish) {
+  return fishSpriteWidth(fish) / 2;
 }
 
 test("the aquarium grows from six to eight persistent fish and stops", () => {
@@ -100,7 +102,7 @@ test("arrivals enter from a safe water edge with inward velocity", () => {
       for (let ordinal = 0; ordinal < schedule.length; ordinal += 1) {
         const state = atDay(schedule[ordinal].day + 0.01, { orientation, seed });
         const fish = state.individuals.at(-1);
-        const width = halfWidth(fish.seed);
+        const width = halfWidth(fish);
         assert.equal(fish.seed, schedule[ordinal].fishSeed);
         assert.ok(fish.x >= width - 1e-9 && fish.x <= state.cols - width + 1e-9, "arrival spawned out of bounds");
         // Near an edge, not popped into the middle of the tank.

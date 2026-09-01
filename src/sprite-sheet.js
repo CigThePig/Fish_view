@@ -2,9 +2,9 @@ import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-
 import {
   applyBodyProfileToSpriteScene,
   bodyProfileForSprite,
-} from "./render/body-profile-lab.js?v=phase1-pitch-20260830";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=phase1-pitch-20260830";
-import { spriteDimensions } from "./art/sprites.js";
+} from "./render/body-profile-lab.js?v=phase4-growth-20260901";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=phase4-growth-20260901";
+import { growthStagesFor, spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
 const UPDATE_INTERVAL_MS = 100;
@@ -148,7 +148,22 @@ individualSprites.forEach((sprite) => {
     views.push({ ...view, ...definition, sprite });
   });
 
-  card.append(heading, meta, row);
+  // Growth strip: the same fish at every age it can be, youngest first. The
+  // last frame is the adult drawn above it, not a copy of it.
+  const growthNote = document.createElement("p");
+  growthNote.className = "sprite-meta";
+  const stages = growthStagesFor(sprite.id);
+  growthNote.textContent = "Growth · " + stages.length + " stages · "
+    + stages.map((stage) => stage.label ?? "max").join(" → ");
+  const growthRow = document.createElement("div");
+  growthRow.className = "sprite-growth";
+  stages.forEach((stage, index) => {
+    const view = makeFigure((index + 1) + ". " + (stage.label ?? "max"));
+    growthRow.append(view.figure);
+    views.push({ ...view, sprite: stage, facing: "right", staticPose: false });
+  });
+
+  card.append(heading, meta, row, growthNote, growthRow);
   cards.set(sprite.id, card);
   container.append(card);
 });
@@ -310,7 +325,11 @@ function renderAll() {
       pitch,
       turnScale,
     });
-    applyBodyProfileToSpriteScene(scene, view.sprite, profileState.get(view.sprite.id), {
+    // A growth stage has no profile of its own: the tunable profiles are
+    // authored against the adult artwork, and the earlier stages fall back to
+    // whatever the shared body geometry derives for them.
+    const profile = profileState.get(view.sprite.id) ?? bodyProfileForSprite(view.sprite);
+    applyBodyProfileToSpriteScene(scene, view.sprite, profile, {
       facing: view.facing,
       phase,
       deformationStrength,
