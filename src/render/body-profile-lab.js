@@ -2,8 +2,8 @@ import { normalizeRows } from "../art/mirror.js";
 import { spriteDimensions } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { glyphPixels } from "./bitmap-font.js";
-import { pitchCoordinate } from "./fish-pitch.js?v=phase1-pitch-20260830";
-import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
+import { pitchCoordinate } from "./fish-pitch.js?v=phase4-growth-20260901";
+import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=phase4-growth-20260901";
 import { glyphBounds } from "./scene.js?v=opaque-bodies-20260830";
 
 const BODY_SPANS = 9;

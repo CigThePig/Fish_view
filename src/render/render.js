@@ -17,14 +17,14 @@ import {
   surfaceWaveOffset,
   surfaceWaveSlope,
 } from "../sim/environment.js";
-import { spriteForSeed } from "../sim/entities.js";
+import { spriteForFish } from "../sim/fish-growth.js";
 import { forageActivity } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
-import { pitchCoordinate } from "./fish-pitch.js?v=phase1-pitch-20260830";
+import { pitchCoordinate } from "./fish-pitch.js?v=phase4-growth-20260901";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
-import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=final-body-profiles-20260830";
+import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=phase4-growth-20260901";
 import {
   depthScale,
   laneForDepth,
@@ -870,7 +870,13 @@ function bodyFill(sprite, metrics, {
   scale = 1,
 }) {
   const source = spritePoints(sprite);
+  // The earliest growth stages are a speck, a pair of chevrons, three
+  // characters. There is no silhouette there to make opaque, and a solid slab
+  // behind three glyphs reads as a rendering fault rather than as a young fish,
+  // so a fry is drawn as open ink exactly like the school it is the size of.
+  if (sprite.body === false) return [];
   const box = spriteBodyBox(sprite);
+  if (!Number.isFinite(box.radiusX) || !Number.isFinite(box.radiusY)) return [];
   const profile = BODY_PROFILES[sprite.id] ?? DEFAULT_BODY_PROFILE;
   const centerColumn = (source.width - 1) / 2 + box.offsetX + profile.offsetX;
   const centerRow = (source.height - 1) / 2 + box.offsetY + profile.offsetY;
@@ -995,7 +1001,9 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
   lane = null,
   scale = 1,
 } = {}) {
-  const sprite = spriteForSeed(fish.seed);
+  // The stage the fish has grown to, which is the species adult only once it
+  // has finished growing.
+  const sprite = spriteForFish(fish);
   const turning = turnPose(fish);
   const masks = lane === null ? palette.masks : palette.depthLanes[lane].masks;
   const frequency = sampleRange(fish.seed, 100, 0.55, 0.78) * (0.64 + palette.daylight * 0.36);
@@ -1224,7 +1232,11 @@ export function renderSpriteScene(sprite, {
     pitch,
     cellAspect,
   });
-  const spriteSeed = individualSprites.indexOf(sprite) + 1;
+  // A growth stage is coloured as the species it belongs to, so a lab strip
+  // reads as one fish getting older rather than as five differently tinted fish.
+  const spriteSeed = individualSprites.findIndex(
+    (candidate) => candidate.id === (sprite.speciesId ?? sprite.id),
+  ) + 1;
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: logicalWidth / 2 + point.x,

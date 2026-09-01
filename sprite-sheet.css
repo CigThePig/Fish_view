@@ -244,6 +244,17 @@
   gap: 0.8rem;
 }
 
+.sprite-growth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.8rem;
+}
+
+.sprite-growth .sprite-facing {
+  flex: 0 1 auto;
+}
+
 .sprite-facing {
   min-width: 0;
   margin: 0;

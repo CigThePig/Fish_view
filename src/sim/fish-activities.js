@@ -1,6 +1,7 @@
 import { WATERLINE_ROWS } from "./config.js";
-import { clamp, spriteForSeed, traitsFromSeed } from "./entities.js";
+import { clamp, traitsFromSeed } from "./entities.js";
 import { plantRootY } from "./environment.js";
+import { fishSpriteWidth } from "./fish-growth.js";
 import {
   FORAGE_PITCH_BIAS_DEGREES,
   SURFACE_PITCH_BIAS_DEGREES,
@@ -100,8 +101,7 @@ function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
 }
 
 function spriteHalfWidth(fish) {
-  const sprite = spriteForSeed(fish.seed);
-  return Math.max(...sprite.shape.map((row) => [...row].length)) / 2;
+  return fishSpriteWidth(fish) / 2;
 }
 
 function activitySalt(activity) {

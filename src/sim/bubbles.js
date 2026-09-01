@@ -1,6 +1,6 @@
 import { scatteredDepth, spreadDepth } from "./depth.js";
 import { SURFACE_Y_ROWS, substrateSurfaceY } from "./environment.js";
-import { spriteForSeed } from "./entities.js";
+import { fishSpriteWidth } from "./fish-growth.js";
 import { environmentalCurrent } from "./plants.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
@@ -227,11 +227,6 @@ function isolatedBubbleRecords(state) {
   return records;
 }
 
-function spriteWidthForFish(fish) {
-  const sprite = spriteForSeed(fish.seed);
-  return Math.max(...sprite.shape.map((row) => [...row].length));
-}
-
 function fishExhaleRecords(state) {
   const records = [];
   const count = state.individuals?.length ?? 0;
@@ -248,7 +243,7 @@ function fishExhaleRecords(state) {
     const facing = fish.visual?.targetFacing === -1 || fish.visual?.targetFacing === 1
       ? fish.visual.targetFacing
       : fish.vx < 0 ? -1 : 1;
-    const mouthOffset = clamp(spriteWidthForFish(fish) * 0.36, 1.2, 3.4);
+    const mouthOffset = clamp(fishSpriteWidth(fish) * 0.36, 1.2, 3.4);
     const current = environmentalCurrent(state.seed, state.elapsedRealSeconds);
     const worldX = clamp(
       fish.x + facing * mouthOffset

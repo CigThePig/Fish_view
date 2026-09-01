@@ -44,6 +44,14 @@ const expectedProfiles = Object.freeze({
     rearShoulder: 0.6,
     frontShoulder: 0.5,
   }),
+  "twin-sail": Object.freeze({
+    offsetX: -0.45,
+    offsetY: 0,
+    radiusXScale: 1.05,
+    radiusYScale: 0.95,
+    rearShoulder: 1.1,
+    frontShoulder: 0.7,
+  }),
   "box-fin": Object.freeze({
     offsetX: -0.51,
     offsetY: 0,

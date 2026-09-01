@@ -4,7 +4,7 @@ import {
   CELL_WIDTH,
   INDIVIDUAL_VISUAL_SCALE_MAX,
 } from "./config.js";
-import { spriteForSeed } from "./entities.js";
+import { spriteForFish } from "./fish-growth.js";
 import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
 import { sampleRange } from "./prng.js";
@@ -28,7 +28,10 @@ function positiveModulo(value, modulus) {
 
 function spriteFor(value) {
   if (value?.shape) return value;
-  return spriteForSeed(value?.seed ?? 0);
+  // A growing fish is measured at the size it is now, not at the size it will
+  // eventually be: a fry legitimately fits closer to the substrate and the
+  // surface than the adult it becomes.
+  return spriteForFish(value ?? { seed: 0 });
 }
 
 // Simulation clearance is deliberately conservative. A fish can be enlarged by

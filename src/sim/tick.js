@@ -8,7 +8,8 @@ import {
   WATERLINE_ROWS,
 } from "./config.js";
 import { advanceAquariumHistory } from "./aquarium-history.js";
-import { clamp, createSchoolFish, spriteForSeed, traitsFromSeed } from "./entities.js";
+import { clamp, createSchoolFish, traitsFromSeed } from "./entities.js";
+import { fishSpriteWidth } from "./fish-growth.js";
 import { createBubbleWorldRecords } from "./bubbles.js";
 import {
   BEHAVIORS,
@@ -344,9 +345,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   vx = limited.vx;
   vy = limited.vy;
 
-  const sprite = spriteForSeed(fish.seed);
-  const width = Math.max(...sprite.shape.map((row) => [...row].length));
-  const halfWidth = width / 2;
+  const halfWidth = fishSpriteWidth(fish) / 2;
   let x = fish.x + vx * realDelta;
   let y = fish.y + vy * realDelta;
 

@@ -2,6 +2,7 @@ import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import {
   advanceAquariumHistory,
   createContentState,
+  inferredFishAgeDays,
   sanitizeContent,
 } from "./aquarium-history.js";
 import { DEFAULT_SEED, DEFAULT_SETTINGS, DRIVE_MAXIMUM, DRIVE_MINIMUM, orientationConfig } from "./config.js";
@@ -157,6 +158,10 @@ export function serializePersistentState(state) {
     settings: { ...state.settings },
     individuals: state.individuals.map((fish) => ({
       seed: fish.seed,
+      // The one biological value growth needs. Which stage that age has reached,
+      // how fast this fish grows, and how far it will ever grow are all derived
+      // from the seed, so none of them is written to disk.
+      ageDays: fish.ageDays,
       x: fish.x,
       y: fish.y,
       vx: fish.vx,
@@ -213,6 +218,9 @@ export function restorePersistentState(baseState, saved) {
   if (saved.seed !== baseState.seed || saved.orientation !== baseState.orientation) return baseState;
   if (!Array.isArray(saved.individuals) || !Array.isArray(saved.plants)) return baseState;
 
+  // Ages are reconstructed against the save's own aquarium age, so read it
+  // before the roster rather than after it.
+  const totalDays = Math.max(0, finite(saved.totalDays, 0));
   const individuals = saved.individuals.slice(0, 8).map((fish, index) => {
     const fallback = baseState.individuals[index % baseState.individuals.length];
     const seed = stableSeed(fish.seed, fallback.seed);
@@ -222,6 +230,11 @@ export function restorePersistentState(baseState, saved) {
       ...fallback,
       ...fish,
       seed,
+      // A save written before growth existed carries no age. It is not lost:
+      // the initial cast has been aging since the aquarium was created and an
+      // arrival since its own milestone day, so the age is reconstructed rather
+      // than reset - an old aquarium comes back with the grown fish it earned.
+      ageDays: Math.max(0, finite(fish.ageDays, inferredFishAgeDays(baseState.seed, seed, totalDays))),
       x: finite(fish.x, fallback.x),
       y: finite(fish.y, fallback.y),
       vx: finite(fish.vx, fallback.vx),
@@ -273,7 +286,6 @@ export function restorePersistentState(baseState, saved) {
   const plants = saved.persistenceVersion === 1
     ? restoreLegacyPlants(baseState, saved)
     : restoreDynamicPlants(baseState, saved);
-  const totalDays = Math.max(0, finite(saved.totalDays, 0));
 
   const restored = {
     ...baseState,
