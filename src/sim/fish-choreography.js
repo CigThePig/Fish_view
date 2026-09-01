@@ -196,6 +196,12 @@ const PROFILE_OVERRIDES = Object.freeze({
   }),
 });
 
+// How opposed a requested heading may be before the turn is committed to a
+// side: just under a straight reversal, so the fish still swings through a wide
+// arc rather than pivoting, but never stalls on the axis.
+const REVERSAL_LIMIT_RADIANS = Math.PI - 0.09;
+const REVERSAL_DOT = Math.cos(REVERSAL_LIMIT_RADIANS);
+
 export const CHASE_RECOGNITION_RADIUS = 4.9;
 export const CHASE_BREAK_SECONDS = 4.8;
 
@@ -208,6 +214,25 @@ function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
 function smoothstep(edge0, edge1, value) {
   const amount = clamp((value - edge0) / Math.max(0.00001, edge1 - edge0), 0, 1);
   return amount * amount * (3 - 2 * amount);
+}
+
+// A componentwise blend cannot cross an exact reversal. With a turn ease below
+// 0.5 the interpolated vector stays on the current side of zero and
+// normalization restores the old heading every frame, so a fish swimming right
+// at a same-height waypoint on its left would hold that heading until a wall
+// flipped it. Capping how opposed the requested heading may be gives the blend
+// a side to fall to: the side the request already leans to, or, for a heading
+// exactly reversed, one picked from the fish so the tank does not pivot in
+// unison. Ordinary corrections are left exactly as they were tuned.
+function turnableDirection(current, desired, seed) {
+  const dot = current.x * desired.x + current.y * desired.y;
+  if (dot > REVERSAL_DOT) return desired;
+  const cross = current.x * desired.y - current.y * desired.x;
+  const side = Math.abs(cross) > 0.00001
+    ? Math.sign(cross)
+    : ((mix32((seed ?? 0) >>> 0) & 1) === 0 ? -1 : 1);
+  const angle = Math.atan2(current.y, current.x) + side * REVERSAL_LIMIT_RADIANS;
+  return { x: Math.cos(angle), y: Math.sin(angle) };
 }
 
 export function choreographyFor(activity, overrides = {}) {
@@ -325,11 +350,12 @@ export function steerActivityVelocity(fish, target, {
   const currentSpeed = Math.hypot(fish.vx, fish.vy);
   const currentDirection = safeNormalize(fish.vx, fish.vy, desiredDirection.x, desiredDirection.y);
   const turnEase = 1 - Math.exp(-delta * turningResponse);
+  const turnTarget = turnableDirection(currentDirection, desiredDirection, fish.seed);
   const steeredDirection = safeNormalize(
-    currentDirection.x + (desiredDirection.x - currentDirection.x) * turnEase,
-    currentDirection.y + (desiredDirection.y - currentDirection.y) * turnEase,
-    desiredDirection.x,
-    desiredDirection.y,
+    currentDirection.x + (turnTarget.x - currentDirection.x) * turnEase,
+    currentDirection.y + (turnTarget.y - currentDirection.y) * turnEase,
+    turnTarget.x,
+    turnTarget.y,
   );
   const blendResponse = accelerationResponse * (0.72 + clamp(behaviorBlend, 0, 1) * 0.28);
   const accelerationEase = 1 - Math.exp(-delta * blendResponse);

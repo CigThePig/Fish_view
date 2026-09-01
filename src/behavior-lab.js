@@ -1,6 +1,7 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
 import { render } from "./render/render.js";
 import {
+  SHOWCASE_DEFAULT_SEED,
   SHOWCASE_SCENARIOS,
   createShowcaseState,
   showcaseScenario,
@@ -26,7 +27,10 @@ for (const scenario of SHOWCASE_SCENARIOS) {
 
 let scenarioId = showcaseScenario(query.get("activity")).id;
 let orientation = query.get("orientation") === "portrait" ? "portrait" : "landscape";
-const seed = hashSeed(query.get("seed") ?? "visible-intention-lab");
+const requestedSeed = query.get("seed");
+// No ?seed= means the scene the capture and readability tools grade, so the
+// deployed lab and the QA artifacts stay the same aquarium.
+const seed = requestedSeed ? hashSeed(requestedSeed) : SHOWCASE_DEFAULT_SEED;
 behaviorSelect.value = scenarioId;
 orientationSelect.value = orientation;
 

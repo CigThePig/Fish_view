@@ -22,7 +22,6 @@ import {
 } from "./fish-activities.js";
 import {
   MAX_FISH_PITCH_DEGREES,
-  forageActivity,
   forageEligible,
   substrateSafeY,
   surfaceSafeY,
@@ -332,18 +331,17 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   // the fish has to do about it.
   const deltaHours = Math.min(simDelta / 3600, realDelta * MAX_DRIVE_HOURS_PER_REAL_SECOND);
   const daylight = daylightFactor(state.timeOfDayHours);
-  const currentForage = forageActivity(fish, index, state);
-  const hungerRelief = currentForage.searching
-    ? deltaHours * 0.018 * (1 + currentForage.peck * 0.35)
-    : 0;
   const current = fish.behavior.current;
   const energyChange = current === "rest"
     ? deltaHours * 0.03
     : -deltaHours * (0.004 + traits.activity * 0.005);
   const engagement = socialEngagement(fish, state, school);
   const socialRelief = deltaHours * 0.024 * engagement;
+  // Hunger relief waits for the activity tick below: the peck the fish performs
+  // this frame is resolved there, and crediting a meal against the previous
+  // frame's phase would feed the fish from contact the renderer has moved past.
   const drives = {
-    hunger: clamp(fish.drives.hunger + deltaHours * 0.003 - hungerRelief, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+    hunger: clamp(fish.drives.hunger + deltaHours * 0.003, DRIVE_MINIMUM, DRIVE_MAXIMUM),
     energy: clamp(
       fish.drives.energy + energyChange + (1 - daylight) * deltaHours * 0.002,
       DRIVE_MINIMUM,
@@ -384,6 +382,12 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     school,
   });
   const { target } = activityFrame;
+  const hungerRelief = target?.forageSearching
+    ? deltaHours * 0.018 * (1 + (target.peck ?? 0) * 0.35)
+    : 0;
+  const fedDrives = hungerRelief > 0
+    ? { ...drives, hunger: clamp(drives.hunger - hungerRelief, DRIVE_MINIMUM, DRIVE_MAXIMUM) }
+    : drives;
 
   const evasion = chaseEvasionForFish(fishWithBehavior, state);
   const steered = steerActivityVelocity(fish, target, {
@@ -444,7 +448,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     y,
     vx,
     vy,
-    drives,
+    drives: fedDrives,
     history,
     behavior,
     activity: activityFrame.activity,

@@ -77,7 +77,12 @@ export function surfaceSafeY(fish, state, worldX = fish.x) {
 // and makes the substrate puff renderer observe exactly the same event as the
 // simulation. The deliberately uneven patterns read as feeding rather than a
 // metronome: single pecks, close pairs, a lateral scoot, then a longer pause.
-export function forageActivity(fish, index, state) {
+// `activity` defaults to the fish's own stored activity, which is what the
+// renderer and the drive tick observe. Callers that have already advanced the
+// activity for this frame pass that state in, so the target, the pitch, and the
+// puff of debris all describe the same contact instead of drifting a frame — up
+// to a quarter second on a delayed step — apart.
+export function forageActivity(fish, index, state, activity = fish?.activity) {
   const eligible = forageEligible(index);
   const surfaceY = substrateSurfaceY(state, fish.x);
   const targetY = surfaceY - fishVerticalClearanceRows(fish);
@@ -89,9 +94,9 @@ export function forageActivity(fish, index, state) {
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);
   const offset = sampleRange(fish.seed, 4601, 0, period);
-  const age = Math.max(0, fish.activity?.current === "substrate-search"
-    && Number.isFinite(fish.activity?.ageRealSeconds)
-    ? fish.activity.ageRealSeconds
+  const age = Math.max(0, activity?.current === "substrate-search"
+    && Number.isFinite(activity?.ageRealSeconds)
+    ? activity.ageRealSeconds
     : fish.behavior?.ageRealSeconds ?? 0);
   const absoluteClock = age + offset;
   const cycleIndex = Math.floor(absoluteClock / period);
@@ -121,6 +126,12 @@ export function forageActivity(fish, index, state) {
   const sizeFactor = clamp(fishVerticalClearanceRows(fish) / 2.2, 0.88, 1.04);
   const displacementAmplitude = (0.3 + substrateAffinity * 0.1) * sizeFactor;
   const eventSeed = (cycleIndex * 7 + (peckEvent ?? debrisEvent ?? 0)) >>> 0;
+  // Close peck pairs overlap: the previous peck's debris is still rising when
+  // the next peck starts. Salting the debris with the peck event would swap the
+  // particle count, glyphs, spread, and rise partway through a tail that is
+  // already on screen, so the debris keeps the seed of the event that raised it
+  // while scoot behaviour stays with the peck the fish is performing.
+  const debrisSeed = debrisEvent === null ? eventSeed : (cycleIndex * 7 + debrisEvent) >>> 0;
   const scootDirection = sample01(fish.seed ^ eventSeed, 4630) < 0.5 ? -1 : 1;
   const recovery = peckPhase === null ? 0 : smoothRecovery(peckPhase);
 
@@ -136,6 +147,7 @@ export function forageActivity(fish, index, state) {
     debrisPhase,
     debrisEvent,
     eventSeed,
+    debrisSeed,
     scootDirection,
     clusterSize: pattern.length,
     clusterProgress: cycleSeconds / period,

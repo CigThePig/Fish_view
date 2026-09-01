@@ -9,8 +9,17 @@ import { plantHeight } from "../sim/plants.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 import { substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
+import { hashSeed } from "../sim/prng.js";
+
+// Every entry point into the lab starts from this one scene. Fish traits,
+// plants, bubble opportunities, routes, and timings are all seed-derived, so a
+// capture or a readability run made against a different default would grade a
+// tank nobody is looking at.
+export const SHOWCASE_SEED_LABEL = "visible-intention-lab";
+export const SHOWCASE_DEFAULT_SEED = hashSeed(SHOWCASE_SEED_LABEL);
 
 const SUBJECT_INDEX = 3;
+const SUBSTRATE_APPROACH_ROWS = 2.6;
 const COMPANION_INDEX = 4;
 
 export const SHOWCASE_SCENARIOS = Object.freeze([
@@ -65,6 +74,12 @@ function safePosition(fish, state, x, y) {
   };
 }
 
+// Poses are authored for the grown fish the lab shows, so clearance-relative
+// placement has to measure the same body posedFish() will place.
+function adult(fish) {
+  return { ...fish, ageDays: Math.max(500, fish.ageDays ?? 0) };
+}
+
 function posedFish(fish, state, {
   x = fish.x,
   y = fish.y,
@@ -75,10 +90,10 @@ function posedFish(fish, state, {
   target = {},
   preserveAge = false,
 } = {}) {
-  const adult = { ...fish, ageDays: Math.max(500, fish.ageDays ?? 0) };
-  const point = safePosition(adult, state, x, y);
+  const grown = adult(fish);
+  const point = safePosition(grown, state, x, y);
   return {
-    ...adult,
+    ...grown,
     ...point,
     vx,
     vy,
@@ -261,9 +276,13 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   } else if (scenario.id === ACTIVITIES.playfulChase) {
     socialPair(individuals, state, ACTIVITIES.playfulChase, { chase: true });
   } else if (scenario.id === ACTIVITIES.substrateSearch) {
+    // Measured from the substrate rather than from the tank height: the loop
+    // has to show the descent and still leave room for the pecks that follow
+    // it, and a fraction of the rows spends most of a landscape loop falling.
+    const searchX = state.cols * 0.48;
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
-      x: state.cols * 0.48,
-      y: state.rows * (state.orientation === "portrait" ? 0.68 : 0.43),
+      x: searchX,
+      y: substrateSafeY(adult(subject), state, searchX) - SUBSTRATE_APPROACH_ROWS,
       vx: 0.16,
       vy: 0.08,
       behavior: "forage",
@@ -303,7 +322,7 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
 export function createShowcaseState({
   orientation = "landscape",
   scenario = "cruise",
-  seed = 0x51a7c0de,
+  seed = SHOWCASE_DEFAULT_SEED,
 } = {}) {
   const initial = createAquariumState({ orientation, seed, wallClockHours: 12 });
   return configureScenario(initial, scenario);

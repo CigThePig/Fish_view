@@ -977,7 +977,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
   }
   if (activity.current === ACTIVITIES.substrateSearch) {
     if (!forageEligible(index)) return null;
-    const forage = forageActivity(fish, index, state);
+    const forage = forageActivity(fish, index, state, activity);
     const halfWidth = spriteHalfWidth(fish);
     const searchSpan = Math.min(6.8, state.cols * (0.065 + affinities.substrate * 0.055));
     const searchPhase = (activity.ageRealSeconds ?? 0) * (0.13 + traits.activity * 0.065)

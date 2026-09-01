@@ -1118,7 +1118,7 @@ function drawForageDebris(builder, state, palette, metrics) {
     const activity = forageActivity(fish, index, state);
     if (activity.debrisPhase === null) return;
     const progress = activity.debrisPhase;
-    const salt = (activity.eventSeed % 97) * 61;
+    const salt = (activity.debrisSeed % 97) * 61;
     const count = 2 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
     const glyphs = [];
     for (let particle = 0; particle < count; particle += 1) {
