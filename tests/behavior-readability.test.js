@@ -285,10 +285,12 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
   assert.ok(Math.min(...gaps) < 1.3, "the peck cluster contains no close pair");
   assert.ok(Math.max(...gaps) > Math.min(...gaps) * 1.7, "the peck cadence is still metronomic");
   // The strike is a real displacement now rather than an offset added to a
-  // target, so it is authored large enough to see - about a fifth of the fish's
-  // own height - and still small enough to read as a peck rather than a dive.
-  assert.ok(peak.activity.peckDisplacement >= 0.4);
-  assert.ok(peak.activity.peckDisplacement <= 0.65);
+  // target, so it is authored large enough to see - a third of a row is eight
+  // pixels of lunge, and the screen-space tool checks what that costs on the
+  // panel - and small enough that a nose-down fish reaches into the substrate
+  // crest instead of through it.
+  assert.ok(peak.activity.peckDisplacement >= 0.28);
+  assert.ok(peak.activity.peckDisplacement <= 0.45);
   assert.deepEqual(
     forageActivity(peak.fish, index, base),
     forageActivity(peak.fish, index, base),
@@ -304,7 +306,7 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
   assert.ok(target.forageGrazing);
   assert.equal(target.y, substrateGrazeY(peak.fish, base, target.x));
   assert.ok(target.y - substrateSafeY(peak.fish, base, target.x) > 0.2);
-  assert.ok(target.peckDisplacement >= 0.4);
+  assert.ok(target.peckDisplacement >= 0.28);
 });
 
 test("the strike moves the fish, not just its target", () => {
@@ -335,7 +337,7 @@ test("the strike moves the fish, not just its target", () => {
   const struck = Math.min(...active.map((row) => row.y));
   const resting = Math.max(...idle.map((row) => row.y));
   assert.ok(
-    Math.max(...active.map((row) => row.y)) - resting >= 0.3,
+    Math.max(...active.map((row) => row.y)) - resting >= 0.22,
     "the strike does not carry the fish below its grazing line",
   );
   assert.ok(struck >= resting - 0.05, "the fish drifted off the substrate between pecks");

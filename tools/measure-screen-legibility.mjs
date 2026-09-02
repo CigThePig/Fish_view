@@ -167,7 +167,7 @@ for (const [key, value] of motion) {
 // --- B. The feeding strike ---------------------------------------------------
 
 report("Feeding strike (production tank)");
-console.log("orientation  plunge px  belly gap rows  debris glyphs  debris contrast  strike pixels");
+console.log("orientation  plunge px  belly gap rows  debris glyphs  debris contrast  strike repaint");
 for (const orientation of ["landscape", "portrait"]) {
   let state = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
   const config = orientationConfig(orientation);
@@ -241,14 +241,21 @@ for (const orientation of ["landscape", "portrait"]) {
       if (delta > 6) changed += 1;
     }
   }
+  // Graded against the fish's own silhouette rather than a flat pixel count: a
+  // strike has to repaint a tenth of the animal that performs it, whatever size
+  // that animal is drawn at.
+  const silhouette = best.peak.bounds.width * best.peak.bounds.height;
+  const repaintShare = changed / Math.max(1, silhouette);
   console.log(
-    `${orientation.padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.bellyGap.toFixed(2).padStart(15)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${String(changed).padStart(14)}`,
+    `${orientation.padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.bellyGap.toFixed(2).padStart(15)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${`${changed} (${(repaintShare * 100).toFixed(0)}%)`.padStart(14)}`,
   );
   if (plunge < 6) failures.push(`${orientation}: a feeding strike moves the fish ${plunge.toFixed(1)}px down the panel`);
   if (best.peak.bellyGap > 0.45) failures.push(`${orientation}: a feeding fish hovers ${best.peak.bellyGap.toFixed(2)} rows above the substrate`);
   if (best.peak.debris.length < 4) failures.push(`${orientation}: a feeding strike raised ${best.peak.debris.length} debris glyphs`);
   if (debrisContrast < 0.3) failures.push(`${orientation}: debris sits ${(debrisContrast * 100).toFixed(0)}% off the substrate it lands on`);
-  if (changed < 250) failures.push(`${orientation}: a feeding strike repaints only ${changed} pixels`);
+  if (repaintShare < 0.1) {
+    failures.push(`${orientation}: a feeding strike repaints only ${(repaintShare * 100).toFixed(0)}% of the fish`);
+  }
 }
 
 // --- C. The chase has to close and break -------------------------------------

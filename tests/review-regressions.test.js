@@ -8,7 +8,7 @@ import {
 } from "../src/render/plants.js";
 import { scenePalette } from "../src/render/palette.js";
 import { render } from "../src/render/render.js";
-import { orientationConfig } from "../src/sim/config.js";
+import { DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import {
   ACTIVITIES,
   createActivityState,
@@ -18,6 +18,7 @@ import {
 } from "../src/sim/fish-activities.js";
 import { steerActivityVelocity } from "../src/sim/fish-choreography.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
+import { substrateSurfaceY } from "../src/sim/environment.js";
 import {
   SHOWCASE_DEFAULT_SEED,
   SHOWCASE_SEED_LABEL,
@@ -275,4 +276,82 @@ test("a feeding puff stands off the sand it is lifted from", () => {
     }
   }
   assert.ok(sampled > 0, "seed 9 never raised any debris to measure");
+});
+
+test("a strike reaches into the substrate crest without burying the fish, on every seed", () => {
+  // The clearance model works from the sprite's authored box; the renderer draws
+  // the opaque body from a box of its own, with the tail excluded, a swell
+  // added, and a per-sprite scale. The two do not agree to better than about a
+  // third of a row, and the simulation deliberately cannot see the second one -
+  // so the guard has to be the rendered frame, over enough tanks to catch the
+  // sprite that sits furthest from the model. Seed 192's juvenile box-fin was
+  // burying a whole row before the pitched width entered the clearance.
+  for (const seed of [192, 444, 9, DEFAULT_SEED]) {
+    for (const orientation of ["landscape", "portrait"]) {
+      const config = orientationConfig(orientation);
+      const rowPixels = config.pixelHeight / config.rows;
+      let state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+      let deepest = null;
+      for (let step = 0; step < 4000; step += 1) {
+        state = tick(state, 0.1);
+        for (const [index, fish] of state.individuals.entries()) {
+          const forage = forageActivity(fish, index, state);
+          if (!forage.searching || forage.peck < 0.9) continue;
+          const scene = render(state);
+          const object = scene.objects.find((candidate) => candidate.id === `individual:${index}:${fish.seed}`);
+          if (!object?.fill?.length) continue;
+          const entered = Math.max(...object.fill.map((span) => span.y + span.height)) / rowPixels
+            - substrateSurfaceY(state, fish.x);
+          if (!deepest || entered > deepest) deepest = entered;
+        }
+        if (deepest !== null && step > 3000) break;
+      }
+      if (deepest === null) continue;
+      assert.ok(
+        deepest <= 0.6,
+        `${orientation} seed ${seed} buried a feeding fish ${deepest.toFixed(2)} rows into the substrate`,
+      );
+    }
+  }
+});
+
+test("the puff is thrown from the mouth the fish is drawn with, not the one it is turning away from", () => {
+  // turnPose() swings the drawing to targetFacing halfway through a turn while
+  // visual.facing still holds the old direction, so a peck in that window used
+  // to land its debris off the tail.
+  const config = orientationConfig("landscape");
+  const cellWidth = config.pixelWidth / config.cols;
+  let checked = 0;
+  let midTurn = 0;
+  for (const seed of [444, 9]) {
+    let state = createAquariumState({ orientation: "landscape", seed, wallClockHours: 12 });
+    for (let step = 0; step < 4000; step += 1) {
+      state = tick(state, 0.1);
+      for (const [index, fish] of state.individuals.entries()) {
+        const forage = forageActivity(fish, index, state);
+        if (forage.debrisPhase === null && forage.peck <= 0.35) continue;
+        const scene = render(state);
+        const debris = scene.objects.find((candidate) => candidate.id === `forage-debris:${index}:${fish.seed}`);
+        if (!debris) continue;
+        const glyphs = scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount);
+        if (!glyphs.length) continue;
+        const visual = fish.visual ?? {};
+        const drawnFacing = visual.turnProgress >= 1
+          ? visual.targetFacing
+          : (visual.turnProgress < 0.5 ? visual.facing : visual.targetFacing);
+        if (visual.turnProgress < 1 && visual.facing !== visual.targetFacing) midTurn += 1;
+        checked += 1;
+        const centroid = glyphs.reduce((sum, glyph) => sum + glyph.x, 0) / glyphs.length / cellWidth;
+        const offset = centroid - fish.x;
+        if (Math.abs(offset) <= 0.15) continue;
+        assert.equal(
+          Math.sign(offset),
+          drawnFacing,
+          `debris landed on the wrong side of a fish drawn facing ${drawnFacing}`,
+        );
+      }
+    }
+  }
+  assert.ok(checked > 200, "no debris frames were sampled");
+  assert.ok(midTurn > 0, "no fish pecked while mid-turn, so the guard proved nothing");
 });

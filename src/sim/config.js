@@ -29,6 +29,21 @@ export const SUBSTRATE_ROWS = 2;
 // footprint. The simulation uses the same hard ceiling for conservative water
 // and substrate clearance without importing the renderer's depth module.
 export const INDIVIDUAL_VISUAL_SCALE_MAX = 1.26;
+// How much of a true rotation the drawn pitch pose performs. The renderer turns
+// a pitched fish bodily by this share of its angle, and the simulation has to
+// reserve room for the same lean when it decides how close a nose-down fish may
+// work the substrate. A clearance computed against a different lean than the one
+// drawn is how a feeding fish ends up either hovering above its own debris or
+// buried in the floor.
+export const PITCH_POSE_ROTATION_FRACTION = 0.58;
+// The rotation is not the whole lean: each sprite also carries a hand-authored
+// nose-down shear that the renderer applies on top of it, and the substrate
+// clearance has to reserve for both. The combined lean is measured rather than
+// derived - `npm run measure:screen` reports it, and the grazing-depth test
+// checks the reservation against the ink that actually lands on the panel - so
+// this is the measured total with a little margin, not a second guess at the
+// artwork.
+export const PITCH_POSE_TOTAL_FRACTION = 0.86;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
 // Drives never reach 0 or 1: a fish is never perfectly satisfied and never

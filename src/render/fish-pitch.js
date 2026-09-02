@@ -1,4 +1,4 @@
-import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
+import { CELL_HEIGHT, CELL_WIDTH, PITCH_POSE_ROTATION_FRACTION } from "../sim/config.js";
 import { MAX_FISH_PITCH_DEGREES } from "../sim/fish-motion.js";
 
 const AUTHORED_PITCH_LIMIT_DEGREES = 30;
@@ -11,7 +11,10 @@ const GENERIC_STRONG_SLOPE = Math.tan(14 * Math.PI / 180);
 // its centre by this share of the pitch. A rotation keeps every glyph in the
 // same arrangement relative to its neighbours, so the silhouette leans as one
 // piece and the authored pose keeps supplying the character on top of it.
-const RIGID_PITCH_FRACTION = 0.58;
+//
+// The share lives in sim/config.js because the substrate clearance has to
+// reserve room for exactly the lean that gets drawn.
+const RIGID_PITCH_FRACTION = PITCH_POSE_ROTATION_FRACTION;
 const DEGREES_TO_RADIANS = Math.PI / 180;
 
 // Every point of one fish shares a pitch, a facing and a turn, so the two

@@ -1130,11 +1130,24 @@ function drawForageDebris(builder, state, palette, metrics) {
     // just happened rather than as more of the floor.
     const silt = mixColor(palette.substrateFg, palette.ripple, 0.62);
     const settled = mixColor(palette.substrateFg, palette.ripple, 0.3);
-    // The puff belongs to the mouth, not to the middle of the fish. A cloud
-    // centred on the body reads as sediment the fish happens to be above.
-    const facing = fish.visual?.facing ?? 1;
+    // The puff belongs to the mouth, not to the middle of the fish, and the
+    // mouth is wherever the fish is actually *drawn* facing. Reading
+    // visual.facing directly put the cloud on the tail for the second half of
+    // every turn, because that is when turnPose() has already swung the drawing
+    // to targetFacing. The same pose carries the turn compression and the depth
+    // scale the body is drawn at, so the offset tracks the size on the panel
+    // rather than the sprite's authored width.
+    const turning = turnPose(fish);
+    const drawScale = depthScale(spreadDepth(
+      state.seed,
+      fish.seed,
+      index,
+      state.individuals.length,
+      state.elapsedRealSeconds,
+    ));
     const mouthX = fish.x
-      + facing * spriteDimensions(spriteForFish(fish)).width * 0.5 * 0.62;
+      + turning.facing * spriteDimensions(spriteForFish(fish)).width * 0.5 * 0.62
+      * turning.widthScale * drawScale;
     const count = activity.debrisPhase === null
       ? 0
       : 5 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
