@@ -66,6 +66,10 @@ function poseCoordinate(source, column, row, {
     row,
     width: source.width,
     height: source.height,
+    // The turn foreshortens the lean. Without it the editor re-lays a profile
+    // against a body rotated at full pitch while the tank draws a compressed
+    // one, so a profile tuned here would not be the profile that ships.
+    turnScale,
   });
 }
 

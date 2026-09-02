@@ -96,18 +96,33 @@ export function glyphPixels(glyph) {
 // axis-aligned, so a glyph still costs the same run of filled rectangles on the
 // panel as it did upright. Without it a pitched fish is a leaning arrangement
 // of upright letters, which reads as much flatter than its own axis.
+// The lean is snapped to a fixed grid before it is used, and the damage
+// signature hashes the same snapped value. Rounding a run's shift multiplies
+// the slant by most of a cell height, so an unquantised slant can move a lit
+// pixel while changing far too little to survive any sane hash - the ink would
+// move with nothing in the signature to say so, and the old ink would stay on
+// the panel. Snapping makes the raster a pure function of a number the
+// signature can carry exactly. A step is well under a tenth of a pixel at the
+// extreme of a cell, so nothing about the drawing changes.
+export const SLANT_STEPS = 256;
+
+export function quantizeSlant(slant) {
+  return Number.isFinite(slant) ? Math.round(slant * SLANT_STEPS) / SLANT_STEPS : 0;
+}
+
 export function glyphPixelRects({ char, x, y, scaleX = 1, scaleY = 1, slant = 0 }) {
   const originX = Math.round(x);
   const originY = Math.round(y);
+  const lean = quantizeSlant(slant);
   const centerY = (CELL_HEIGHT / 2) * scaleY;
   return glyphPixels(char).map((pixel) => {
     const top = Math.round(pixel.y * scaleY);
     const bottom = Math.round((pixel.y + pixel.height) * scaleY);
-    const lean = slant === 0
+    const shift = lean === 0
       ? 0
-      : Math.round((centerY - (top + bottom) / 2) * slant);
-    const left = originX + lean + Math.round(pixel.x * scaleX);
-    const right = originX + lean + Math.round((pixel.x + pixel.width) * scaleX);
+      : Math.round((centerY - (top + bottom) / 2) * lean);
+    const left = originX + shift + Math.round(pixel.x * scaleX);
+    const right = originX + shift + Math.round((pixel.x + pixel.width) * scaleX);
     return {
       x: left,
       y: originY + top,

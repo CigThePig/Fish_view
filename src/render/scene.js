@@ -1,4 +1,5 @@
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
+import { SLANT_STEPS, quantizeSlant } from "./bitmap-font.js";
 
 function hashText(hash, value) {
   const text = String(value);
@@ -22,6 +23,12 @@ function glyphSignature(glyphs, layer, fill) {
     // one column late and trailing a stale stroke behind them.
     hash = hashText(hash, Math.round(glyph.scaleX * 1000));
     hash = hashText(hash, Math.round(glyph.scaleY * 1000));
+    // The lean is raster state exactly like the scales are: it pushes lit pixels
+    // sideways inside a cell whose rounded anchor has not moved, so a signature
+    // blind to it leaves the previous ink standing until some other property
+    // happens to change. The rasteriser snaps the lean to the same grid this
+    // hashes, so ink that moved cannot hash the same.
+    hash = hashText(hash, Math.round(quantizeSlant(glyph.slant ?? 0) * SLANT_STEPS));
     hash = hashText(hash, glyph.fg);
   }
   for (const rectangle of fill) {

@@ -7,24 +7,28 @@ import {
   plantRenderRecord,
 } from "../src/render/plants.js";
 import { scenePalette } from "../src/render/palette.js";
-import { render } from "../src/render/render.js";
+import { individualSprites, render, renderSpriteScene } from "../src/render/render.js";
+import { applyBodyProfileToSpriteScene, bodyProfileForSprite } from "../src/render/body-profile-lab.js";
 import { glyphPixelRects } from "../src/render/bitmap-font.js";
 import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import {
   ACTIVITIES,
+  DWELL_SECONDS,
   createActivityState,
   resolveActivityTarget,
   schoolSummary,
   socialEngagement,
 } from "../src/sim/fish-activities.js";
-import { steerActivityVelocity } from "../src/sim/fish-choreography.js";
+import { CHASE_BREAK_SECONDS, steerActivityVelocity } from "../src/sim/fish-choreography.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
 import {
   SHOWCASE_DEFAULT_SEED,
   SHOWCASE_SEED_LABEL,
   createShowcaseState,
+  showcaseTarget,
+  tickShowcase,
 } from "../src/dev/behavior-showcase.js";
 import { hashSeed } from "../src/sim/prng.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../src/sim/plants.js";
@@ -399,4 +403,98 @@ test("a pitched fish leans its characters, not just their positions", () => {
       "sheared ink fell outside the bounds damage tracking restores from",
     );
   }
+});
+
+test("a change that moves lit pixels always moves the damage signature", () => {
+  // Damage tracking repaints an object only when its signature changes, so any
+  // property the rasteriser reads has to reach the hash. The lean is the
+  // dangerous one: it is multiplied by most of a cell height before it is
+  // rounded to a pixel, so it can move ink while changing far too little to
+  // survive a hash of its raw value. The rasteriser snaps it to a grid the
+  // signature carries exactly, which is what this walks.
+  const base = createAquariumState({ orientation: "landscape", seed: 331, wallClockHours: 12 });
+  const snapshot = (pitch) => {
+    const scene = render({
+      ...base,
+      individuals: base.individuals.map((fish, index) => (index === 0
+        ? { ...fish, visual: { ...fish.visual, pitch, targetPitch: pitch, facing: 1, targetFacing: 1, turnProgress: 1 } }
+        : fish)),
+    });
+    const object = scene.objects.find((candidate) => candidate.id.startsWith("individual:0:"));
+    const glyphs = glyphsForObject(scene, object);
+    return {
+      signature: object.signature,
+      ink: glyphs
+        .flatMap((glyph) => glyphPixelRects(glyph).map((rect) => `${rect.x},${rect.y},${rect.width},${rect.height}`))
+        .join("|"),
+    };
+  };
+
+  let previous = snapshot(0);
+  let moves = 0;
+  // Fine steps on purpose: the pitch eases continuously in production, so it
+  // lands between whatever grid the signature happens to use.
+  for (let step = 1; step <= 3200; step += 1) {
+    const current = snapshot(step * 0.01);
+    if (current.ink !== previous.ink) {
+      moves += 1;
+      assert.notEqual(
+        current.signature,
+        previous.signature,
+        `ink moved at pitch ${(step * 0.01).toFixed(2)} without changing the damage signature`,
+      );
+    }
+    previous = current;
+  }
+  assert.ok(moves > 50, `only ${moves} ink changes were sampled`);
+});
+
+test("the body-profile editor lays out against the same geometry the tank draws", () => {
+  // The editor keeps its own copy of the pose. Any pose argument production
+  // grows and the copy does not silently re-tunes profiles against a body the
+  // tank never draws - here, a turn the editor was not foreshortening.
+  const sprite = individualSprites.find((candidate) => candidate.id === "double-fin");
+  for (const turnScale of [1, 0.6, 0.32]) {
+    for (const pitch of [0, 18, 30]) {
+      const options = { facing: "right", pitch, phase: 0, turnScale };
+      const production = renderSpriteScene(sprite, options);
+      const relaid = applyBodyProfileToSpriteScene(
+        renderSpriteScene(sprite, options),
+        sprite,
+        bodyProfileForSprite(sprite),
+        options,
+      );
+      const spans = (scene) => scene.objects
+        .find((candidate) => candidate.id.startsWith("lab:"))
+        .fill.map((span) => `${span.x},${span.y},${span.width},${span.height}`)
+        .join("|");
+      assert.equal(
+        spans(relaid),
+        spans(production),
+        `the editor re-laid the default profile differently at pitch ${pitch}, turn ${turnScale}`,
+      );
+    }
+  }
+});
+
+test("a chase outlives its own break", () => {
+  // chasePhase() only returns "break" once the activity is CHASE_BREAK_SECONDS
+  // old. If the dwell can expire first, the activity is reselected before the
+  // chaser ever peels away and the close-then-separate arc is never drawn.
+  const [, dwellLow] = DWELL_SECONDS[ACTIVITIES.playfulChase];
+  assert.ok(
+    dwellLow > CHASE_BREAK_SECONDS,
+    `the shortest chase runs ${dwellLow}s but the break does not come until ${CHASE_BREAK_SECONDS}s`,
+  );
+
+  // And it actually reaches that phase in the lab, not just on paper.
+  let state = createShowcaseState({ orientation: "landscape", scenario: "playful-chase" });
+  const phases = new Set();
+  for (let step = 0; step < 95; step += 1) {
+    state = tickShowcase(state, 0.1, "playful-chase");
+    const target = showcaseTarget(state, "playful-chase");
+    if (target?.choreographyPhase) phases.add(target.choreographyPhase);
+  }
+  assert.ok(phases.has("pursuit"), "the chase never reached its pursuit");
+  assert.ok(phases.has("break"), `the chase never broke off; phases seen: ${[...phases].join(", ")}`);
 });

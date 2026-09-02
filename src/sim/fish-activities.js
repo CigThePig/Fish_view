@@ -75,7 +75,7 @@ const ACTIVITY_BEHAVIOR = Object.freeze({
   [ACTIVITIES.arrivalEnter]: "explore",
 });
 
-const DWELL_SECONDS = Object.freeze({
+export const DWELL_SECONDS = Object.freeze({
   [ACTIVITIES.cruise]: [6, 18, 28],
   [ACTIVITIES.wander]: [7, 18, 30],
   [ACTIVITIES.plantInvestigate]: [6, 14, 23],
@@ -85,7 +85,11 @@ const DWELL_SECONDS = Object.freeze({
   [ACTIVITIES.schoolFollow]: [7, 17, 28],
   [ACTIVITIES.individualFollow]: [7, 16, 26],
   [ACTIVITIES.companionCruise]: [8, 20, 34],
-  [ACTIVITIES.playfulChase]: [3.8, 5.6, 7.6],
+  // The dwell has to outlast CHASE_BREAK_SECONDS or the activity is reselected
+  // before the chaser ever breaks off, and the close-then-separate arc - the
+  // whole reason a chase reads as a chase - is never drawn. The floor sits
+  // above the break with room for the glide that follows it.
+  [ACTIVITIES.playfulChase]: [4.2, 7.4, 9.6],
   [ACTIVITIES.substrateSearch]: [7, 18, 30],
   [ACTIVITIES.openWaterRest]: [9, 24, 40],
   [ACTIVITIES.plantShelter]: [11, 30, 50],
