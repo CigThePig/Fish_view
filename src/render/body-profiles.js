@@ -12,7 +12,7 @@ export const DEFAULT_BODY_PROFILE = Object.freeze({
 // Final visually tuned profiles from the Typographic Motion Lab. These values
 // are authored against the right-facing source art; the shared pose transform
 // mirrors them automatically for left-facing fish.
-export const BODY_PROFILES = Object.freeze({
+export const ADULT_BODY_PROFILES = Object.freeze({
   "double-fin": Object.freeze({
     ...DEFAULT_BODY_PROFILE,
     offsetX: 0,
@@ -78,6 +78,42 @@ export const BODY_PROFILES = Object.freeze({
     rearShoulder: 1.75,
     frontShoulder: 1.75,
   }),
+});
+
+// A growth stage is its own drawing, not a scaled adult: `round-fin` loses a
+// whole dorsal row before it is a subadult, and `box-fin` juvenile is three
+// characters shorter than the fish it becomes. Each stage that carries an
+// opaque body therefore gets a profile of its own, keyed by the stage sprite id
+// that art/sprites.js builds ("<species>:<stage label>"), and is tuned one life
+// stage at a time in the Typographic Motion Lab.
+//
+// Every entry starts at the shared default because that is exactly what the
+// renderer used for a growth stage before these entries existed: adding them
+// changes nothing on screen, it only makes the geometry addressable. Stages
+// drawn with `body: false` - the fry - have no opaque body at all and so have
+// no profile here.
+export const GROWTH_STAGE_BODY_PROFILES = Object.freeze({
+  "double-fin:young-juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "double-fin:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "double-fin:subadult": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "round-fin:young-juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "round-fin:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "round-fin:subadult": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "tiny-dart:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "single-fin:young-juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "single-fin:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "comma-tail:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "box-fin:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "twin-sail:young-juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "twin-sail:juvenile": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+  "twin-sail:subadult": Object.freeze({ ...DEFAULT_BODY_PROFILE }),
+});
+
+// One flat lookup keyed by sprite id, because that is what the renderer has in
+// hand: an adult and a growth stage reach their profile the same way.
+export const BODY_PROFILES = Object.freeze({
+  ...ADULT_BODY_PROFILES,
+  ...GROWTH_STAGE_BODY_PROFILES,
 });
 
 export function bodyProfileForId(id) {

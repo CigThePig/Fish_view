@@ -1,200 +1,16 @@
+import {
+  DEFAULT_STEERING_PROFILE,
+  sceneTuning,
+  steeringProfile,
+} from "./choreography-tuning.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { mix32 } from "./prng.js";
 
-// Activity selection says what a fish intends to do. These tiny profiles say
-// how that intention should feel in motion. They are deliberately data rather
-// than another state machine: distance, activity age, and target state still
-// derive every short-lived phase.
-const DEFAULT_CHOREOGRAPHY = Object.freeze({
-  accelerationResponse: 1.45,
-  turningResponse: 1.5,
-  verticalSpeedScale: 0.72,
-  minimumSpeed: 0.055,
-  maximumSpeed: 0.82,
-  approachRadius: 0,
-  arrivalSpeedScale: 1,
-  positionGain: 1,
-  velocityMatch: 0,
-  pitchScale: 1,
-  pitchResponse: 3.6,
-  turnDuration: 0.68,
-});
-
-const PROFILE_OVERRIDES = Object.freeze({
-  cruise: Object.freeze({
-    accelerationResponse: 1.2,
-    turningResponse: 1.12,
-    verticalSpeedScale: 0.58,
-    maximumSpeed: 0.7,
-    pitchScale: 0.45,
-    pitchResponse: 3,
-    turnDuration: 0.78,
-  }),
-  "open-water-wander": Object.freeze({
-    accelerationResponse: 1.35,
-    turningResponse: 1.45,
-    verticalSpeedScale: 0.78,
-    maximumSpeed: 0.74,
-    approachRadius: 1.2,
-    arrivalSpeedScale: 0.45,
-    pitchScale: 0.68,
-  }),
-  "plant-investigate": Object.freeze({
-    accelerationResponse: 1.25,
-    turningResponse: 1.9,
-    verticalSpeedScale: 0.96,
-    minimumSpeed: 0.028,
-    maximumSpeed: 0.52,
-    approachRadius: 1.8,
-    arrivalSpeedScale: 0.24,
-    positionGain: 0.78,
-    pitchScale: 0.72,
-    turnDuration: 0.52,
-  }),
-  "plant-weave": Object.freeze({
-    accelerationResponse: 2.05,
-    turningResponse: 2.35,
-    verticalSpeedScale: 1.12,
-    minimumSpeed: 0.07,
-    maximumSpeed: 0.76,
-    approachRadius: 0.9,
-    arrivalSpeedScale: 0.72,
-    pitchResponse: 4.4,
-    turnDuration: 0.48,
-  }),
-  "bubble-investigate": Object.freeze({
-    accelerationResponse: 2.75,
-    turningResponse: 3.15,
-    verticalSpeedScale: 1.38,
-    minimumSpeed: 0.075,
-    maximumSpeed: 1,
-    approachRadius: 2.1,
-    arrivalSpeedScale: 0.32,
-    positionGain: 0.92,
-    pitchResponse: 5.2,
-    turnDuration: 0.4,
-  }),
-  "surface-investigate": Object.freeze({
-    accelerationResponse: 2.1,
-    turningResponse: 2.2,
-    verticalSpeedScale: 1.42,
-    minimumSpeed: 0.035,
-    maximumSpeed: 0.78,
-    approachRadius: 1.4,
-    arrivalSpeedScale: 0.22,
-    pitchResponse: 4.8,
-    turnDuration: 0.5,
-  }),
-  "school-follow": Object.freeze({
-    accelerationResponse: 1.25,
-    turningResponse: 1.5,
-    verticalSpeedScale: 0.72,
-    minimumSpeed: 0.04,
-    maximumSpeed: 0.68,
-    approachRadius: 2.6,
-    arrivalSpeedScale: 0.12,
-    positionGain: 0.58,
-    velocityMatch: 0.72,
-    pitchScale: 0.55,
-    turnDuration: 0.7,
-  }),
-  "individual-follow": Object.freeze({
-    accelerationResponse: 1.4,
-    turningResponse: 1.72,
-    verticalSpeedScale: 0.7,
-    minimumSpeed: 0.035,
-    maximumSpeed: 0.68,
-    approachRadius: 2.4,
-    arrivalSpeedScale: 0.1,
-    positionGain: 0.66,
-    velocityMatch: 0.82,
-    pitchScale: 0.42,
-    turnDuration: 0.62,
-  }),
-  "companion-cruise": Object.freeze({
-    accelerationResponse: 0.92,
-    turningResponse: 1.1,
-    verticalSpeedScale: 0.56,
-    minimumSpeed: 0.025,
-    maximumSpeed: 0.56,
-    approachRadius: 1.1,
-    arrivalSpeedScale: 0.32,
-    positionGain: 0.62,
-    velocityMatch: 0.94,
-    pitchScale: 0.35,
-    pitchResponse: 2.7,
-    turnDuration: 0.88,
-  }),
-  "playful-chase": Object.freeze({
-    accelerationResponse: 3.25,
-    turningResponse: 3.65,
-    verticalSpeedScale: 1.18,
-    minimumSpeed: 0.16,
-    maximumSpeed: 1.04,
-    approachRadius: 0.8,
-    arrivalSpeedScale: 0.9,
-    positionGain: 1.1,
-    pitchResponse: 5.4,
-    turnDuration: 0.34,
-  }),
-  "substrate-search": Object.freeze({
-    accelerationResponse: 2.05,
-    turningResponse: 1.8,
-    verticalSpeedScale: 1.4,
-    minimumSpeed: 0.035,
-    maximumSpeed: 0.76,
-    approachRadius: 1,
-    arrivalSpeedScale: 0.5,
-    pitchResponse: 4.7,
-    turnDuration: 0.56,
-  }),
-  "open-water-rest": Object.freeze({
-    accelerationResponse: 0.46,
-    turningResponse: 0.52,
-    verticalSpeedScale: 0.26,
-    minimumSpeed: 0.012,
-    maximumSpeed: 0.22,
-    approachRadius: 2.8,
-    arrivalSpeedScale: 0.08,
-    positionGain: 0.38,
-    pitchScale: 0.2,
-    pitchResponse: 1.8,
-    turnDuration: 1.2,
-  }),
-  "plant-shelter": Object.freeze({
-    accelerationResponse: 0.5,
-    turningResponse: 0.62,
-    verticalSpeedScale: 0.32,
-    minimumSpeed: 0.01,
-    maximumSpeed: 0.24,
-    approachRadius: 2.3,
-    arrivalSpeedScale: 0.08,
-    positionGain: 0.4,
-    pitchScale: 0.25,
-    pitchResponse: 1.9,
-    turnDuration: 1.08,
-  }),
-  "touch-react": Object.freeze({
-    accelerationResponse: 2.25,
-    turningResponse: 2.5,
-    verticalSpeedScale: 0.9,
-    minimumSpeed: 0.08,
-    maximumSpeed: 0.92,
-    approachRadius: 1.2,
-    arrivalSpeedScale: 0.35,
-    pitchResponse: 4.4,
-    turnDuration: 0.45,
-  }),
-  "arrival-enter": Object.freeze({
-    accelerationResponse: 1.65,
-    turningResponse: 1.5,
-    verticalSpeedScale: 0.75,
-    minimumSpeed: 0.08,
-    maximumSpeed: 0.72,
-    approachRadius: 1.3,
-    arrivalSpeedScale: 0.4,
-  }),
-});
+// Activity selection says what a fish intends to do. How that intention should
+// feel in motion is data, not another state machine: the steering profiles and
+// the per-activity distances, speeds and rotations both live in
+// choreography-tuning.js, where the behaviour choreography lab can reach them.
+const DEFAULT_CHOREOGRAPHY = DEFAULT_STEERING_PROFILE;
 
 // How opposed a requested heading may be before the turn is committed to a
 // side: just under a straight reversal, so the fish still swings through a wide
@@ -202,15 +18,17 @@ const PROFILE_OVERRIDES = Object.freeze({
 const REVERSAL_LIMIT_RADIANS = Math.PI - 0.09;
 const REVERSAL_DOT = Math.cos(REVERSAL_LIMIT_RADIANS);
 
+// The authored values, kept as named exports because the activity dwell times
+// are checked against them. The live numbers come from the "playful-chase"
+// scene tuning, which starts at exactly these.
 export const CHASE_RECOGNITION_RADIUS = 4.9;
 export const CHASE_BREAK_SECONDS = 6.2;
-// How close the chaser has to get before the chased fish actually breaks.
-// Recognition reaches across the whole radius above - the fish knows it is
-// being followed long before it reacts - but bolting at that range meant
-// fleeing from five rows away, which no chaser can close, and the pair simply
-// ran the tank at a fixed distance. Reacting late is what lets the gap shut.
-const CHASE_PANIC_NEAR_ROWS = 1.3;
-const CHASE_PANIC_FAR_ROWS = 3.6;
+// How close the chaser has to get before the chased fish actually breaks lives
+// in the same table, as panicNearRows/panicFarRows. Recognition reaches across
+// the whole radius above - the fish knows it is being followed long before it
+// reacts - but bolting at that range meant fleeing from five rows away, which
+// no chaser can close, and the pair simply ran the tank at a fixed distance.
+// Reacting late is what lets the gap shut.
 
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
   const length = Math.hypot(x, y);
@@ -242,18 +60,24 @@ function turnableDirection(current, desired, seed) {
   return { x: Math.cos(angle), y: Math.sin(angle) };
 }
 
-export function choreographyFor(activity, overrides = {}) {
+// `phase` names a short-lived variant of the activity - "playful-chase:break",
+// "substrate-search:graze" - whose profile is layered over the activity's own.
+export function choreographyFor(state, activity, phase = null) {
   return {
     ...DEFAULT_CHOREOGRAPHY,
-    ...(PROFILE_OVERRIDES[activity] ?? {}),
-    ...overrides,
+    ...steeringProfile(state, activity),
+    ...(phase ? steeringProfile(state, phase) : null),
   };
 }
 
-export function chasePhase(ageRealSeconds, distance) {
+export function chasePhase(ageRealSeconds, distance, tuning = null) {
+  const breakSeconds = Number.isFinite(tuning?.breakSeconds) ? tuning.breakSeconds : CHASE_BREAK_SECONDS;
+  const radius = Number.isFinite(tuning?.recognitionRadiusRows)
+    ? tuning.recognitionRadiusRows
+    : CHASE_RECOGNITION_RADIUS;
   const age = Math.max(0, Number.isFinite(ageRealSeconds) ? ageRealSeconds : 0);
-  if (age >= CHASE_BREAK_SECONDS) return "break";
-  if (age < 0.65 || distance > CHASE_RECOGNITION_RADIUS) return "approach";
+  if (age >= breakSeconds) return "break";
+  if (age < 0.65 || distance > radius) return "approach";
   return "pursuit";
 }
 
@@ -261,6 +85,9 @@ export function chasePhase(ageRealSeconds, distance) {
 // steering influence lasts only while a nearby companion is visibly chasing
 // it, so saves never need an evade flag and a broken target cannot strand it.
 export function chaseEvasionForFish(fish, state) {
+  const tuning = sceneTuning(state, "playful-chase");
+  const recognitionRadius = tuning.recognitionRadiusRows;
+  const breakSeconds = tuning.breakSeconds;
   let best = null;
   for (const chaser of state.individuals ?? []) {
     if (chaser.seed === fish.seed
@@ -274,11 +101,11 @@ export function chaseEvasionForFish(fish, state) {
     const dx = fish.x - chaser.x;
     const dy = fish.y - chaser.y;
     const distance = Math.hypot(dx, dy);
-    if (!Number.isFinite(distance) || distance > CHASE_RECOGNITION_RADIUS + 0.18) continue;
+    if (!Number.isFinite(distance) || distance > recognitionRadius + 0.18) continue;
 
-    const proximity = 1 - smoothstep(CHASE_PANIC_NEAR_ROWS, CHASE_PANIC_FAR_ROWS, distance);
+    const proximity = 1 - smoothstep(tuning.panicNearRows, tuning.panicFarRows, distance);
     const recognition = smoothstep(0.3, 0.82, age);
-    const breakFade = 1 - smoothstep(CHASE_BREAK_SECONDS - 0.35, CHASE_BREAK_SECONDS + 0.9, age);
+    const breakFade = 1 - smoothstep(breakSeconds - 0.35, breakSeconds + 0.9, age);
     const strength = proximity * recognition * breakFade;
     if (strength <= 0.001 || (best && best.strength >= strength)) continue;
 
@@ -301,7 +128,7 @@ export function chaseEvasionForFish(fish, state) {
     best = {
       x: direction.x,
       y: direction.y,
-      speed: 0.5 + traits.activity * 0.18 + proximity * 0.46,
+      speed: tuning.evasionSpeed + traits.activity * 0.18 + proximity * tuning.evasionProximityGain,
       weight: 0.42 + strength * 0.5,
       strength,
       sourceSeed: chaser.seed,

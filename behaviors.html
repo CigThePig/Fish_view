@@ -4,52 +4,80 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#07100f">
-    <meta name="description" content="Developer showcase for Fish View activity choreography.">
+    <meta name="description" content="Developer showcase and tuning bench for Fish View activity choreography.">
     <title>Fish View — Behaviour choreography lab</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="behavior-lab.css">
+    <link rel="stylesheet" href="behavior-lab.css?v=choreography-tuning-20260902">
   </head>
   <body class="behavior-lab-page">
-    <main class="behavior-lab">
+    <div class="behavior-lab">
       <header class="behavior-lab__header">
         <div>
           <p class="eyebrow">Developer-only visual test</p>
           <h1>Behaviour choreography</h1>
-          <p>Each scene runs the production simulation and renderer. No motion is faked by the lab.</p>
+          <p>Each scene runs the production simulation and renderer. No motion is faked by the lab. Every slider edits the running tank immediately.</p>
         </div>
         <a href="index.html">Return to aquarium</a>
       </header>
 
-      <section class="behavior-lab__stage" aria-label="Forced behaviour preview">
-        <canvas id="behavior-canvas" aria-label="ASCII fish behaviour showcase"></canvas>
-      </section>
+      <div class="behavior-lab__layout">
+        <div class="behavior-lab__tank">
+          <section class="behavior-lab__stage" aria-label="Forced behaviour preview">
+            <canvas id="behavior-canvas" aria-label="ASCII fish behaviour showcase"></canvas>
+          </section>
 
-      <section class="behavior-lab__controls" aria-label="Showcase controls">
-        <label>Activity
-          <select id="behavior-select"></select>
-        </label>
-        <label>Orientation
-          <select id="orientation-select">
-            <option value="landscape">Landscape · 800 × 480</option>
-            <option value="portrait">Portrait · 480 × 800</option>
-          </select>
-        </label>
-        <button type="button" id="restart-showcase">Restart sequence</button>
-      </section>
+          <section class="behavior-lab__readout" aria-live="polite">
+            <div><span>Phase</span><strong id="phase-output">—</strong></div>
+            <div><span>Subject speed</span><strong id="speed-output">—</strong></div>
+            <div><span>Pitch</span><strong id="pitch-output">—</strong></div>
+            <div><span>Spacing</span><strong id="spacing-output">—</strong></div>
+            <div><span>Loop</span><strong id="loop-output">—</strong></div>
+          </section>
 
-      <section class="behavior-lab__readout" aria-live="polite">
-        <div><span>Phase</span><strong id="phase-output">—</strong></div>
-        <div><span>Subject speed</span><strong id="speed-output">—</strong></div>
-        <div><span>Pitch</span><strong id="pitch-output">—</strong></div>
-        <div><span>Spacing</span><strong id="spacing-output">—</strong></div>
-        <div><span>Loop</span><strong id="loop-output">—</strong></div>
-      </section>
+          <p class="behavior-lab__note">
+            The readout is deliberately outside the tank. Judge the aquarium first; use the numbers only to diagnose why two motions still look alike.
+          </p>
+        </div>
 
-      <p class="behavior-lab__note">
-        The readout is deliberately outside the tank. Judge the aquarium first; use the numbers only to diagnose why two motions still look alike.
-      </p>
-    </main>
+        <section class="tuning" aria-labelledby="tuning-title">
+          <div class="tuning__scroll">
+            <div class="tuning__controls" aria-label="Showcase controls">
+              <label>Activity
+                <select id="behavior-select"></select>
+              </label>
+              <label>Orientation
+                <select id="orientation-select">
+                  <option value="landscape">Landscape · 800 × 480</option>
+                  <option value="portrait">Portrait · 480 × 800</option>
+                </select>
+              </label>
+              <button type="button" id="restart-showcase">Restart sequence</button>
+            </div>
 
-    <script type="module" src="src/behavior-lab.js?v=choreography-20260901"></script>
+            <div class="tuning__heading">
+              <p class="eyebrow">Live choreography tuning</p>
+              <h2 id="tuning-title">Tuning</h2>
+              <p id="tuning-summary" class="tuning__summary"></p>
+            </div>
+
+            <div id="tuning-groups" class="tuning__groups"></div>
+
+            <div class="tuning__actions">
+              <button type="button" id="tuning-reset">Reset activity</button>
+              <button type="button" id="tuning-reset-all">Reset all</button>
+              <button type="button" id="tuning-copy" class="primary-action">Copy activity</button>
+              <button type="button" id="tuning-copy-all">Copy all</button>
+            </div>
+
+            <label class="tuning__copy">Paste-ready source for <code>src/sim/choreography-tuning.js</code>
+              <textarea id="tuning-output" rows="10" readonly spellcheck="false"></textarea>
+            </label>
+            <p id="tuning-status" class="tuning__status" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="src/behavior-lab.js?v=choreography-tuning-20260902"></script>
   </body>
 </html>

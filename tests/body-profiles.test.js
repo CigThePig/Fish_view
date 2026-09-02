@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BODY_PROFILES } from "../src/render/body-profiles.js";
+import {
+  ADULT_BODY_PROFILES,
+  BODY_PROFILES,
+  DEFAULT_BODY_PROFILE,
+  GROWTH_STAGE_BODY_PROFILES,
+} from "../src/render/body-profiles.js";
+import { growthStagesBySpecies, individualSprites } from "../src/art/sprites.js";
 
 const expectedProfiles = Object.freeze({
   "double-fin": Object.freeze({
@@ -63,5 +69,34 @@ const expectedProfiles = Object.freeze({
 });
 
 test("production body profiles match the final motion-lab tuning", () => {
-  assert.deepEqual(BODY_PROFILES, expectedProfiles);
+  assert.deepEqual(ADULT_BODY_PROFILES, expectedProfiles);
+});
+
+// A growth stage the lab cannot address is a growth stage nobody can sculpt.
+test("every growth stage that carries an opaque body has a tunable profile", () => {
+  for (const [speciesId, stages] of Object.entries(growthStagesBySpecies)) {
+    for (const stage of stages) {
+      if (stage.id === speciesId) continue;
+      const tunable = stage.body !== false;
+      assert.equal(
+        Object.hasOwn(GROWTH_STAGE_BODY_PROFILES, stage.id),
+        tunable,
+        stage.id + (tunable ? " is missing a profile" : " has a profile but draws no body"),
+      );
+    }
+  }
+});
+
+// The entries exist so the lab can reach them, not to change the aquarium. A
+// growth stage fell back to the shared default before they were added, so every
+// stage still has to start there.
+test("growth stage profiles start at the geometry the renderer already used", () => {
+  for (const profile of Object.values(GROWTH_STAGE_BODY_PROFILES)) {
+    assert.deepEqual(profile, DEFAULT_BODY_PROFILE);
+  }
+});
+
+test("the flat lookup carries every adult and every stage", () => {
+  for (const sprite of individualSprites) assert.ok(BODY_PROFILES[sprite.id], sprite.id);
+  for (const id of Object.keys(GROWTH_STAGE_BODY_PROFILES)) assert.ok(BODY_PROFILES[id], id);
 });

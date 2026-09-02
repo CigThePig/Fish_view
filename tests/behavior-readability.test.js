@@ -59,12 +59,13 @@ function findDurableBubble(state) {
 }
 
 test("activity choreography profiles preserve a calm baseline and distinct energetic signatures", () => {
-  const cruise = choreographyFor(ACTIVITIES.cruise);
-  const bubble = choreographyFor(ACTIVITIES.bubbleInvestigate);
-  const follow = choreographyFor(ACTIVITIES.individualFollow);
-  const companion = choreographyFor(ACTIVITIES.companionCruise);
-  const chase = choreographyFor(ACTIVITIES.playfulChase);
-  const rest = choreographyFor(ACTIVITIES.openWaterRest);
+  // No state means no lab overrides: these are the authored production profiles.
+  const cruise = choreographyFor(null, ACTIVITIES.cruise);
+  const bubble = choreographyFor(null, ACTIVITIES.bubbleInvestigate);
+  const follow = choreographyFor(null, ACTIVITIES.individualFollow);
+  const companion = choreographyFor(null, ACTIVITIES.companionCruise);
+  const chase = choreographyFor(null, ACTIVITIES.playfulChase);
+  const rest = choreographyFor(null, ACTIVITIES.openWaterRest);
 
   assert.ok(bubble.accelerationResponse > cruise.accelerationResponse * 2);
   assert.ok(bubble.verticalSpeedScale > cruise.verticalSpeedScale * 2);

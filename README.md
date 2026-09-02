@@ -161,6 +161,74 @@ npm run capture:behaviors -- --scenario bubble-investigate --orientation portrai
 `@napi-rs/canvas` is development-only; the aquarium and GitHub Pages build still
 have no runtime dependency or build step.
 
+## The tuning labs
+
+Two developer pages exist to author numbers rather than to demonstrate them.
+Both are laid out the same way: the thing being judged and the controls that
+shape it stay on screen together, so a tuning pass never scrolls between a
+slider and its result, and both print their values back out as source that can
+be pasted straight into the table it came from.
+
+### Typographic motion lab — `sprites.html`
+
+Sculpts the opaque body that sits behind a fish's ASCII strokes, **one life
+stage at a time**. The roster on the left is a picker: every species lists its
+whole growth sequence, youngest first, and clicking any stage loads it into the
+pinned workbench on the right, where it is drawn static, animated right, and
+animated left directly above the six profile sliders. Switching species keeps
+the life stage selected, so two juveniles can be compared in one click.
+
+The values live in `src/render/body-profiles.js` in two frozen tables:
+`ADULT_BODY_PROFILES`, keyed by species, and `GROWTH_STAGE_BODY_PROFILES`, keyed
+by the stage sprite id (`"round-fin:juvenile"`). The renderer reads one flat
+lookup across both, because an adult and a growth stage reach their profile the
+same way. Every stage entry starts at the shared default, which is exactly what
+the renderer used for a growth stage before the entries existed: adding them
+changed nothing on screen, it only made the geometry addressable. A fry is
+marked `body: false`, has no opaque body at all, and so has no profile - the lab
+says so rather than offering dead sliders.
+
+Copy prints the selected stage, the selected fish's whole sequence, or every
+profile in the aquarium, grouped under the table each entry belongs to.
+
+### Behaviour choreography lab — `behaviors.html`
+
+Runs the production simulation and renderer on a forced activity, with every
+tunable number of that activity beside the tank. Moving a slider changes the
+running scene immediately; nothing is restarted and no motion is faked.
+
+The numbers live in `src/sim/choreography-tuning.js` in two tables:
+
+```text
+STEERING_PROFILES  how the steering controller answers a target - response,
+                   speed ceilings, approach radius, how it arrives - keyed by
+                   activity, and by "activity:phase" for the short-lived
+                   variants an activity switches into
+SCENE_TUNING       the distances, speeds and rotations that shape the target
+                   itself, keyed by activity
+```
+
+A phase profile such as `"playful-chase:break"` or `"substrate-search:graze"`
+layers over its activity's profile rather than over the controller default, so
+it lists only what it changes. The lab shows an activity's own profile and every
+phase profile that belongs to it, and prints each one back as the fields it
+actually changes - which reproduces the authored entries exactly when nothing is
+tuned.
+
+Scene tuning is where the shape of a behaviour lives. Bottom feeding, for
+instance, exposes its graze rotation and peck rotation in degrees, how close the
+belly may come to the substrate crest, how deep a strike drives the fish, and
+the speeds of the descent and the creep. A chase exposes both fish: the chaser's
+approach and pursuit speeds and its lunge, and the evader's burst speed and how
+hard proximity panics it, because a chase is read from the gap between two fish
+rather than from how fast either one travels.
+
+Overrides ride on the state being ticked (`state.choreographyTuning`) rather
+than in a module-level register, so `tick(state, dt)` stays a pure function of
+the state it is handed and a lab session cannot leak tuning into the aquarium.
+Production never sets the field: `steeringProfile()` and `sceneTuning()` hand
+back the authored frozen object itself when no override is present.
+
 ## Architecture boundary
 
 `src/sim/` and the pure `render(state)` scene composer have no DOM, canvas,
@@ -903,7 +971,8 @@ box-fin      <o>  →  juvenile  →  max
 it.** A fully grown aquarium is therefore drawn from exactly the artwork it was
 drawn from before growth existed, and the renderer's per-id sprite point cache,
 body box, authored pitch pose, and tuned body profile all still resolve against
-the sprite they were calibrated against. An eighth-cell width limit, mask
+the sprite they were calibrated against. Every earlier stage is its own drawing
+with its own body profile, tuned per stage in the motion lab. An eighth-cell width limit, mask
 dimensions, and glyph-aware mirroring hold for every stage, not only the adults.
 
 Mask digits stay on the same anatomy from stage to stage (1/2/3 fins, 4 eye,
@@ -1149,9 +1218,10 @@ turning plant motion into full-frame redraws.
 ```text
 src/art/       extracted art data and glyph-aware mirroring
 src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose,
-               derived fish growth, and the shared long-horizon
-               aquarium-history resolver
-src/dev/       deterministic production-state setup for visual choreography QA
+               derived fish growth, the authored choreography tuning tables,
+               and the shared long-horizon aquarium-history resolver
+src/dev/       deterministic production-state setup for visual choreography QA,
+               and the slider metadata the tuning labs are built from
 src/render/    scene composition, depth lanes, plant glyph mapping, palette,
                font, damage
 src/platform/  browser-only persistence adapter

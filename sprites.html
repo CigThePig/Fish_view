@@ -6,77 +6,101 @@
     <meta name="theme-color" content="#07100f">
     <title>Fish View — Typographic motion lab</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="sprite-sheet.css?v=phase4-growth-20260901">
+    <link rel="stylesheet" href="sprite-sheet.css?v=stage-sculpting-20260902">
   </head>
   <body class="sprite-page">
     <header>
       <div>
         <p class="eyebrow">Deterministic art validation</p>
         <h1>Typographic motion lab</h1>
-        <p>Static source poses beside both animated facings. Animation is intentionally capped at 10 updates per second.</p>
+        <p>Pick a fish and a life stage on the left. It is drawn beside the sliders that sculpt it, so a tuning pass never scrolls.</p>
       </div>
       <a href="index.html">Return to aquarium</a>
     </header>
 
-    <section class="lab-controls" aria-label="Motion lab controls">
-      <button type="button" id="freeze-toggle" aria-pressed="false">Freeze animation</button>
-      <label>Swim phase <output id="phase-output">0.00</output>
-        <input id="phase-control" type="range" min="0" max="1" step="0.005" value="0">
-      </label>
-      <label>Pitch intent <output id="pitch-output">0°</output>
-        <input id="pitch-control" type="range" min="-35" max="35" step="1" value="0">
-      </label>
-      <label>Turn width <output id="turn-output">1.00</output>
-        <input id="turn-control" type="range" min="0.32" max="1" step="0.02" value="1">
-      </label>
-      <label>Palette
-        <select id="palette-control">
-          <option value="day">Day</option>
-          <option value="night">Deep night</option>
-        </select>
-      </label>
-      <label>Deformation <output id="deformation-output">1.00</output>
-        <input id="deformation-control" type="range" min="0" max="1.5" step="0.05" value="1">
-      </label>
-      <label>Zoom <output id="zoom-output">1.00×</output>
-        <input id="zoom-control" type="range" min="0.65" max="1.45" step="0.05" value="1">
-      </label>
-      <label class="check-control"><input id="anchors-control" type="checkbox"> Glyph anchors</label>
-      <label class="check-control"><input id="bounds-control" type="checkbox"> Object bounds</label>
-      <label class="check-control"><input id="damage-control" type="checkbox"> Damage rectangles</label>
-    </section>
+    <div class="lab-layout">
+      <main id="sprite-grid" class="sprite-grid" aria-label="Fish roster"></main>
 
-    <section class="profile-lab" aria-labelledby="profile-lab-title">
-      <div class="profile-lab__heading">
-        <div>
-          <p class="eyebrow">Live opaque-body sculpting</p>
-          <h2 id="profile-lab-title">Fish-specific body profile</h2>
-          <p>Tune one fish at a time. Every slider redraws its static and animated views immediately. Reset returns to the production defaults; further edits remain temporary until you copy them out.</p>
+      <section class="workbench" aria-labelledby="workbench-title">
+        <div class="workbench__scroll">
+          <div class="workbench__stage">
+            <p class="eyebrow">Live opaque-body sculpting</p>
+            <h2 id="workbench-title">Fish-specific body profile</h2>
+            <p id="workbench-summary" class="workbench__summary"></p>
+            <div id="workbench-views" class="workbench-views"></div>
+            <div class="workbench__stages">
+              <p class="workbench__label" id="stage-strip-label">Life stage · youngest first</p>
+              <div id="stage-strip" class="stage-strip" role="group" aria-labelledby="stage-strip-label"></div>
+            </div>
+          </div>
+
+          <div class="workbench__controls">
+            <div class="workbench__pickers">
+              <label>Fish
+                <select id="profile-fish-control"></select>
+              </label>
+              <label>Life stage
+                <select id="profile-stage-control"></select>
+              </label>
+            </div>
+
+            <div id="profile-fields" class="profile-fields"></div>
+            <p id="profile-unavailable" class="profile-unavailable" hidden>
+              A fry is drawn as open ink, exactly like the school it is the size of. There is no opaque body at this stage to sculpt.
+            </p>
+
+            <div class="profile-actions">
+              <button type="button" id="profile-reset">Reset stage</button>
+              <button type="button" id="profile-reset-fish">Reset fish</button>
+              <button type="button" id="profile-reset-all">Reset all</button>
+              <button type="button" id="profile-copy" class="primary-action">Copy stage</button>
+              <button type="button" id="profile-copy-fish">Copy fish</button>
+              <button type="button" id="profile-copy-all">Copy all</button>
+            </div>
+
+            <label class="profile-copy-area">Paste-ready source for <code>src/render/body-profiles.js</code>
+              <textarea id="profile-copy-output" rows="10" readonly spellcheck="false"></textarea>
+            </label>
+            <p id="profile-copy-status" class="profile-copy-status" role="status" aria-live="polite"></p>
+
+            <details class="lab-controls-panel" open>
+              <summary>Pose and view</summary>
+              <div class="lab-controls">
+                <button type="button" id="freeze-toggle" aria-pressed="false">Freeze animation</button>
+                <label>Swim phase <output id="phase-output">0.00</output>
+                  <input id="phase-control" type="range" min="0" max="1" step="0.005" value="0">
+                </label>
+                <label>Pitch intent <output id="pitch-output">0°</output>
+                  <input id="pitch-control" type="range" min="-35" max="35" step="1" value="0">
+                </label>
+                <label>Turn width <output id="turn-output">1.00</output>
+                  <input id="turn-control" type="range" min="0.32" max="1" step="0.02" value="1">
+                </label>
+                <label>Palette
+                  <select id="palette-control">
+                    <option value="day">Day</option>
+                    <option value="night">Deep night</option>
+                  </select>
+                </label>
+                <label>Deformation <output id="deformation-output">1.00</output>
+                  <input id="deformation-control" type="range" min="0" max="1.5" step="0.05" value="1">
+                </label>
+                <label>Zoom <output id="zoom-output">1.00×</output>
+                  <input id="zoom-control" type="range" min="0.65" max="1.45" step="0.05" value="1">
+                </label>
+                <label class="check-control"><input id="anchors-control" type="checkbox"> Glyph anchors</label>
+                <label class="check-control"><input id="bounds-control" type="checkbox"> Object bounds</label>
+                <label class="check-control"><input id="damage-control" type="checkbox"> Damage rectangles</label>
+              </div>
+            </details>
+          </div>
         </div>
-        <label class="profile-fish-picker">Fish
-          <select id="profile-fish-control"></select>
-        </label>
-      </div>
+      </section>
+    </div>
 
-      <div id="profile-fields" class="profile-fields"></div>
-
-      <div class="profile-actions">
-        <button type="button" id="profile-reset">Reset selected</button>
-        <button type="button" id="profile-reset-all">Reset all</button>
-        <button type="button" id="profile-copy" class="primary-action">Copy selected values</button>
-        <button type="button" id="profile-copy-all">Copy all values</button>
-      </div>
-
-      <label class="profile-copy-area">Exact values
-        <textarea id="profile-copy-output" rows="9" readonly spellcheck="false"></textarea>
-      </label>
-      <p id="profile-copy-status" class="profile-copy-status" role="status" aria-live="polite"></p>
-    </section>
-
-    <main id="sprite-grid" class="sprite-grid"></main>
     <footer>
       Artwork from <em>asciiquarium 1.1</em> by Kirk Baucom; most ASCII art by Joan Stark. GPL v2 or later.
     </footer>
-    <script type="module" src="src/sprite-sheet.js?v=phase4-growth-20260901"></script>
+    <script type="module" src="src/sprite-sheet.js?v=stage-sculpting-20260902"></script>
   </body>
 </html>
