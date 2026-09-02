@@ -1,12 +1,10 @@
 import { WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { plantRootY } from "./environment.js";
+import { sceneTuning } from "./choreography-tuning.js";
 import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import {
-  FORAGE_PITCH_BIAS_DEGREES,
-  FORAGE_ROUTE_LEAD_COLUMNS,
-  SURFACE_PITCH_BIAS_DEGREES,
   forageActivity,
   forageEligible,
   substrateGrazeY,
@@ -386,10 +384,14 @@ function choice(activity, utility, target = {}) {
   };
 }
 
-function choreographed(activity, target, overrides = {}) {
+// `phase`, when given, names a short-lived variant of the activity whose
+// steering profile is layered over the activity's own - see
+// choreography-tuning.js. The state travels with it because every tunable
+// number the lab can override rides on the state being ticked.
+function choreographed(state, activity, target, phase = null) {
   return {
     ...target,
-    choreography: choreographyFor(activity, overrides),
+    choreography: choreographyFor(state, activity, phase),
   };
 }
 
@@ -578,7 +580,8 @@ function findFish(state, seed, selfSeed) {
   return state.individuals?.find((fish) => fish.seed === seed) ?? null;
 }
 
-function companionOffset(fish, companion, activity) {
+function companionOffset(fish, companion, activity, state) {
+  const tuning = sceneTuning(state, activity);
   const pairSeed = mix32(Math.min(fish.seed, companion.seed)
     ^ Math.imul(Math.max(fish.seed, companion.seed), 0x27d4eb2f));
   const velocity = safeNormalize(companion.vx, companion.vy, companion.vx < 0 ? -1 : 1, 0);
@@ -588,9 +591,11 @@ function companionOffset(fish, companion, activity) {
   const seededSide = pairSide * (fish.seed < companion.seed ? -1 : 1);
   const basePerpendicular = { x: -velocity.y, y: velocity.x };
   const combinedWidth = fishSpriteWidth(fish) + fishSpriteWidth(companion);
-  const trailing = activity === ACTIVITIES.individualFollow
-    ? clamp(combinedWidth * 0.35, 2.25, 3.7)
-    : clamp(combinedWidth * 0.09, 0.45, 0.9);
+  const trailing = clamp(
+    combinedWidth * tuning.trailingScale,
+    tuning.trailingMinRows,
+    tuning.trailingMaxRows,
+  );
   const mutualCompanion = activity === ACTIVITIES.companionCruise
     && companion.activity?.current === ACTIVITIES.companionCruise
     && companion.activity?.targetId === fish.seed;
@@ -609,9 +614,7 @@ function companionOffset(fish, companion, activity) {
   // Mutual companions each steer to the same full center spacing. A unilateral
   // cruiser uses that visible spacing too. Both cases keep the authored
   // ASCII bodies adjacent rather than compositing them into one tangled fish.
-  const beside = activity === ACTIVITIES.companionCruise
-    ? sampleRange(pairSeed, 8501, 3.35, 3.75)
-    : sampleRange(pairSeed, 8501, 0.22, 0.46);
+  const beside = sampleRange(pairSeed, 8501, tuning.besideMinRows, tuning.besideMaxRows);
   return {
     x: companion.x - velocity.x * trailing + perpendicular.x * beside,
     y: companion.y - velocity.y * trailing
@@ -631,6 +634,7 @@ function boundedPlantPoint(fish, state, x, y) {
 }
 
 function inspectionPoint(fish, plant, state, activity) {
+  const tuning = sceneTuning(state, ACTIVITIES.plantInvestigate);
   const base = plantTargetPosition(fish, plant, state);
   const distance = Math.hypot(base.x - fish.x, base.y - fish.y);
   if (distance > 1.75 || activity.ageRealSeconds < 1.1) {
@@ -639,11 +643,12 @@ function inspectionPoint(fish, plant, state, activity) {
 
   const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(plant.seed >>> 0, 0xc2b2ae35));
   const inspectAge = Math.max(0, activity.ageRealSeconds - 1.1);
-  const station = Math.floor(inspectAge / 2.35);
+  const station = Math.floor(inspectAge / tuning.stationSeconds);
   const height = Math.min(1.2, Math.max(0.42, plantHeight(plant) * 0.16));
   const verticalStation = sampleSigned(pairSeed, 8140 + positiveModulo(station, 11)) * height;
-  const headSweep = Math.sin(inspectAge * 2.25 + sampleRange(pairSeed, 8155, 0, TAU)) * 0.34;
-  const hover = Math.sin(inspectAge * 1.18 + sampleRange(pairSeed, 8156, 0, TAU)) * 0.2;
+  const headSweep = Math.sin(inspectAge * 2.25 + sampleRange(pairSeed, 8155, 0, TAU))
+    * tuning.headSweepColumns;
+  const hover = Math.sin(inspectAge * 1.18 + sampleRange(pairSeed, 8156, 0, TAU)) * tuning.hoverRows;
   return {
     ...boundedPlantPoint(fish, state, base.x + headSweep, base.y + verticalStation + hover),
     phase: "inspect",
@@ -652,9 +657,10 @@ function inspectionPoint(fish, plant, state, activity) {
 }
 
 function weavePoint(fish, primary, state, activity) {
+  const tuning = sceneTuning(state, ACTIVITIES.plantWeave);
   const secondary = secondWeavePlant(fish, primary, state);
   const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(primary.seed >>> 0, 0x85ebca6b));
-  const stageSeconds = sampleRange(pairSeed, 8160, 2.55, 3.05);
+  const stageSeconds = sampleRange(pairSeed, 8160, tuning.stageSecondsMin, tuning.stageSecondsMax);
   const stage = Math.floor(Math.max(0, activity.ageRealSeconds) / stageSeconds) % 5;
   const route = [
     { plant: primary, alternate: false, lift: -0.65 },
@@ -667,7 +673,7 @@ function weavePoint(fish, primary, state, activity) {
   const base = plantTargetPosition(fish, waypoint.plant, state, {
     alternateSide: waypoint.alternate,
   });
-  const asymmetry = sampleSigned(pairSeed, 8170 + stage) * 0.18;
+  const asymmetry = sampleSigned(pairSeed, 8170 + stage) * tuning.asymmetryRows;
   return {
     ...boundedPlantPoint(fish, state, base.x, base.y + waypoint.lift + asymmetry),
     stage,
@@ -686,7 +692,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
     if (!state.reaction) return null;
     const away = safeNormalize(fish.x - state.reaction.x, fish.y - state.reaction.y, fish.vx < 0 ? -1 : 1, 0);
     const standoff = 0.2 + (1 - affinities.glass) * 0.82;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x: state.reaction.x + away.x * standoff,
       y: state.reaction.y + away.y * standoff,
       speed: 0.56 + affinities.glass * 0.25,
@@ -697,10 +703,13 @@ export function resolveActivityTarget(fish, index, state, activity, {
   }
   if (activity.current === ACTIVITIES.wander) {
     if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
-    return choreographed(activity.current, {
+    const wanderTuning = sceneTuning(state, ACTIVITIES.wander);
+    return choreographed(state, activity.current, {
       x: activity.targetX,
       y: activity.targetY,
-      speed: 0.27 + traits.curiosity * 0.24 + affinities.wander * 0.08,
+      speed: wanderTuning.speedBase
+        + traits.curiosity * wanderTuning.speedCuriosity
+        + affinities.wander * wanderTuning.speedAffinity,
       postureBias: 0,
       choreographyPhase: "travel",
     });
@@ -709,7 +718,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
   // deformation carry it. No text, no marker, no cinematic.
   if (activity.current === ACTIVITIES.arrivalEnter) {
     if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x: activity.targetX,
       y: activity.targetY,
       speed: 0.3 + traits.activity * 0.16,
@@ -726,31 +735,30 @@ export function resolveActivityTarget(fish, index, state, activity, {
     if (!primary || !suitablePlant(primary, { shelter })) return null;
     const cautious = 0.7 + traits.boldness * 0.3;
     if (activity.current === ACTIVITIES.plantInvestigate) {
+      const tuning = sceneTuning(state, ACTIVITIES.plantInvestigate);
       const point = inspectionPoint(fish, primary, state, activity);
       const inspecting = point.phase === "inspect";
-      return choreographed(activity.current, {
+      return choreographed(state, activity.current, {
         x: point.x,
         y: point.y,
         speed: inspecting
-          ? (0.12 + traits.curiosity * 0.08 + affinities.plant * 0.035) * cautious
-          : (0.26 + traits.curiosity * 0.18) * cautious,
+          ? (tuning.inspectSpeed + traits.curiosity * tuning.inspectCuriosity
+            + affinities.plant * tuning.inspectAffinity) * cautious
+          : (tuning.approachSpeed + traits.curiosity * tuning.approachCuriosity) * cautious,
         postureBias: 0,
         plantTarget: true,
         choreographyPhase: point.phase,
-      }, inspecting ? {
-        approachRadius: 0.72,
-        arrivalSpeedScale: 0.42,
-        accelerationResponse: 1.55,
-        turningResponse: 2.25,
-      } : {});
+      }, inspecting ? "plant-investigate:inspect" : null);
     }
 
     if (activity.current === ACTIVITIES.plantWeave) {
+      const tuning = sceneTuning(state, ACTIVITIES.plantWeave);
       const point = weavePoint(fish, primary, state, activity);
-      return choreographed(activity.current, {
+      return choreographed(state, activity.current, {
         x: point.x,
         y: point.y,
-        speed: (0.4 + traits.activity * 0.15 + affinities.plant * 0.04) * cautious,
+        speed: (tuning.speedBase + traits.activity * tuning.speedActivity
+          + affinities.plant * tuning.speedAffinity) * cautious,
         postureBias: 0,
         plantTarget: true,
         weaveStage: point.stage,
@@ -770,21 +778,17 @@ export function resolveActivityTarget(fish, index, state, activity, {
         point.y + Math.sin(driftPhase * 0.71) * 0.07,
       )
       : point;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x: restingPoint.x,
       y: restingPoint.y,
       speed: settled ? 0.032 + traits.activity * 0.025 : 0.15 + traits.activity * 0.09,
       postureBias: 0,
       plantTarget: true,
       choreographyPhase: settled ? "shelter" : "settle",
-    }, settled ? {} : {
-      accelerationResponse: 1,
-      turningResponse: 1.05,
-      maximumSpeed: 0.38,
-      verticalSpeedScale: 0.64,
-    });
+    }, settled ? null : "plant-shelter:settle");
   }
   if (activity.current === ACTIVITIES.bubbleInvestigate) {
+    const tuning = sceneTuning(state, ACTIVITIES.bubbleInvestigate);
     const bubble = bubbles.find((record) => record.id === activity.targetId
       && (record.phase === "rise" || record.phase === "pop"));
     if (!bubble || !["stream", "isolated", "touch"].includes(bubble.kind)) return null;
@@ -792,7 +796,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
     if (bubble.phase === "pop") {
       const overshoot = (fish.visual?.targetFacing === -1 ? -1 : 1)
         * (0.28 + traits.curiosity * 0.22) * (1 - bubble.progress);
-      return choreographed(activity.current, {
+      return choreographed(state, activity.current, {
         x: bubble.worldX + overshoot,
         y: bubble.worldY + 0.28 + bubble.progress * 0.16,
         speed: 0.07 + traits.curiosity * 0.045,
@@ -800,24 +804,16 @@ export function resolveActivityTarget(fish, index, state, activity, {
         bubbleTarget: true,
         bubblePop: true,
         choreographyPhase: "pop-search",
-      }, {
-        accelerationResponse: 0.8,
-        turningResponse: 1.15,
-        verticalSpeedScale: 0.72,
-        minimumSpeed: 0.018,
-        maximumSpeed: 0.3,
-        approachRadius: 0.8,
-        arrivalSpeedScale: 0.12,
-        pitchResponse: 3.4,
-        turnDuration: 0.72,
-      });
+      }, "bubble-investigate:pop");
     }
 
     const distance = Math.hypot(bubble.worldX - fish.x, bubble.worldY - fish.y);
     const acquiring = activity.ageRealSeconds < 0.78;
     const inspecting = !acquiring && distance < 1.65;
     const phase = acquiring ? "acquire" : inspecting ? "inspect" : "pursue";
-    const lookAhead = acquiring ? 0.34 : inspecting ? 0.18 : 0.58 + affinities.bubble * 0.42;
+    const lookAhead = acquiring
+      ? 0.34
+      : inspecting ? 0.18 : tuning.lookAheadSeconds + affinities.bubble * 0.42;
     const stableSide = (sample01(pairSeed, 8190) < 0.5 ? -1 : 1)
       * sampleRange(pairSeed, 8191, 0.24, 0.52);
     const inspectClock = activity.ageRealSeconds * sampleRange(pairSeed, 8192, 1.65, 2.2)
@@ -826,8 +822,8 @@ export function resolveActivityTarget(fish, index, state, activity, {
       ? Math.max(0, Math.sin(inspectClock * 0.56)) ** 5
       : 0;
     const below = inspecting
-      ? 0.48 - curiousLunge * 0.34 + Math.sin(inspectClock) * 0.22
-      : 0.58 + (1 - traits.boldness) * 0.36;
+      ? tuning.inspectStandoffRows - curiousLunge * 0.34 + Math.sin(inspectClock) * 0.22
+      : tuning.standoffRows + (1 - traits.boldness) * 0.36;
     const socialProof = nearbyFishCount(state, bubble.worldX, bubble.worldY, 2.8, fish.seed) > 0;
     const enthusiasm = 0.78 + traits.boldness * 0.18
       + affinities.bubble * 0.16
@@ -835,32 +831,28 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const predictedX = bubble.worldX + stableSide
       + (inspecting ? Math.sin(inspectClock * 1.37) * 0.18 : 0);
     const predictedY = bubble.worldY - (bubble.speed ?? 0.4) * lookAhead + below;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       ...boundedPlantPoint(fish, state, predictedX, predictedY),
       speed: inspecting
-        ? (0.16 + traits.curiosity * 0.08 + curiousLunge * 0.22) * enthusiasm
-        : (acquiring ? 0.5 : 0.63) + traits.curiosity * 0.14 + affinities.bubble * 0.12,
-      postureBias: acquiring ? -4 : inspecting ? -2 : -5,
+        ? (tuning.inspectSpeed + traits.curiosity * 0.08 + curiousLunge * 0.22) * enthusiasm
+        : (acquiring ? tuning.acquireSpeed : tuning.pursueSpeed)
+          + traits.curiosity * 0.14 + affinities.bubble * 0.12,
+      postureBias: acquiring
+        ? tuning.acquirePitchDegrees
+        : inspecting ? tuning.inspectPitchDegrees : tuning.pursuePitchDegrees,
       bubbleTarget: true,
       predictedBubble: true,
       choreographyPhase: phase,
-    }, inspecting ? {
-      accelerationResponse: 1.9,
-      turningResponse: 2.55,
-      verticalSpeedScale: 1.12,
-      minimumSpeed: 0.045,
-      maximumSpeed: 0.62,
-      approachRadius: 0.9,
-      arrivalSpeedScale: 0.38,
-    } : {});
+    }, inspecting ? "bubble-investigate:inspect" : null);
   }
   if (activity.current === ACTIVITIES.surfaceInvestigate) {
     if (index < 3 || !Number.isFinite(activity.targetX)) return null;
+    const tuning = sceneTuning(state, ACTIVITIES.surfaceInvestigate);
     const lateralPhase = activity.ageRealSeconds * (0.5 + traits.curiosity * 0.18)
       + sampleRange(fish.seed, 8200, 0, TAU);
     const halfWidth = spriteHalfWidth(fish);
     const x = clamp(
-      activity.targetX + Math.sin(lateralPhase) * (0.75 + affinities.surface * 0.72),
+      activity.targetX + Math.sin(lateralPhase) * (tuning.sweepColumns + affinities.surface * 0.72),
       halfWidth,
       state.cols - halfWidth,
     );
@@ -868,43 +860,40 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const near = Math.abs(fish.y - safeY) < 1.12;
     const probe = near ? Math.max(0, Math.sin(activity.ageRealSeconds * 2.35
       + sampleRange(fish.seed, 8201, 0, TAU))) : 0;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x,
       // The steering intent reaches slightly through the meniscus, but the
       // conservative simulation clamp keeps the body below it. This produces
       // a visible upward probe without ever allowing surface clipping.
-      y: safeY - probe * (0.24 + affinities.surface * 0.12),
-      speed: near ? 0.11 + traits.activity * 0.055 + probe * 0.04 : 0.39 + traits.curiosity * 0.17,
+      y: safeY - probe * (tuning.probeReachRows + affinities.surface * 0.12),
+      speed: near
+        ? tuning.probeSpeed + traits.activity * 0.055 + probe * 0.04
+        : tuning.ascendSpeed + traits.curiosity * 0.17,
       postureBias: near
-        ? SURFACE_PITCH_BIAS_DEGREES - 5 - probe * 7
-        : SURFACE_PITCH_BIAS_DEGREES,
+        ? tuning.pitchBiasDegrees + tuning.probePitchDegrees + probe * tuning.probePitchGain
+        : tuning.pitchBiasDegrees,
       surfaceInspect: true,
       surfaceProbe: probe,
       choreographyPhase: near ? "probe" : "ascend",
-    }, near ? {
-      accelerationResponse: 1.2,
-      turningResponse: 1.35,
-      verticalSpeedScale: 1.08,
-      maximumSpeed: 0.38,
-      approachRadius: 0.75,
-      arrivalSpeedScale: 0.34,
-    } : {});
+    }, near ? "surface-investigate:probe" : null);
   }
   if (activity.current === ACTIVITIES.schoolFollow) {
     const members = school ?? [];
     if (!members.length) return null;
+    const tuning = sceneTuning(state, ACTIVITIES.schoolFollow);
     const memberIndex = Math.floor(sample01(fish.seed, 8510) * members.length) % members.length;
     const member = members[memberIndex];
     const direction = safeNormalize(member.vx, member.vy, sample01(fish.seed, 8513) < 0.5 ? -1 : 1, 0);
-    const side = sampleSigned(fish.seed, 8512) * 0.62;
+    const side = sampleSigned(fish.seed, 8512) * tuning.sideSpreadRows;
     const perpendicular = { x: -direction.y, y: direction.x };
-    const trailing = sampleRange(fish.seed, 8511, 1.65, 2.45);
-    return choreographed(activity.current, {
+    const trailing = sampleRange(fish.seed, 8511, tuning.trailingMinRows, tuning.trailingMaxRows);
+    return choreographed(state, activity.current, {
       x: member.x - direction.x * trailing + perpendicular.x * side,
       y: member.y - direction.y * trailing + perpendicular.y * side * 0.55,
-      speed: 0.28 + traits.sociability * 0.22 + affinities.school * 0.07,
-      velocityX: member.vx * 0.46,
-      velocityY: member.vy * 0.46,
+      speed: tuning.speedBase + traits.sociability * tuning.speedSociability
+        + affinities.school * 0.07,
+      velocityX: member.vx * tuning.velocityMatchScale,
+      velocityY: member.vy * tuning.velocityMatchScale,
       postureBias: 0,
       schoolTarget: true,
       schoolMemberIndex: memberIndex,
@@ -917,33 +906,26 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const companion = findFish(state, activity.targetId, fish.seed);
     if (!companion) return null;
     if (activity.current === ACTIVITIES.playfulChase) {
+      // One table for both halves of the chase: the chaser's closing speed here
+      // and the evader's burst in chaseEvasionForFish() read the same entries.
+      const tuning = sceneTuning(state, ACTIVITIES.playfulChase);
       const distance = Math.hypot(companion.x - fish.x, companion.y - fish.y);
-      const phase = chasePhase(activity.ageRealSeconds, distance);
+      const phase = chasePhase(activity.ageRealSeconds, distance, tuning);
       if (phase === "break") {
         const glide = safeNormalize(fish.vx, fish.vy, fish.x < state.cols / 2 ? -1 : 1, 0);
-        return choreographed(activity.current, {
+        return choreographed(state, activity.current, {
           x: fish.x + glide.x * 2.4,
           y: fish.y + glide.y * 1.3,
-          speed: 0.18 + traits.activity * 0.08,
+          speed: tuning.breakGlideSpeed + traits.activity * 0.08,
           postureBias: 0,
           companionTarget: true,
           playfulChase: true,
           choreographyPhase: "break",
-        }, {
-          accelerationResponse: 0.85,
-          turningResponse: 0.9,
-          verticalSpeedScale: 0.62,
-          minimumSpeed: 0.045,
-          maximumSpeed: 0.42,
-          approachRadius: 0,
-          arrivalSpeedScale: 1,
-          pitchResponse: 2.8,
-          turnDuration: 0.78,
-        });
+        }, "playful-chase:break");
       }
 
       const toward = safeNormalize(companion.x - fish.x, companion.y - fish.y, fish.vx < 0 ? -1 : 1, 0);
-      const lead = phase === "approach" ? 0.72 : 1.02;
+      const lead = phase === "approach" ? tuning.approachLeadSeconds : tuning.pursuitLeadSeconds;
       // A chase is read from the distance between two fish, not from their
       // speed: two fish holding a fixed gap are a formation however fast they
       // travel. The pursuit therefore lunges - the chaser asks to be right on
@@ -951,48 +933,49 @@ export function resolveActivityTarget(fish, index, state, activity, {
       // a burst of its own, so the gap closes and opens while they run.
       const lunge = Math.sin(activity.ageRealSeconds * 2.35
         + sampleRange(fish.seed, 8521, 0, TAU)) * 0.5 + 0.5;
-      const standoff = phase === "approach" ? 0.9 : 1.45 - lunge * 1.05;
+      const standoff = phase === "approach"
+        ? tuning.approachStandoffRows
+        : tuning.pursuitStandoffRows - lunge * 1.05;
       const curve = Math.sin(activity.ageRealSeconds * 1.72
         + sampleRange(fish.seed, 8520, 0, TAU)) * (phase === "approach" ? 0.2 : 0.42);
-      return choreographed(activity.current, {
+      return choreographed(state, activity.current, {
         x: companion.x + companion.vx * lead - toward.x * standoff,
         y: companion.y + companion.vy * lead - toward.y * standoff + curve,
         speed: phase === "approach"
-          ? 0.58 + traits.activity * 0.2
-          : 0.78 + traits.activity * 0.18 + lunge * 0.24,
+          ? tuning.approachSpeed + traits.activity * 0.2
+          : tuning.pursuitSpeed + traits.activity * 0.18 + lunge * tuning.lungeSpeedGain,
         postureBias: 0,
         companionTarget: true,
         playfulChase: true,
         choreographyPhase: phase,
       });
     }
-    const point = companionOffset(fish, companion, activity.current);
+    const point = companionOffset(fish, companion, activity.current, state);
+    const tuning = sceneTuning(state, activity.current);
     const mutualCompanion = activity.current === ACTIVITIES.companionCruise
       && companion.activity?.current === ACTIVITIES.companionCruise
       && companion.activity?.targetId === fish.seed;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x: point.x,
       y: point.y,
-      speed: activity.current === ACTIVITIES.companionCruise
-        ? 0.3 + traits.sociability * 0.14
-        : 0.36 + traits.sociability * 0.17,
+      speed: tuning.speedBase + traits.sociability * tuning.speedSociability,
       velocityX: companion.vx,
       velocityY: companion.vy,
       postureBias: 0,
       companionTarget: true,
       mutualCompanion,
       choreographyPhase: activity.current === ACTIVITIES.companionCruise ? "beside" : "trail",
-    }, mutualCompanion ? {
-      velocityMatch: 0.97,
-      accelerationResponse: 0.82,
-      turningResponse: 1,
-    } : {});
+    }, mutualCompanion ? "companion-cruise:mutual" : null);
   }
   if (activity.current === ACTIVITIES.substrateSearch) {
     if (!forageEligible(index)) return null;
+    const tuning = sceneTuning(state, ACTIVITIES.substrateSearch);
     const forage = forageActivity(fish, index, state, activity);
     const halfWidth = spriteHalfWidth(fish);
-    const searchSpan = Math.min(6.8, state.cols * (0.065 + affinities.substrate * 0.055));
+    const searchSpan = Math.min(
+      tuning.searchSpanColumns,
+      state.cols * (0.065 + affinities.substrate * 0.055),
+    );
     const searchPhase = (activity.ageRealSeconds ?? 0) * (0.13 + traits.activity * 0.065)
       + sampleRange(fish.seed, 25, 0, TAU);
     const patchCenter = state.cols * (
@@ -1008,12 +991,16 @@ export function resolveActivityTarget(fish, index, state, activity, {
     // nothing for the descent. The patch still leads the fish, only never by
     // further than it can answer.
     const grazeX = clamp(
-      clamp(routeX + recoveryScoot, fish.x - FORAGE_ROUTE_LEAD_COLUMNS, fish.x + FORAGE_ROUTE_LEAD_COLUMNS),
+      clamp(
+        routeX + recoveryScoot,
+        fish.x - tuning.routeLeadColumns,
+        fish.x + tuning.routeLeadColumns,
+      ),
       halfWidth,
       state.cols - halfWidth,
     );
     const x = forage.searching ? grazeX : descentX;
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x,
       // The graze line is the target for the descent as well as for the meal.
       // Stopping the descent at the swimming envelope would leave the fish too
@@ -1026,65 +1013,57 @@ export function resolveActivityTarget(fish, index, state, activity, {
       // fish by a single pixel. tickIndividual() drives the plunge directly.
       y: substrateGrazeY(fish, state, x, index),
       speed: forage.searching
-        ? 0.105 + traits.activity * 0.075 + affinities.substrate * 0.035
-        : 0.36 + traits.activity * 0.18,
+        ? tuning.searchSpeed + traits.activity * 0.075 + affinities.substrate * 0.035
+        : tuning.descendSpeed + traits.activity * 0.18,
       // The strike snaps the nose down as well as the body: posture is the cue
       // that survives when the fish is small on the panel.
-      postureBias: forage.searching ? FORAGE_PITCH_BIAS_DEGREES + forage.peck * 11 : 0,
+      postureBias: forage.searching
+        ? tuning.grazePitchDegrees + forage.peck * tuning.peckPitchDegrees
+        : 0,
       forageGrazing: true,
       forageSearching: forage.searching,
       peck: forage.peck,
       peckDisplacement: forage.peckDisplacement,
       forageEventSeed: forage.eventSeed,
       choreographyPhase: forage.searching ? (forage.peck > 0 ? "peck" : "search") : "descend",
-    }, forage.searching ? {
-      accelerationResponse: 1.55,
-      turningResponse: 1.5,
-      verticalSpeedScale: 1.05,
-      minimumSpeed: 0.025,
-      maximumSpeed: 0.34,
-      approachRadius: 0.65,
-      arrivalSpeedScale: 0.42,
-      pitchResponse: 5,
-    } : {});
+    }, forage.searching ? "substrate-search:graze" : null);
   }
   if (activity.current === ACTIVITIES.openWaterRest) {
     if (!Number.isFinite(activity.targetX) || !Number.isFinite(activity.targetY)) return null;
+    const tuning = sceneTuning(state, ACTIVITIES.openWaterRest);
     const distance = Math.hypot(activity.targetX - fish.x, activity.targetY - fish.y);
-    const settled = distance < 1.15;
+    const settled = distance < tuning.settleRadiusRows;
     const driftPhase = activity.ageRealSeconds * 0.34 + sampleRange(fish.seed, 8530, 0, TAU);
     const point = settled
       ? boundedPlantPoint(
         fish,
         state,
-        activity.targetX + Math.sin(driftPhase) * 0.12,
-        activity.targetY + Math.sin(driftPhase * 0.63) * 0.055,
+        activity.targetX + Math.sin(driftPhase) * tuning.driftAmplitudeRows,
+        activity.targetY + Math.sin(driftPhase * 0.63) * tuning.driftVerticalRows,
       )
       : { x: activity.targetX, y: activity.targetY };
-    return choreographed(activity.current, {
+    return choreographed(state, activity.current, {
       x: point.x,
       y: point.y,
-      speed: settled ? 0.035 + traits.activity * 0.026 : 0.17 + traits.activity * 0.09,
+      speed: settled
+        ? tuning.driftSpeed + traits.activity * 0.026
+        : tuning.settleSpeed + traits.activity * 0.09,
       postureBias: 0,
       choreographyPhase: settled ? "drift" : "settle",
-    }, settled ? {} : {
-      accelerationResponse: 0.95,
-      turningResponse: 0.9,
-      verticalSpeedScale: 0.62,
-      maximumSpeed: 0.38,
-      approachRadius: 1.2,
-      arrivalSpeedScale: 0.24,
-    });
+    }, settled ? null : "open-water-rest:settle");
   }
 
   // Cruise stays a moving broad behavior, not a waypoint activity.
+  const cruiseTuning = sceneTuning(state, ACTIVITIES.cruise);
   const top = surfaceSafeY(fish, state, fish.x);
   const bottom = substrateSafeY(fish, state, fish.x);
   const preferredY = top + Math.max(0, bottom - top) * traits.preferredDepth;
-  return choreographed(ACTIVITIES.cruise, {
+  return choreographed(state, ACTIVITIES.cruise, {
     x: fish.vx < 0 ? 0 : state.cols,
-    y: preferredY + Math.sin(state.elapsedRealSeconds / 33 + sampleRange(fish.seed, 23, 0, TAU)) * 0.8,
-    speed: 0.2 + traits.activity * 0.32,
+    y: preferredY
+      + Math.sin(state.elapsedRealSeconds / 33 + sampleRange(fish.seed, 23, 0, TAU))
+        * cruiseTuning.depthWaveRows,
+    speed: cruiseTuning.speedBase + traits.activity * cruiseTuning.speedActivity,
     postureBias: 0,
     choreographyPhase: "cruise",
   });

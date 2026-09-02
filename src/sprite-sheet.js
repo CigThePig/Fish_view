@@ -2,15 +2,18 @@ import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-
 import {
   applyBodyProfileToSpriteScene,
   bodyProfileForSprite,
-} from "./render/body-profile-lab.js?v=phase4-growth-20260901";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=phase4-growth-20260901";
+} from "./render/body-profile-lab.js?v=stage-sculpting-20260902";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=stage-sculpting-20260902";
 import { growthStagesFor, spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
 const UPDATE_INTERVAL_MS = 100;
 const CYCLE_SECONDS = 3.4;
-const views = [];
-const cards = new Map();
+// Roster and life-stage thumbnails are pickers, not the thing being judged, so
+// they are drawn small and are not affected by the workbench zoom.
+const THUMBNAIL_SCALE = 0.5;
+const STRIP_SCALE = 0.45;
+
 const PROFILE_FIELDS = Object.freeze([
   Object.freeze({
     key: "offsetX",
@@ -78,25 +81,74 @@ const controls = {
   anchors: document.querySelector("#anchors-control"),
   bounds: document.querySelector("#bounds-control"),
   damage: document.querySelector("#damage-control"),
-  profileFish: document.querySelector("#profile-fish-control"),
-  profileFields: document.querySelector("#profile-fields"),
-  profileReset: document.querySelector("#profile-reset"),
-  profileResetAll: document.querySelector("#profile-reset-all"),
-  profileCopy: document.querySelector("#profile-copy"),
-  profileCopyAll: document.querySelector("#profile-copy-all"),
-  profileOutput: document.querySelector("#profile-copy-output"),
-  profileStatus: document.querySelector("#profile-copy-status"),
+  fish: document.querySelector("#profile-fish-control"),
+  stage: document.querySelector("#profile-stage-control"),
+  fields: document.querySelector("#profile-fields"),
+  unavailable: document.querySelector("#profile-unavailable"),
+  reset: document.querySelector("#profile-reset"),
+  resetFish: document.querySelector("#profile-reset-fish"),
+  resetAll: document.querySelector("#profile-reset-all"),
+  copy: document.querySelector("#profile-copy"),
+  copyFish: document.querySelector("#profile-copy-fish"),
+  copyAll: document.querySelector("#profile-copy-all"),
+  output: document.querySelector("#profile-copy-output"),
+  status: document.querySelector("#profile-copy-status"),
+  title: document.querySelector("#workbench-title"),
+  summary: document.querySelector("#workbench-summary"),
+  workbenchViews: document.querySelector("#workbench-views"),
+  stageStrip: document.querySelector("#stage-strip"),
+  roster: document.querySelector("#sprite-grid"),
 };
 
-const profileState = new Map(individualSprites.map((sprite) => [sprite.id, bodyProfileForSprite(sprite)]));
-let selectedProfileId = individualSprites.find((sprite) => sprite.id === "round-fin")?.id
-  ?? individualSprites[0]?.id;
+// One row per species, youngest first and ending in the adult drawing itself.
+// Everything the lab shows or edits is addressed through these entries, so a
+// growth stage is a first-class subject rather than a strip below the adult.
+const species = individualSprites.map((sprite) => ({
+  id: sprite.id,
+  adult: sprite,
+  stages: growthStagesFor(sprite.id).map((stage) => ({
+    id: stage.id,
+    label: stage.label ?? "max",
+    sprite: stage,
+    // A fry is drawn as open ink. There is no opaque body at that size to
+    // sculpt, so it stays selectable but carries no profile.
+    sculptable: stage.body !== false,
+  })),
+}));
+
+const speciesById = new Map(species.map((entry) => [entry.id, entry]));
+const stageById = new Map(species.flatMap((entry) => entry.stages.map((stage) => [stage.id, stage])));
+const profileState = new Map(
+  [...stageById.values()]
+    .filter((stage) => stage.sculptable)
+    .map((stage) => [stage.id, bodyProfileForSprite(stage.sprite)]),
+);
+
+// Views the animation loop redraws. Roster and life-stage thumbnails are
+// rebuilt when the selection changes; the three workbench canvases live for the
+// whole session and only swap the sprite they draw.
+const rosterViews = [];
+const stripViews = [];
+const workbenchViews = [];
+const rosterCards = new Map();
+const rosterThumbs = new Map();
+
+let selectedSpeciesId = speciesById.has("round-fin") ? "round-fin" : species[0].id;
+let selectedStageId = speciesById.get(selectedSpeciesId).stages.at(-1).id;
 let frozen = false;
 let currentPhase = 0;
 let lastDrawAt = 0;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+function round(value) {
+  return Number(Number(value).toFixed(4));
+}
+
+function selectedStage() {
+  return stageById.get(selectedStageId);
 }
 
 function makeFigure(label) {
@@ -109,71 +161,102 @@ function makeFigure(label) {
   return { figure, canvas, renderer: new CanvasSceneRenderer(canvas) };
 }
 
-function selectProfile(id) {
-  if (!profileState.has(id)) return;
-  selectedProfileId = id;
-  refreshProfileEditor();
+function select(speciesId, stageId) {
+  const entry = speciesById.get(speciesId);
+  if (!entry) return;
+  const changedSpecies = speciesId !== selectedSpeciesId;
+  selectedSpeciesId = speciesId;
+  const stage = entry.stages.find((candidate) => candidate.id === stageId)
+    // Holding the life stage across a species change is what makes comparing
+    // two juveniles a single click instead of a hunt through two pickers.
+    ?? entry.stages.find((candidate) => candidate.label === selectedStage()?.label)
+    ?? entry.stages.at(-1);
+  selectedStageId = stage.id;
+  if (changedSpecies) buildStageStrip();
+  refreshEditor();
+  renderAll();
 }
 
-const container = document.querySelector("#sprite-grid");
-individualSprites.forEach((sprite) => {
-  const dimensions = spriteDimensions(sprite);
+/* Workbench ------------------------------------------------------------- */
+
+for (const definition of [
+  { label: "Source / static", facing: "right", staticPose: true },
+  { label: "Animated right", facing: "right", staticPose: false },
+  { label: "Animated left", facing: "left", staticPose: false },
+]) {
+  const view = makeFigure(definition.label);
+  controls.workbenchViews.append(view.figure);
+  workbenchViews.push({ ...view, ...definition, sprite: selectedStage().sprite });
+}
+
+function buildStageStrip() {
+  stripViews.length = 0;
+  controls.stageStrip.replaceChildren();
+  for (const stage of speciesById.get(selectedSpeciesId).stages) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "stage-chip";
+    button.dataset.stageId = stage.id;
+    const view = makeFigure(stage.label + (stage.sculptable ? "" : " · no body"));
+    button.append(view.figure);
+    button.addEventListener("click", () => select(selectedSpeciesId, stage.id));
+    controls.stageStrip.append(button);
+    stripViews.push({ ...view, sprite: stage.sprite, facing: "right", staticPose: false, scale: STRIP_SCALE, button });
+  }
+}
+
+/* Roster ---------------------------------------------------------------- */
+
+for (const entry of species) {
   const card = document.createElement("article");
   card.className = "sprite-card";
-  card.dataset.spriteId = sprite.id;
+  card.dataset.spriteId = entry.id;
+
   const heading = document.createElement("div");
   heading.className = "sprite-card__heading";
   const title = document.createElement("h2");
-  title.textContent = sprite.id;
+  title.textContent = entry.id;
   const tune = document.createElement("button");
   tune.type = "button";
   tune.className = "sprite-tune-button";
   tune.textContent = "Tune body";
-  tune.addEventListener("click", () => selectProfile(sprite.id));
+  tune.addEventListener("click", () => select(entry.id, null));
   heading.append(title, tune);
+
+  const dimensions = spriteDimensions(entry.adult);
   const meta = document.createElement("p");
   meta.className = "sprite-meta";
-  meta.textContent = sprite.source + " · " + dimensions.width + " × " + dimensions.height + " logical glyph layout";
+  meta.textContent = entry.adult.source + " · " + dimensions.width + " × " + dimensions.height
+    + " logical glyph layout · " + entry.stages.length + " life stages";
+
   const row = document.createElement("div");
-  row.className = "sprite-trio";
+  row.className = "sprite-growth";
+  for (const stage of entry.stages) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "stage-chip";
+    button.dataset.stageId = stage.id;
+    const view = makeFigure(stage.label);
+    button.append(view.figure);
+    button.addEventListener("click", () => select(entry.id, stage.id));
+    row.append(button);
+    rosterViews.push({ ...view, sprite: stage.sprite, facing: "right", staticPose: false, scale: THUMBNAIL_SCALE });
+    rosterThumbs.set(stage.id, button);
+  }
 
-  const definitions = [
-    { label: "Source / static", facing: "right", staticPose: true },
-    { label: "Animated right", facing: "right", staticPose: false },
-    { label: "Animated left", facing: "left", staticPose: false },
-  ];
-  definitions.forEach((definition) => {
-    const view = makeFigure(definition.label);
-    row.append(view.figure);
-    views.push({ ...view, ...definition, sprite });
-  });
-
-  // Growth strip: the same fish at every age it can be, youngest first. The
-  // last frame is the adult drawn above it, not a copy of it.
-  const growthNote = document.createElement("p");
-  growthNote.className = "sprite-meta";
-  const stages = growthStagesFor(sprite.id);
-  growthNote.textContent = "Growth · " + stages.length + " stages · "
-    + stages.map((stage) => stage.label ?? "max").join(" → ");
-  const growthRow = document.createElement("div");
-  growthRow.className = "sprite-growth";
-  stages.forEach((stage, index) => {
-    const view = makeFigure((index + 1) + ". " + (stage.label ?? "max"));
-    growthRow.append(view.figure);
-    views.push({ ...view, sprite: stage, facing: "right", staticPose: false });
-  });
-
-  card.append(heading, meta, row, growthNote, growthRow);
-  cards.set(sprite.id, card);
-  container.append(card);
-});
-
-for (const sprite of individualSprites) {
-  const option = document.createElement("option");
-  option.value = sprite.id;
-  option.textContent = sprite.id;
-  controls.profileFish.append(option);
+  card.append(heading, meta, row);
+  rosterCards.set(entry.id, card);
+  controls.roster.append(card);
 }
+
+for (const entry of species) {
+  const option = document.createElement("option");
+  option.value = entry.id;
+  option.textContent = entry.id;
+  controls.fish.append(option);
+}
+
+/* Profile fields -------------------------------------------------------- */
 
 function makeProfileField(definition) {
   const label = document.createElement("label");
@@ -219,89 +302,169 @@ function makeProfileField(definition) {
     updateSelectedProfile(definition, clamped);
   });
   number.addEventListener("change", () => {
-    const profile = profileState.get(selectedProfileId);
-    number.value = String(profile[definition.key]);
+    const profile = profileState.get(selectedStageId);
+    if (profile) number.value = String(profile[definition.key]);
   });
 
   label.append(heading, number, range);
-  controls.profileFields.append(label);
+  controls.fields.append(label);
   return { definition, number, range };
 }
 
 const profileInputs = PROFILE_FIELDS.map(makeProfileField);
 
 function updateSelectedProfile(definition, value) {
-  const profile = profileState.get(selectedProfileId);
-  profileState.set(selectedProfileId, {
-    ...profile,
-    [definition.key]: value,
-  });
-  updateProfileOutput();
+  const profile = profileState.get(selectedStageId);
+  if (!profile) return;
+  profileState.set(selectedStageId, { ...profile, [definition.key]: value });
+  updateOutput();
   renderAll();
 }
 
-function selectedSprite() {
-  return individualSprites.find((sprite) => sprite.id === selectedProfileId);
+/* Copy output ----------------------------------------------------------- */
+
+// Paste-ready source rather than JSON: the values are going straight back into
+// the frozen table in body-profiles.js, and retyping them is where a tuning
+// pass loses its last decimal.
+function profileSource(stageId) {
+  const profile = profileState.get(stageId);
+  if (!profile) return null;
+  const body = PROFILE_FIELDS
+    .map(({ key }) => `    ${key}: ${round(profile[key])},`)
+    .join("\n");
+  return `  "${stageId}": Object.freeze({\n    ...DEFAULT_BODY_PROFILE,\n${body}\n  }),`;
 }
 
-function profilePayload(id) {
-  const profile = profileState.get(id);
-  return {
-    id,
-    offsetX: profile.offsetX,
-    offsetY: profile.offsetY,
-    radiusXScale: profile.radiusXScale,
-    radiusYScale: profile.radiusYScale,
-    rearShoulder: profile.rearShoulder,
-    frontShoulder: profile.frontShoulder,
-  };
+// An adult and a growth stage live in different frozen tables, so the output is
+// grouped by the table each entry belongs to rather than by the fish. Pasting is
+// then a matter of dropping each block where its header says.
+function tableFor(stageId) {
+  return stageId.includes(":") ? "GROWTH_STAGE_BODY_PROFILES" : "ADULT_BODY_PROFILES";
 }
 
-function selectedProfileText() {
-  return JSON.stringify(profilePayload(selectedProfileId), null, 2);
-}
-
-function allProfilesText() {
-  return JSON.stringify(individualSprites.map((sprite) => profilePayload(sprite.id)), null, 2);
-}
-
-function updateProfileOutput() {
-  controls.profileOutput.value = selectedProfileText();
-  controls.profileStatus.textContent = "Values update live. Copy them when the silhouette looks right.";
-}
-
-function refreshProfileEditor() {
-  controls.profileFish.value = selectedProfileId;
-  const profile = profileState.get(selectedProfileId);
-  for (const { definition, number, range } of profileInputs) {
-    const value = profile[definition.key];
-    number.value = String(value);
-    range.value = String(value);
+function sourceFor(stageIds) {
+  const tables = new Map();
+  for (const stageId of stageIds) {
+    const entry = profileSource(stageId);
+    if (!entry) continue;
+    const table = tableFor(stageId);
+    tables.set(table, [...(tables.get(table) ?? []), entry]);
   }
-  for (const [id, card] of cards) {
-    card.classList.toggle("is-profile-selected", id === selectedProfileId);
-  }
-  updateProfileOutput();
+  if (!tables.size) return "// Nothing selected carries an opaque body to sculpt.";
+  return [...tables]
+    .map(([table, entries]) => `// ${table} in src/render/body-profiles.js\n${entries.join("\n")}`)
+    .join("\n\n");
+}
+
+function stageSource() {
+  const stage = selectedStage();
+  return stage.sculptable
+    ? sourceFor([stage.id])
+    : `// ${stage.id} is drawn as open ink and carries no opaque body to sculpt.`;
+}
+
+function fishSource() {
+  return sourceFor(speciesById.get(selectedSpeciesId).stages.map((stage) => stage.id));
+}
+
+function allSource() {
+  return sourceFor([...stageById.keys()]);
+}
+
+function updateOutput() {
+  controls.output.value = stageSource();
+  controls.status.textContent = "Values update live. Copy them when the silhouette looks right.";
 }
 
 async function copyText(text, label) {
-  controls.profileOutput.value = text;
+  controls.output.value = text;
   let copied = false;
   try {
     await navigator.clipboard.writeText(text);
     copied = true;
   } catch {
-    controls.profileOutput.focus();
-    controls.profileOutput.select();
+    controls.output.focus();
+    controls.output.select();
     try {
       copied = document.execCommand("copy");
     } catch {
       copied = false;
     }
   }
-  controls.profileStatus.textContent = copied
+  controls.status.textContent = copied
     ? label + " copied to clipboard."
     : "Clipboard access was blocked. The exact values are selected below for manual copying.";
+}
+
+/* Editor state ---------------------------------------------------------- */
+
+function refreshEditor() {
+  const entry = speciesById.get(selectedSpeciesId);
+  const stage = selectedStage();
+
+  controls.fish.value = selectedSpeciesId;
+  controls.stage.replaceChildren();
+  for (const candidate of entry.stages) {
+    const option = document.createElement("option");
+    option.value = candidate.id;
+    option.textContent = candidate.label + (candidate.sculptable ? "" : " · no opaque body");
+    controls.stage.append(option);
+  }
+  controls.stage.value = stage.id;
+
+  const dimensions = spriteDimensions(stage.sprite);
+  const position = entry.stages.indexOf(stage) + 1;
+  controls.title.textContent = entry.id + " · " + stage.label;
+  controls.summary.textContent = "Life stage " + position + " of " + entry.stages.length
+    + " · " + dimensions.width + " × " + dimensions.height + " logical glyph layout"
+    + (stage.sculptable ? "" : " · drawn as open ink");
+
+  const profile = profileState.get(stage.id);
+  controls.fields.hidden = !profile;
+  controls.unavailable.hidden = Boolean(profile);
+  for (const { definition, number, range } of profileInputs) {
+    number.disabled = !profile;
+    range.disabled = !profile;
+    if (!profile) continue;
+    const value = profile[definition.key];
+    number.value = String(value);
+    range.value = String(value);
+  }
+  for (const button of [controls.reset, controls.copy]) button.disabled = !profile;
+
+  for (const [id, card] of rosterCards) card.classList.toggle("is-selected", id === selectedSpeciesId);
+  for (const [id, button] of rosterThumbs) button.classList.toggle("is-selected", id === stage.id);
+  for (const view of stripViews) {
+    view.button.classList.toggle("is-selected", view.button.dataset.stageId === stage.id);
+  }
+  for (const view of workbenchViews) view.sprite = stage.sprite;
+
+  updateOutput();
+}
+
+/* Drawing --------------------------------------------------------------- */
+
+function drawView(view, options, debug, zoom) {
+  const phase = currentPhase * TAU;
+  const scene = renderSpriteScene(view.sprite, {
+    facing: view.facing,
+    phase,
+    staticPose: view.staticPose,
+    ...options,
+  });
+  // A growth stage without an opaque body has nothing for the profile pass to
+  // reshape; running it anyway would paint a black slab behind three glyphs.
+  const profile = profileState.get(view.sprite.id);
+  if (profile) {
+    applyBodyProfileToSpriteScene(scene, view.sprite, profile, {
+      facing: view.facing,
+      phase,
+      staticPose: view.staticPose,
+      ...options,
+    });
+  }
+  view.renderer.draw(scene, debug);
+  view.canvas.style.width = Math.round(scene.width * (view.scale ?? zoom)) + "px";
 }
 
 function renderAll() {
@@ -309,36 +472,19 @@ function renderAll() {
   const pitch = Number(controls.pitch.value);
   const turnScale = Number(controls.turn.value);
   const zoom = Number(controls.zoom.value);
+  const options = {
+    deformationStrength,
+    paletteMode: controls.palette.value,
+    pitch,
+    turnScale,
+  };
   const debug = {
     anchors: controls.anchors.checked,
     bounds: controls.bounds.checked,
     damage: controls.damage.checked,
   };
-  for (const view of views) {
-    const phase = currentPhase * TAU;
-    const scene = renderSpriteScene(view.sprite, {
-      facing: view.facing,
-      phase,
-      deformationStrength,
-      paletteMode: controls.palette.value,
-      staticPose: view.staticPose,
-      pitch,
-      turnScale,
-    });
-    // A growth stage has no profile of its own: the tunable profiles are
-    // authored against the adult artwork, and the earlier stages fall back to
-    // whatever the shared body geometry derives for them.
-    const profile = profileState.get(view.sprite.id) ?? bodyProfileForSprite(view.sprite);
-    applyBodyProfileToSpriteScene(scene, view.sprite, profile, {
-      facing: view.facing,
-      phase,
-      deformationStrength,
-      staticPose: view.staticPose,
-      pitch,
-      turnScale,
-    });
-    view.renderer.draw(scene, debug);
-    view.canvas.style.width = Math.round(scene.width * zoom) + "px";
+  for (const view of [...workbenchViews, ...stripViews, ...rosterViews]) {
+    drawView(view, options, debug, zoom);
   }
   controls.phase.value = String(currentPhase);
   controls.phaseOutput.textContent = currentPhase.toFixed(2);
@@ -354,6 +500,16 @@ function setFrozen(value) {
   controls.freeze.textContent = frozen ? "Resume animation" : "Freeze animation";
 }
 
+function resetStages(stages) {
+  for (const stage of stages) {
+    if (stage.sculptable) profileState.set(stage.id, bodyProfileForSprite(stage.sprite));
+  }
+  refreshEditor();
+  renderAll();
+}
+
+/* Events ---------------------------------------------------------------- */
+
 controls.freeze.addEventListener("click", () => {
   setFrozen(!frozen);
   renderAll();
@@ -365,21 +521,16 @@ controls.phase.addEventListener("input", () => {
   renderAll();
 });
 
-controls.profileFish.addEventListener("change", () => selectProfile(controls.profileFish.value));
-controls.profileReset.addEventListener("click", () => {
-  const sprite = selectedSprite();
-  if (!sprite) return;
-  profileState.set(sprite.id, bodyProfileForSprite(sprite));
-  refreshProfileEditor();
-  renderAll();
-});
-controls.profileResetAll.addEventListener("click", () => {
-  for (const sprite of individualSprites) profileState.set(sprite.id, bodyProfileForSprite(sprite));
-  refreshProfileEditor();
-  renderAll();
-});
-controls.profileCopy.addEventListener("click", () => copyText(selectedProfileText(), selectedProfileId + " profile"));
-controls.profileCopyAll.addEventListener("click", () => copyText(allProfilesText(), "All fish profiles"));
+controls.fish.addEventListener("change", () => select(controls.fish.value, null));
+controls.stage.addEventListener("change", () => select(selectedSpeciesId, controls.stage.value));
+
+controls.reset.addEventListener("click", () => resetStages([selectedStage()]));
+controls.resetFish.addEventListener("click", () => resetStages(speciesById.get(selectedSpeciesId).stages));
+controls.resetAll.addEventListener("click", () => resetStages([...stageById.values()]));
+
+controls.copy.addEventListener("click", () => copyText(stageSource(), selectedStageId));
+controls.copyFish.addEventListener("click", () => copyText(fishSource(), selectedSpeciesId + " life stages"));
+controls.copyAll.addEventListener("click", () => copyText(allSource(), "All body profiles"));
 
 for (const control of [
   controls.palette,
@@ -404,6 +555,7 @@ function frame(timestamp) {
   requestAnimationFrame(frame);
 }
 
-refreshProfileEditor();
+buildStageStrip();
+refreshEditor();
 renderAll();
 requestAnimationFrame(frame);

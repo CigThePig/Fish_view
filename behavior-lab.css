@@ -3,12 +3,12 @@
 }
 
 .behavior-lab {
-  width: min(1060px, 100%);
+  width: min(1580px, 100%);
   min-height: 100svh;
   margin: 0 auto;
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -26,7 +26,8 @@
 }
 
 .behavior-lab__header p:not(.eyebrow),
-.behavior-lab__note {
+.behavior-lab__note,
+.tuning__summary {
   max-width: 66ch;
   margin: 0;
   color: var(--muted);
@@ -39,6 +40,22 @@
   color: var(--accent);
 }
 
+/* The tank and the sliders that shape it stay on screen together: tuning a
+   motion means watching it change, not scrolling back to look. */
+.behavior-lab__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 34rem);
+  align-items: start;
+  gap: 1.1rem;
+}
+
+.behavior-lab__tank {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
 .behavior-lab__stage {
   min-height: 0;
   display: grid;
@@ -46,31 +63,8 @@
 }
 
 .behavior-lab__stage canvas {
-  max-height: min(66svh, 800px);
-}
-
-.behavior-lab__controls {
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-}
-
-.behavior-lab__controls label {
-  display: grid;
-  gap: 0.32rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.behavior-lab__controls select {
-  min-height: 42px;
-  min-width: 13rem;
-  padding: 0.55rem 2rem 0.55rem 0.8rem;
-  text-transform: none;
+  max-width: 100%;
+  max-height: min(62svh, 800px);
 }
 
 .behavior-lab__readout {
@@ -109,6 +103,193 @@
   margin-top: 0.2rem;
   color: #e8f2ea;
   font: 0.82rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.tuning {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100svh - 2rem);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0d1714;
+}
+
+.tuning__scroll {
+  max-height: inherit;
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.9rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.tuning__controls {
+  display: flex;
+  align-items: end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.tuning__controls label {
+  flex: 1 1 12rem;
+  display: grid;
+  gap: 0.32rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tuning__controls select {
+  min-height: 40px;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #09110f;
+  color: #e4eee8;
+  text-transform: none;
+}
+
+.tuning__heading h2 {
+  margin: 0.2rem 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.tuning__groups {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.tuning-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #09110f;
+}
+
+.tuning-group > summary {
+  padding: 0.6rem 0.75rem;
+  color: #dce7e0;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.tuning-group__note {
+  margin: 0 0.75rem 0.6rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.tuning-group__fields {
+  padding: 0 0.6rem 0.7rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+
+.tuning-field {
+  min-width: 0;
+  padding: 0.55rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 0.45rem 0.55rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d1714;
+}
+
+.tuning-field__heading {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+  color: #dce7e0;
+  font-size: 0.78rem;
+}
+
+.tuning-field__heading small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.tuning-number {
+  width: 84px;
+  min-height: 32px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #09110f;
+  color: #e4eee8;
+  text-align: right;
+  font: inherit;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tuning-field input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.tuning__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tuning__actions button {
+  font-size: 0.76rem;
+}
+
+.tuning__actions .primary-action {
+  border-color: #527b6d;
+  background: #173c32;
+}
+
+.tuning__copy {
+  display: grid;
+  gap: 0.4rem;
+  color: #c8d4cc;
+  font-size: 0.78rem;
+}
+
+.tuning__copy textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 0.7rem;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #09110f;
+  color: #e4eee8;
+  font: 0.76rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  tab-size: 2;
+}
+
+.tuning__status {
+  min-height: 1.2em;
+  margin: -0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1180px) {
+  .behavior-lab__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .behavior-lab__tank,
+  .tuning {
+    position: static;
+    max-height: none;
+  }
+
+  .tuning__scroll {
+    max-height: none;
+    overflow: visible;
+  }
 }
 
 @media (max-width: 720px) {

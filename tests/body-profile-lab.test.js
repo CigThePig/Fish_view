@@ -6,6 +6,7 @@ import {
   bodyProfileForSprite,
 } from "../src/render/body-profile-lab.js";
 import { individualSprites, renderSpriteScene } from "../src/render/render.js";
+import { growthStagesFor } from "../src/art/sprites.js";
 
 function objectByPrefix(scene, prefix) {
   const object = scene.objects.find((candidate) => candidate.id.startsWith(prefix));
@@ -32,6 +33,46 @@ test("saved lab profiles reproduce the production body geometry exactly", () => 
       }
     }
   }
+});
+
+// The lab now sculpts a life stage at a time, so a stage's default has to land
+// on the production body exactly as an adult's does.
+test("saved lab profiles reproduce production geometry for every growth stage", () => {
+  for (const adult of individualSprites) {
+    for (const stage of growthStagesFor(adult.id)) {
+      if (stage.body === false) continue;
+      for (const facing of ["right", "left"]) {
+        const expectedScene = renderSpriteScene(stage, { facing, phase: 0.9 });
+        const expected = objectByPrefix(expectedScene, "lab:").fill;
+        const labScene = renderSpriteScene(stage, { facing, phase: 0.9 });
+        applyBodyProfileToSpriteScene(labScene, stage, bodyProfileForSprite(stage), {
+          facing,
+          phase: 0.9,
+        });
+        assert.deepEqual(
+          objectByPrefix(labScene, "lab:").fill,
+          expected,
+          stage.id + " lab default drifted from production facing " + facing,
+        );
+      }
+    }
+  }
+});
+
+test("a growth stage carries a profile of its own, separate from its adult", () => {
+  const juvenile = growthStagesFor("round-fin").find((stage) => stage.label === "juvenile");
+  assert.ok(juvenile);
+  const adult = individualSprites.find((sprite) => sprite.id === "round-fin");
+  assert.notDeepEqual(bodyProfileForSprite(juvenile), bodyProfileForSprite(adult));
+
+  const tuned = renderSpriteScene(juvenile, { facing: "right", staticPose: true });
+  const original = renderSpriteScene(juvenile, { facing: "right", staticPose: true });
+  applyBodyProfileToSpriteScene(tuned, juvenile, {
+    ...bodyProfileForSprite(juvenile),
+    radiusYScale: 0.7,
+    frontShoulder: 0.8,
+  }, { facing: "right", staticPose: true });
+  assert.notDeepEqual(objectByPrefix(tuned, "lab:").fill, objectByPrefix(original, "lab:").fill);
 });
 
 test("lab profile overrides change only the opaque body", () => {

@@ -1,4 +1,5 @@
 import { spriteDimensions } from "../art/sprites.js";
+import { sceneTuning } from "./choreography-tuning.js";
 import {
   CELL_HEIGHT,
   CELL_WIDTH,
@@ -12,6 +13,10 @@ import { affinitiesFromSeed } from "./fish-personality.js";
 import { sample01, sampleRange } from "./prng.js";
 
 export const MAX_FISH_PITCH_DEGREES = 32;
+// The authored forage and surface numbers. Every one of them is also an entry
+// in the "substrate-search" / "surface-investigate" scene tuning, which is what
+// the simulation actually reads and what the behaviour choreography lab edits;
+// these exports remain the values that tuning starts from.
 export const FORAGE_PITCH_BIAS_DEGREES = 20;
 export const SURFACE_PITCH_BIAS_DEGREES = -10;
 export const FORAGE_SEARCH_DISTANCE_ROWS = 0.82;
@@ -103,6 +108,7 @@ export function fishGrazeClearanceRows(
   fishOrSprite,
   pitchDegrees = FORAGE_PITCH_BIAS_DEGREES,
   visualScale = INDIVIDUAL_VISUAL_SCALE_MAX,
+  contactRows = FORAGE_GRAZE_CONTACT_ROWS,
 ) {
   const sprite = spriteFor(fishOrSprite);
   const { width, height } = spriteDimensions(sprite);
@@ -123,7 +129,7 @@ export function fishGrazeClearanceRows(
   );
   return Math.max(
     0.2,
-    projected * scale + FORAGE_GRAZE_MODEL_MARGIN_ROWS - FORAGE_GRAZE_CONTACT_ROWS,
+    projected * scale + FORAGE_GRAZE_MODEL_MARGIN_ROWS - contactRows,
   );
 }
 
@@ -144,8 +150,17 @@ export function individualVisualScale(fish, index, state) {
 }
 
 export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
+  // Rotation and distance together: the lean the fish feeds at decides how much
+  // of its body projects downwards, and the contact allowance decides how close
+  // that projection may come to the crest.
+  const tuning = sceneTuning(state, "substrate-search");
   return substrateSurfaceY(state, worldX)
-    - fishGrazeClearanceRows(fish, FORAGE_PITCH_BIAS_DEGREES, individualVisualScale(fish, index, state));
+    - fishGrazeClearanceRows(
+      fish,
+      tuning.grazePitchDegrees,
+      individualVisualScale(fish, index, state),
+      tuning.grazeContactRows,
+    );
 }
 
 export function surfaceSafeY(fish, state, worldX = fish.x) {
@@ -164,12 +179,13 @@ export function surfaceSafeY(fish, state, worldX = fish.x) {
 // to a quarter second on a delayed step — apart.
 export function forageActivity(fish, index, state, activity = fish?.activity) {
   const eligible = forageEligible(index);
+  const tuning = sceneTuning(state, "substrate-search");
   const surfaceY = substrateSurfaceY(state, fish.x);
   const targetY = substrateGrazeY(fish, state, fish.x, index);
   const distanceRows = Math.abs(fish.y - targetY);
   const searching = eligible
     && fish.behavior?.current === "forage"
-    && distanceRows <= FORAGE_SEARCH_DISTANCE_ROWS;
+    && distanceRows <= tuning.searchDistanceRows;
 
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);
@@ -204,7 +220,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   }
   const peck = peckPhase === null ? 0 : Math.sin(Math.PI * clamp(peckPhase, 0, 1));
   const sizeFactor = clamp(fishVerticalClearanceRows(fish) / 2.2, 0.88, 1.04);
-  const displacementAmplitude = (FORAGE_PECK_ROWS + substrateAffinity * 0.1) * sizeFactor;
+  const displacementAmplitude = (tuning.peckRows + substrateAffinity * 0.1) * sizeFactor;
   const eventSeed = (cycleIndex * 7 + (peckEvent ?? debrisEvent ?? 0)) >>> 0;
   // Close peck pairs overlap: the previous peck's debris is still rising when
   // the next peck starts. Salting the debris with the peck event would swap the
