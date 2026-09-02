@@ -9,7 +9,7 @@ import {
 import { scenePalette } from "../src/render/palette.js";
 import { individualSprites, render, renderSpriteScene } from "../src/render/render.js";
 import { applyBodyProfileToSpriteScene, bodyProfileForSprite } from "../src/render/body-profile-lab.js";
-import { glyphPixelRects } from "../src/render/bitmap-font.js";
+import { glyphPixelRects, isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import {
@@ -497,4 +497,48 @@ test("a chase outlives its own break", () => {
   }
   assert.ok(phases.has("pursuit"), "the chase never reached its pursuit");
   assert.ok(phases.has("break"), `the chase never broke off; phases seen: ${[...phases].join(", ")}`);
+});
+
+test("every glyph a feeding strike draws exists in the font", () => {
+  // An unsupported character does not fail loudly: glyphPixels() falls back to
+  // the "?" bitmap, so the softer half of every strike was quietly drawing a
+  // question mark on the sand. The scene-wide contract test never caught it
+  // because a contact mark lives for about a sixth of a second and its sampled
+  // frames never landed inside one. This walks the peck instead of sampling it.
+  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  const index = 3;
+  const resting = state.individuals[index];
+  const fish = {
+    ...resting,
+    y: substrateGrazeY(resting, state, resting.x),
+    behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
+  };
+
+  const seen = new Set();
+  let marks = 0;
+  for (let age = 0; age < 24; age += 0.02) {
+    const posed = {
+      ...fish,
+      activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: age },
+    };
+    const scene = render({
+      ...state,
+      individuals: state.individuals.map((value, i) => (i === index ? posed : value)),
+    });
+    const debris = scene.objects.find((object) => object.id === `forage-debris:${index}:${fish.seed}`);
+    if (!debris) continue;
+    if (forageActivity(posed, index, state).peck > 0.35) marks += 1;
+    for (const glyph of scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount)) {
+      seen.add(glyph.char);
+      assert.ok(
+        isSupportedGlyph(glyph.char),
+        `a feeding strike drew ${JSON.stringify(glyph.char)}, which the font renders as "?"`,
+      );
+    }
+  }
+  // Both halves of the strike have to have been walked, or the guard proves
+  // nothing about the one that was broken.
+  assert.ok(marks > 20, `only ${marks} contact-mark frames were sampled`);
+  assert.ok(seen.has("*"), "the strong contact mark never appeared");
+  assert.ok(seen.has(":"), "the soft contact mark never appeared");
 });

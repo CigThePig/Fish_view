@@ -1175,7 +1175,10 @@ function drawForageDebris(builder, state, palette, metrics) {
     // the fish's doing rather than as drifting sediment.
     if (striking) {
       glyphs.push(positionedGlyph(metrics, {
-        char: activity.peck > 0.72 ? "*" : "x",
+        // Both marks have to exist in the bitmap font: an unsupported character
+        // silently rasterises as the "?" glyph, which is how the softer half of
+        // every strike was drawing a question mark on the sand.
+        char: activity.peck > 0.72 ? "*" : ":",
         worldX: mouthX,
         worldY: activity.surfaceY - 0.12,
         fg: mixColor(palette.substrateFg, palette.ripple, 0.85),
