@@ -310,8 +310,9 @@ test("the renderer draws the stage a fish has reached, and never backs a fry", (
   old.individuals.forEach((fish, index) => {
     const object = individualObject(oldScene, index, fish);
     assert.ok(object.fill.length > 0, "a grown fish lost its opaque body");
-    // Nine source slices remains the hard ceiling growth may not raise.
-    assert.ok(object.fill.length <= 9);
+    // Growth may not raise the body's cost ceiling: a grown fish is drawn one
+    // span per scanline like every other, and a bigger fish is a taller one.
+    assert.ok(object.fill.length <= 128);
     assert.ok(object.glyphCount > individualObject(youngScene, index, fish).glyphCount);
   });
 });

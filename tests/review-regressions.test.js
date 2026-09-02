@@ -9,7 +9,8 @@ import {
 import { scenePalette } from "../src/render/palette.js";
 import { individualSprites, render, renderSpriteScene } from "../src/render/render.js";
 import { applyBodyProfileToSpriteScene, bodyProfileForSprite } from "../src/render/body-profile-lab.js";
-import { glyphPixelRects, isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { SPIN_STEP_DEGREES, glyphPixelRects, spinDegrees } from "../src/render/glyph-raster.js";
 import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import {
@@ -430,11 +431,14 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
   assert.ok(slopedContacts > 0, "no strike reached enough terrain slope to test its vertical origin");
 });
 
-test("a pitched fish leans its characters, not just their positions", () => {
-  // Five-by-seven bitmaps cannot be turned - rotating one at this size destroys
-  // the character - so the ink is sheared instead, by the same angle the body
-  // is turned through. Without it a pitched fish is a leaning arrangement of
-  // upright letters, which reads far flatter than its own axis.
+test("a pitched fish turns its characters, not just their positions", () => {
+  // This guarded a horizontal shear of the glyph bitmaps, on the reasoning that
+  // a five-by-seven raster could not be turned at all. It can - the ink is a
+  // cached rotated raster now - and a shear was never the same thing: it leaves
+  // every horizontal stroke horizontal, so `_`, `-` and the flat top of `o`
+  // stayed exactly as level as the water while the fish around them leaned.
+  // What the fish carries now is one rotation index, shared by every glyph, and
+  // the raster it selects is a genuinely turned one.
   const state = createAquariumState({ orientation: "landscape", seed: 331, wallClockHours: 12 });
   const index = 0;
   const posed = (pitch) => render({
@@ -447,29 +451,38 @@ test("a pitched fish leans its characters, not just their positions", () => {
   const level = posed(0);
   const levelObject = level.objects.find((object) => object.id.startsWith(`individual:${index}:`));
   const levelGlyphs = glyphsForObject(level, levelObject);
-  assert.ok(levelGlyphs.every((glyph) => (glyph.slant ?? 0) === 0), "a level fish leans nothing");
+  assert.ok(levelGlyphs.every((glyph) => (glyph.spin ?? 0) === 0), "a level fish rotates nothing");
 
   const pitched = posed(30);
   const pitchedObject = pitched.objects.find((object) => object.id.startsWith(`individual:${index}:`));
   const pitchedGlyphs = glyphsForObject(pitched, pitchedObject);
-  const slant = pitchedGlyphs[0].slant;
-  assert.ok(Math.abs(slant) > 0.4, `a fully pitched fish sheared its ink by only ${slant}`);
-  assert.ok(pitchedGlyphs.every((glyph) => glyph.slant === slant), "one fish, one lean");
+  const spin = pitchedGlyphs[0].spin;
+  assert.ok(Math.abs(spinDegrees(spin) - 30) <= SPIN_STEP_DEGREES, `a fully pitched fish turned its ink by ${spinDegrees(spin)}°`);
+  assert.ok(pitchedGlyphs.every((glyph) => glyph.spin === spin), "one fish, one rotation");
+  assert.ok(pitchedGlyphs.every((glyph) => glyph.spinAspect === pitchedGlyphs[0].spinAspect), "one fish, one unit aspect");
 
-  // The ink actually moves, and the bounds cover where it moved to - damage
-  // tracking restores from those bounds, so ink outside them smears.
+  // The ink actually moves - and moves in both axes, which is what separates a
+  // rotation from the shear this replaced. A shear only ever moved it sideways.
   const rects = glyphPixelRects(pitchedGlyphs[0]);
-  const upright = glyphPixelRects({ ...pitchedGlyphs[0], slant: 0 });
+  const upright = glyphPixelRects({ ...pitchedGlyphs[0], spin: 0, spinAspect: 0 });
   assert.ok(
-    rects.some((rect, i) => rect.x !== upright[i].x),
-    "the sheared glyph rasterised identically to an upright one",
+    rects.some((rect) => !upright.some((other) => other.x === rect.x && other.y === rect.y)),
+    "the rotated glyph rasterised identically to an upright one",
   );
-  const bounds = glyphBounds(pitchedGlyphs[0]);
-  for (const rect of rects) {
-    assert.ok(
-      rect.x >= Math.floor(bounds.x) && rect.x + rect.width <= Math.ceil(bounds.x + bounds.width),
-      "sheared ink fell outside the bounds damage tracking restores from",
-    );
+  const rows = (list) => new Set(list.map((rect) => rect.y));
+  assert.notDeepEqual([...rows(rects)].sort(), [...rows(upright)].sort(), "the ink moved sideways only");
+
+  // And the bounds cover where it moved to - damage tracking restores from
+  // those bounds, so ink outside them smears.
+  for (const glyph of pitchedGlyphs) {
+    const bounds = glyphBounds(glyph);
+    for (const rect of glyphPixelRects(glyph)) {
+      assert.ok(
+        rect.x >= bounds.x && rect.x + rect.width <= bounds.x + bounds.width
+          && rect.y >= bounds.y && rect.y + rect.height <= bounds.y + bounds.height,
+        "rotated ink fell outside the bounds damage tracking restores from",
+      );
+    }
   }
 });
 

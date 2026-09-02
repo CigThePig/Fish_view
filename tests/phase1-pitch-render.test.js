@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { glyphPixelRects, glyphPixels } from "../src/render/bitmap-font.js";
+import { glyphPixels } from "../src/render/bitmap-font.js";
+import { glyphPixelRects } from "../src/render/glyph-raster.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { individualSprites, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
@@ -84,6 +85,40 @@ function inkCentre(glyph) {
     x: Math.round(glyph.x) + ((minX + maxX) / 2) * glyph.scaleX,
     y: Math.round(glyph.y) + ((minY + maxY) / 2) * glyph.scaleY,
   };
+}
+
+// Union area of a set of spans and the area of the box around them. Summing
+// span areas would count overlap twice, which is exactly what hid the old
+// renderer's inflation.
+function fillCoverage(fill) {
+  const left = Math.min(...fill.map((span) => span.x));
+  const right = Math.max(...fill.map((span) => span.x + span.width));
+  const top = Math.min(...fill.map((span) => span.y));
+  const bottom = Math.max(...fill.map((span) => span.y + span.height));
+  const width = right - left;
+  const grid = new Uint8Array(width * (bottom - top));
+  for (const span of fill) {
+    for (let y = span.y; y < span.y + span.height; y += 1) {
+      for (let x = span.x; x < span.x + span.width; x += 1) grid[(y - top) * width + (x - left)] = 1;
+    }
+  }
+  let area = 0;
+  for (const value of grid) area += value;
+  return { area, boxArea: width * (bottom - top) };
+}
+
+function coveredPixels(fill) {
+  const covered = new Set();
+  for (const span of fill) {
+    for (let y = span.y; y < span.y + span.height; y += 1) {
+      for (let x = span.x; x < span.x + span.width; x += 1) covered.add(`${x},${y}`);
+    }
+  }
+  return covered;
+}
+
+function bodyFill(sprite, facing, pitch) {
+  return objectByPrefix(renderSpriteScene(sprite, { facing, pitch, staticPose: true }), "lab:").fill;
 }
 
 function backsGlyph(object, glyph) {
@@ -177,13 +212,16 @@ test("pitch turns the drawing by a real angle and by the same angle in every asp
       const delta = wrappedDelta(levelAngle, pitchedAngle);
       assert.ok(delta * facing > 0, `${mode.name}/${facing} pitched in the wrong semantic direction`);
       const magnitude = Math.abs(delta);
-      // The authored shear alone put about a sixth of the simulated pitch on
-      // the panel - four pixels across a fifty pixel fish - which is a posture
-      // the viewer never sees. The drawing is now turned bodily as well, and
-      // deliberately past the physical angle: glyphs cannot rotate, only their
-      // positions can, so a body built from characters has to lean further than
-      // the physics to look like it leans at all.
-      assert.ok(magnitude >= 33 && magnitude <= 44, `${mode.name}/${facing} pitched pose was ${magnitude.toFixed(2)}°`);
+      // The drawn angle is now the angle. It used to be graded at 33-44
+      // degrees for a thirty degree pitch, because the pose was eight tenths of
+      // a rotation deliberately over-stated to compensate for glyph bitmaps
+      // that could only be sheared. The bitmaps are rotated rasters now, so
+      // there is nothing left to compensate for and the fish leans by exactly
+      // what the simulation asked for.
+      assert.ok(
+        Math.abs(magnitude - 30) <= 1,
+        `${mode.name}/${facing} pitched pose was ${magnitude.toFixed(2)}° rather than 30°`,
+      );
       magnitudes.push(magnitude);
     }
   }
@@ -225,7 +263,13 @@ test("pitch keeps the ASCII drawing whole instead of scattering it", () => {
   }
 });
 
-test("pitched opaque bodies remain bounded, registered, tapered, and inside the nine-fill budget", () => {
+// One horizontal span per scanline of the tallest body a fish can be drawn at,
+// with room to spare. It is a cost ceiling, not a shape budget: the old nine
+// was a shape budget, and enforcing it is precisely what forced a rotated slice
+// to be replaced by the bounding box around it.
+const MAX_BODY_SPANS = 128;
+
+test("pitched opaque bodies stay bounded, registered and tapered", () => {
   const interior = new Set(["(", ")", "o", "O"]);
   for (const sprite of individualSprites) {
     const columns = sourceColumns(sprite);
@@ -236,7 +280,10 @@ test("pitched opaque bodies remain bounded, registered, tapered, and inside the 
           for (const turnScale of [1, 0.32]) {
             const scene = renderSpriteScene(sprite, { facing, pitch, phase, turnScale });
             const object = objectByPrefix(scene, "lab:");
-            assert.ok(object.fill.length > 0 && object.fill.length <= 9, `${sprite.id} exceeded fill budget at ${pitch}°`);
+            assert.ok(
+              object.fill.length > 0 && object.fill.length <= MAX_BODY_SPANS,
+              `${sprite.id} drew ${object.fill.length} body spans at ${pitch}°`,
+            );
             for (const span of object.fill) {
               assert.ok(Number.isInteger(span.x) && Number.isInteger(span.y));
               assert.ok(Number.isInteger(span.width) && Number.isInteger(span.height));
@@ -245,8 +292,11 @@ test("pitched opaque bodies remain bounded, registered, tapered, and inside the 
               assert.ok(span.x + span.width <= object.bounds.x + object.bounds.width);
               assert.ok(span.y + span.height <= object.bounds.y + object.bounds.height);
             }
-            const heights = object.fill.map((span) => span.height);
-            assert.ok(new Set(heights).size >= 2, `${sprite.id} became a rectangular pitched block`);
+            // A rasterised body is one span per scanline, so it tapers by
+            // changing width down the rows rather than by stacking blocks of
+            // different heights. A slab would report one width throughout.
+            const widths = new Set(object.fill.map((span) => span.width));
+            assert.ok(widths.size >= 3, `${sprite.id} became a rectangular pitched block`);
             const glyphs = glyphsForObject(scene, object);
             for (const glyph of glyphs) {
               if (interior.has(glyph.char)) {
@@ -262,6 +312,70 @@ test("pitched opaque bodies remain bounded, registered, tapered, and inside the 
             );
           }
         }
+      }
+    }
+  }
+});
+
+// The checks the previous renderer fails. Bounding each rotated body slice
+// with an axis-aligned rectangle grew the filled area by 15-54% and pushed the
+// fill to as much as 95% of its own bounding box: a pitched fish became a slab.
+// A rotated silhouette covers the area it covered level, and covers it in the
+// same shape, turned.
+test("pitch rotates the opaque body instead of inflating it", () => {
+  for (const sprite of individualSprites) {
+    for (const facing of ["right", "left"]) {
+      const level = fillCoverage(bodyFill(sprite, facing, 0));
+      for (const pitch of [15, 30, -30]) {
+        const pitched = fillCoverage(bodyFill(sprite, facing, pitch));
+        const ratio = pitched.area / level.area;
+        assert.ok(
+          ratio > 0.85 && ratio < 1.15,
+          `${sprite.id} ${facing} changed body area by ${((ratio - 1) * 100).toFixed(0)}% at ${pitch}°`,
+        );
+        const occupancy = pitched.area / pitched.boxArea;
+        assert.ok(
+          occupancy < 0.85,
+          `${sprite.id} ${facing} filled ${(occupancy * 100).toFixed(0)}% of its bounding box at ${pitch}°`,
+        );
+      }
+    }
+  }
+});
+
+// And the silhouette is not merely the same size but the same shape: the
+// pitched body is compared against the level body turned about the fish's own
+// centre. The old renderer scored 0.52 to 0.75 here; a body that genuinely
+// rotates scores 0.83 to 0.91, the remainder being honest rasterisation
+// difference between two independently snapped pixel grids.
+test("the pitched opaque body is the level body, rotated", () => {
+  for (const sprite of individualSprites) {
+    for (const facing of ["right", "left"]) {
+      const scene = renderSpriteScene(sprite, { facing, pitch: 0, staticPose: true });
+      const level = coveredPixels(objectByPrefix(scene, "lab:").fill);
+      const centreX = scene.width / 2;
+      const centreY = scene.height / 2;
+      for (const pitch of [-30, -20, 20, 30]) {
+        const actual = coveredPixels(bodyFill(sprite, facing, pitch));
+        // A left-facing sprite is mirrored, so its nose is on the other side of
+        // its centre and the same dive turns the drawing the other way.
+        const angle = (facing === "left" ? -pitch : pitch) * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const expected = new Set();
+        for (const key of level) {
+          const [x, y] = key.split(",").map(Number);
+          const dx = x + 0.5 - centreX;
+          const dy = y + 0.5 - centreY;
+          expected.add(`${Math.floor(centreX + dx * cos - dy * sin)},${Math.floor(centreY + dx * sin + dy * cos)}`);
+        }
+        let intersection = 0;
+        for (const key of actual) if (expected.has(key)) intersection += 1;
+        const overlap = intersection / (actual.size + expected.size - intersection);
+        assert.ok(
+          overlap >= 0.78,
+          `${sprite.id} ${facing} at ${pitch}° overlapped the rotated level body by only ${overlap.toFixed(2)}`,
+        );
       }
     }
   }
