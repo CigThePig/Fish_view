@@ -11,7 +11,7 @@ import { individualSprites, render, renderSpriteScene } from "../src/render/rend
 import { applyBodyProfileToSpriteScene, bodyProfileForSprite } from "../src/render/body-profile-lab.js";
 import { glyphPixelRects, isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
-import { DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
+import { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import {
   ACTIVITIES,
   DWELL_SECONDS,
@@ -321,14 +321,67 @@ test("a strike reaches into the substrate crest without burying the fish, on eve
   }
 });
 
+test("a far-plane feeding fish reaches the contact mark at its rendered scale", () => {
+  // Seed 2 puts this fish close to the far wall. Reserving the global 1.26x
+  // maximum while drawing it near 0.72x left more than a row of clear water
+  // between its ink and a contact mark fixed to the substrate crest.
+  const orientation = "landscape";
+  const config = orientationConfig(orientation);
+  const rowPixels = config.pixelHeight / config.rows;
+  const base = createAquariumState({ orientation, seed: 2, wallClockHours: 12 });
+  const index = 3;
+  const resting = base.individuals[index];
+  let peak = null;
+  for (let age = 0; age < 30; age += 0.01) {
+    const activity = { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: age };
+    const fish = {
+      ...resting,
+      behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
+      activity,
+    };
+    fish.y = substrateGrazeY(fish, base, fish.x, index);
+    const forage = forageActivity(fish, index, base);
+    if (!peak || forage.peck > peak.forage.peck) peak = { fish, forage };
+  }
+  assert.ok(peak.forage.peck > 0.99, "the sampled cycle never reached a full strike");
+
+  const feeding = {
+    ...peak.fish,
+    y: peak.fish.y + peak.forage.peckDisplacement,
+    visual: {
+      ...peak.fish.visual,
+      pitch: 31,
+      targetPitch: 31,
+      facing: 1,
+      targetFacing: 1,
+      turnProgress: 1,
+    },
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((fish, fishIndex) => (fishIndex === index ? feeding : fish)),
+  };
+  const scene = render(state);
+  const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
+  const lowestInk = Math.max(
+    ...glyphsForObject(scene, object)
+      .flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
+  ) / rowPixels;
+  const gap = substrateSurfaceY(state, feeding.x) - lowestInk;
+  assert.ok(gap <= 0.55, `far feeding ink hovered ${gap.toFixed(2)} rows above its contact mark`);
+  assert.ok(gap >= -0.6, `far feeding ink buried ${(-gap).toFixed(2)} rows into the substrate`);
+});
+
 test("the puff is thrown from the mouth the fish is drawn with, not the one it is turning away from", () => {
   // turnPose() swings the drawing to targetFacing halfway through a turn while
   // visual.facing still holds the old direction, so a peck in that window used
   // to land its debris off the tail.
   const config = orientationConfig("landscape");
   const cellWidth = config.pixelWidth / config.cols;
+  const cellHeight = config.pixelHeight / config.rows;
   let checked = 0;
   let midTurn = 0;
+  let slopedContacts = 0;
   for (const seed of [444, 9]) {
     let state = createAquariumState({ orientation: "landscape", seed, wallClockHours: 12 });
     for (let step = 0; step < 4000; step += 1) {
@@ -341,6 +394,20 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
         if (!debris) continue;
         const glyphs = scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount);
         if (!glyphs.length) continue;
+        if (forage.peck > 0.35) {
+          // The contact mark is appended after every debris grain. It moved to
+          // the mouth horizontally, so its vertical origin must use the terrain
+          // under that same point rather than the crest under the fish centre.
+          const contact = glyphs.at(-1);
+          const contactX = (contact.x + CELL_WIDTH * contact.scaleX / 2) / cellWidth;
+          const contactY = (contact.y + CELL_HEIGHT * contact.scaleY / 2) / cellHeight;
+          const localSurface = substrateSurfaceY(state, contactX);
+          assert.ok(
+            Math.abs(contactY - (localSurface - 0.12)) < 1e-9,
+            "the contact mark did not sit on the terrain under the visible mouth",
+          );
+          if (Math.abs(localSurface - forage.surfaceY) > 0.1) slopedContacts += 1;
+        }
         const visual = fish.visual ?? {};
         const drawnFacing = visual.turnProgress >= 1
           ? visual.targetFacing
@@ -360,6 +427,7 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
   }
   assert.ok(checked > 200, "no debris frames were sampled");
   assert.ok(midTurn > 0, "no fish pecked while mid-turn, so the guard proved nothing");
+  assert.ok(slopedContacts > 0, "no strike reached enough terrain slope to test its vertical origin");
 });
 
 test("a pitched fish leans its characters, not just their positions", () => {

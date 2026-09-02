@@ -1024,7 +1024,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
       // spreads a quarter-second lunge over the several seconds the fish needs
       // to answer a position request, which is how a peck ended up moving the
       // fish by a single pixel. tickIndividual() drives the plunge directly.
-      y: substrateGrazeY(fish, state, x),
+      y: substrateGrazeY(fish, state, x, index),
       speed: forage.searching
         ? 0.105 + traits.activity * 0.075 + affinities.substrate * 0.035
         : 0.36 + traits.activity * 0.18,

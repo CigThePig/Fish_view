@@ -5,6 +5,7 @@ import {
   INDIVIDUAL_VISUAL_SCALE_MAX,
   PITCH_POSE_TOTAL_FRACTION,
 } from "./config.js";
+import { individualDepthScale, spreadDepth } from "./depth.js";
 import { spriteForFish } from "./fish-growth.js";
 import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
@@ -20,6 +21,11 @@ export const FORAGE_SEARCH_DISTANCE_ROWS = 0.82;
 // its swimming clearance hovers a row above the sand and never reads as eating.
 export const FORAGE_GRAZE_CONTACT_ROWS = 0.06;
 export const FORAGE_PECK_ROWS = 0.30;
+// The logical sprite box and the renderer's opaque-body box intentionally do
+// not share font/profile internals. Keep a small measured reserve for that
+// mismatch after applying the exact depth scale; without it a near-midplane
+// juvenile can still put the opaque body just over 0.6 rows through the crest.
+const FORAGE_GRAZE_MODEL_MARGIN_ROWS = 0.12;
 // The furthest ahead a grazing fish will chase its route point. The forage
 // route drifts across the tank faster than a fish creeping along at a tenth of
 // a row per second can follow, and an unreachable target makes the steering
@@ -96,6 +102,7 @@ export function substrateSafeY(fish, state, worldX = fish.x) {
 export function fishGrazeClearanceRows(
   fishOrSprite,
   pitchDegrees = FORAGE_PITCH_BIAS_DEGREES,
+  visualScale = INDIVIDUAL_VISUAL_SCALE_MAX,
 ) {
   const sprite = spriteFor(fishOrSprite);
   const { width, height } = spriteDimensions(sprite);
@@ -109,11 +116,36 @@ export function fishGrazeClearanceRows(
   const horizontalAsRows = width / 2 * (CELL_WIDTH / CELL_HEIGHT);
   const projected = height / 2 * Math.cos(pitch)
     + horizontalAsRows * Math.sin(pitch) * PITCH_POSE_TOTAL_FRACTION;
-  return Math.max(0.2, projected * INDIVIDUAL_VISUAL_SCALE_MAX - FORAGE_GRAZE_CONTACT_ROWS);
+  const scale = clamp(
+    Number.isFinite(visualScale) ? visualScale : INDIVIDUAL_VISUAL_SCALE_MAX,
+    0,
+    INDIVIDUAL_VISUAL_SCALE_MAX,
+  );
+  return Math.max(
+    0.2,
+    projected * scale + FORAGE_GRAZE_MODEL_MARGIN_ROWS - FORAGE_GRAZE_CONTACT_ROWS,
+  );
 }
 
-export function substrateGrazeY(fish, state, worldX = fish.x) {
-  return substrateSurfaceY(state, worldX) - fishGrazeClearanceRows(fish);
+export function individualVisualScale(fish, index, state) {
+  const individuals = state?.individuals ?? [];
+  const resolvedIndex = Number.isInteger(index) && index >= 0 && index < individuals.length
+    ? index
+    : individuals.findIndex((candidate) => candidate === fish || candidate.seed === fish?.seed);
+  if (resolvedIndex < 0 || !Number.isFinite(state?.seed)) return INDIVIDUAL_VISUAL_SCALE_MAX;
+  const distance = spreadDepth(
+    state.seed,
+    fish.seed,
+    resolvedIndex,
+    individuals.length,
+    state.elapsedRealSeconds,
+  );
+  return individualDepthScale(distance);
+}
+
+export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
+  return substrateSurfaceY(state, worldX)
+    - fishGrazeClearanceRows(fish, FORAGE_PITCH_BIAS_DEGREES, individualVisualScale(fish, index, state));
 }
 
 export function surfaceSafeY(fish, state, worldX = fish.x) {
@@ -133,7 +165,7 @@ export function surfaceSafeY(fish, state, worldX = fish.x) {
 export function forageActivity(fish, index, state, activity = fish?.activity) {
   const eligible = forageEligible(index);
   const surfaceY = substrateSurfaceY(state, fish.x);
-  const targetY = substrateGrazeY(fish, state, fish.x);
+  const targetY = substrateGrazeY(fish, state, fish.x, index);
   const distanceRows = Math.abs(fish.y - targetY);
   const searching = eligible
     && fish.behavior?.current === "forage"

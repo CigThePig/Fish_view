@@ -1150,6 +1150,11 @@ function drawForageDebris(builder, state, palette, metrics) {
     const mouthX = fish.x
       + turning.facing * spriteDimensions(spriteForFish(fish)).width * 0.5 * 0.62
       * turning.widthScale * drawScale;
+    // The terrain is not flat. Once the cue moved from the fish's centre to its
+    // visible mouth, keeping the centre's surface height could float or bury the
+    // mark by more than a quarter row on a slope. Sample the crest at the same
+    // horizontal origin the cue is actually drawn from.
+    const contactSurfaceY = substrateSurfaceY(state, mouthX);
     const count = activity.debrisPhase === null
       ? 0
       : 5 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
@@ -1162,7 +1167,7 @@ function drawForageDebris(builder, state, palette, metrics) {
       glyphs.push(positionedGlyph(metrics, {
         char,
         worldX: mouthX + spread,
-        worldY: activity.surfaceY - 0.04 - rise,
+        worldY: contactSurfaceY - 0.04 - rise,
         // The cloud fades back towards the floor as it settles, so the puff
         // reads as one event with a beginning and an end.
         fg: mixColor(silt, settled, progress),
@@ -1180,7 +1185,7 @@ function drawForageDebris(builder, state, palette, metrics) {
         // every strike was drawing a question mark on the sand.
         char: activity.peck > 0.72 ? "*" : ":",
         worldX: mouthX,
-        worldY: activity.surfaceY - 0.12,
+        worldY: contactSurfaceY - 0.12,
         fg: mixColor(palette.substrateFg, palette.ripple, 0.85),
         scaleX: 0.62 + activity.peck * 0.34,
         scaleY: 0.62 + activity.peck * 0.34,

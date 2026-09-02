@@ -417,7 +417,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   // and applying it to feeding is what held one a row above its own debris.
   const grazing = Boolean(target.forageGrazing);
   const terrainMaximumY = grazing
-    ? substrateGrazeY(fish, state, x)
+    ? substrateGrazeY(fish, state, x, index)
     : substrateSafeY(fish, state, x);
   // The permanent mid-water cast keeps the same clearance-adjusted
   // swimming envelope it had before terrain-aware foraging. Applying the

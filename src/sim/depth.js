@@ -1,3 +1,4 @@
+import { INDIVIDUAL_VISUAL_SCALE_MAX } from "./config.js";
 import { sample01, sampleRange } from "./prng.js";
 
 // Continuous distance from the glass is world state, even though most of its
@@ -7,8 +8,25 @@ import { sample01, sampleRange } from "./prng.js";
 const DRIFT_RATE = 0.045;
 const DRIFT_AMOUNT = 0.1;
 
+// Apparent size is part of the shared depth model, not renderer-only state.
+// Most simulation bounds remain conservatively sized for the largest possible
+// fish, but substrate grazing has to meet the artwork at the scale actually
+// drawn or a far-plane fish hovers above debris placed on the floor.
+const INDIVIDUAL_SCALE = Object.freeze([0.7, 0.84, 0.98, 1.12, INDIVIDUAL_VISUAL_SCALE_MAX]);
+
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+function interpolate(table, depth) {
+  const position = clamp(depth, 0, 1) * (table.length - 1);
+  const index = Math.min(table.length - 2, Math.floor(position));
+  const progress = position - index;
+  return table[index] + (table[index + 1] - table[index]) * progress;
+}
+
+export function individualDepthScale(depth) {
+  return interpolate(INDIVIDUAL_SCALE, depth);
 }
 
 function drift(seed, salt, elapsedRealSeconds) {
