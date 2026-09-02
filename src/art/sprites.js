@@ -225,3 +225,39 @@ export function spriteDimensions(sprite) {
     height: sprite.shape.length,
   };
 }
+
+// The underside of a sprite: for every column the artwork occupies, the offset
+// of the lowest cell in it from the centre of the anchor grid, in cells.
+//
+// A fish is not a rectangle. The box `spriteDimensions` reports is the right
+// answer for "how much room does this need", and the wrong one for "how close
+// can this get to the sand", because the point a box puts furthest down when
+// the drawing leans - the bottom corner on the nose side - is empty on every
+// species in the roster. That corner is a bigger lie about a bigger fish,
+// which is why anything measured from the box alone gets worse as a fish grows.
+//
+// Only the lowest cell of each column can ever be the lowest ink of the pitched
+// drawing: within one column the cells only rotate as a stack, so the one below
+// the others stays below them. Seven-odd points is also what makes this cheap
+// enough to evaluate per fish per frame on the panel.
+const undersideCache = new Map();
+
+export function spriteUndersideProfile(sprite) {
+  const cached = sprite?.id ? undersideCache.get(sprite.id) : null;
+  if (cached) return cached;
+  const { width, height } = spriteDimensions(sprite);
+  const lowestRow = new Map();
+  for (let row = 0; row < sprite.shape.length; row += 1) {
+    const cells = [...sprite.shape[row]];
+    for (let column = 0; column < cells.length; column += 1) {
+      if (!cells[column] || cells[column] === " ") continue;
+      lowestRow.set(column, row);
+    }
+  }
+  const profile = Object.freeze([...lowestRow.entries()].map(([column, row]) => Object.freeze({
+    dx: column - (width - 1) / 2,
+    dy: row - (height - 1) / 2,
+  })));
+  if (sprite?.id) undersideCache.set(sprite.id, profile);
+  return profile;
+}

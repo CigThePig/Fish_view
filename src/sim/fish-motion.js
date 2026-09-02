@@ -1,4 +1,4 @@
-import { spriteDimensions } from "../art/sprites.js";
+import { spriteDimensions, spriteUndersideProfile } from "../art/sprites.js";
 import { sceneTuning } from "./choreography-tuning.js";
 import {
   CELL_HEIGHT,
@@ -37,6 +37,16 @@ export const FORAGE_PECK_ROWS = 0.30;
 // stays because it is where a measured disagreement belongs - `npm run
 // measure:screen` reports the gap the panel receives, and the seed sweep in
 // tests/review-regressions.test.js grades the other side of it.
+//
+// What remains of the disagreement is a fifth of a row, and it is a constant
+// rather than something that grows with the fish: the simulation models the
+// cell an authored character occupies and not where the font puts the ink
+// inside it. Three stages in the roster - the "·" first-stage fry, and the
+// "'" ventral fin `tiny-dart` and `comma-tail:juvenile` stand on - are drawn
+// with their lowest ink in the top of its cell and so still graze about a
+// third of a row higher than the rest. Closing that would mean teaching the
+// simulation the font's per-glyph ink offsets, which is the internals split
+// this constant exists to hold instead.
 const FORAGE_GRAZE_MODEL_MARGIN_ROWS = 0;
 // The furthest ahead a grazing fish will chase its route point. The forage
 // route drifts across the tank faster than a fish creeping along at a tenth of
@@ -118,17 +128,35 @@ export function fishGrazeClearanceRows(
   contactRows = FORAGE_GRAZE_CONTACT_ROWS,
 ) {
   const sprite = spriteFor(fishOrSprite);
-  const { width, height } = spriteDimensions(sprite);
   // A nose-down fish is longer than it is tall in the vertical direction that
   // matters here: the renderer turns the drawing bodily, so part of the body's
   // length projects downwards and the lowest ink is no longer the belly. A
   // height-only clearance was right while the pose was a gentle shear and buries
   // a wide fish by a whole row now that it leans for real.
+  //
+  // The lean is taken over the cells the artwork occupies, not over the box
+  // that bounds them. The two agree for a fry, whose every cell is inked, and
+  // diverge by more the larger the fish gets, because the point a box puts
+  // furthest down when it leans - the bottom corner on the nose side - is empty
+  // on every species and covers more empty rows the bigger the box is. Measured
+  // against the rendered frame, a box reserve overshot the ink by a sixth of a
+  // row for a fry and by better than half a row for an adult: the graze line
+  // held the biggest fish clear of the sand while a fry fed against it, so
+  // substrate feeding read worse the more fish there was to watch. Over the
+  // silhouette the overshoot is a fifth of a row at every size.
   const pitch = clamp(Math.abs(Number.isFinite(pitchDegrees) ? pitchDegrees : 0), 0, MAX_FISH_PITCH_DEGREES)
     * Math.PI / 180;
-  const horizontalAsRows = width / 2 * (CELL_WIDTH / CELL_HEIGHT);
-  const projected = height / 2 * Math.cos(pitch)
-    + horizontalAsRows * Math.sin(pitch) * PITCH_CLEARANCE_FRACTION;
+  // Each cell reaches its lowest at its own bottom corner on the nose side, half
+  // a cell out and half a cell down from its anchor; a column is CELL_WIDTH /
+  // CELL_HEIGHT of a row. Mirroring moves the nose to the other side of the
+  // centre and the artwork with it, so the authored facing answers for both.
+  const lean = Math.sin(pitch) * PITCH_CLEARANCE_FRACTION * (CELL_WIDTH / CELL_HEIGHT);
+  const drop = Math.cos(pitch);
+  let projected = 0;
+  for (const cell of spriteUndersideProfile(sprite)) {
+    const reach = (cell.dy + 0.5) * drop + (cell.dx + 0.5) * lean;
+    if (reach > projected) projected = reach;
+  }
   const scale = clamp(
     Number.isFinite(visualScale) ? visualScale : INDIVIDUAL_VISUAL_SCALE_MAX,
     0,

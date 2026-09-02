@@ -282,6 +282,21 @@ conservative logical envelope for the strongest permitted pitch; it never import
 render/depth.js. Forage and surface targets then come from substrateSurfaceY()
 and waterSurfaceY() respectively.
 
+Swimming clearance and grazing clearance are deliberately different shapes. A
+fish crossing open water reserves the box that bounds its artwork, which is the
+right answer for "how much room does this need". A fish working the substrate
+projects the cells its artwork actually occupies, because the point a box puts
+furthest down when the fish leans - the bottom corner on the nose side - is
+empty on every species in the roster, and covers more empty rows the larger the
+sprite is. Reserving that corner made the graze line a function of size: a fry
+fed with its chin in the sand while the adult it grows into hovered better than
+half a row clear of the crest and could not reach it even at full strike, so
+substrate feeding read worse the bigger the fish doing it. Projected over the
+silhouette instead, every stage of every species grazes within a fifth of a row
+of the crest and strikes into it. Only the lowest cell of each column can be the
+lowest ink of a leaning fish, so the projection is at most seven points and is
+cached per sprite.
+
 ## Phase 2 personality and activity architecture
 
 The original five broad behaviors remain the biological explanation for motion:
@@ -1040,6 +1055,11 @@ envelope, the tank-edge margin in `tick`, exhale placement, activity geometry,
 and the renderer. A fry legitimately fits closer to the substrate and the
 surface than the adult it becomes, and an arrival is placed at the glass with a
 fry's half-width instead of hovering three columns off it.
+
+Growing is the one thing that must not change how a fish feeds, and the graze
+line above is measured over every stage of every species for exactly that
+reason: a fish that has grown up should work the sand the way it did as a fry,
+not read as increasingly unable to reach it.
 
 Nothing else changes. Behaviour, activity selection, foraging eligibility, the
 protected mid-water trio, relationship learning, and the eight-fish ceiling are

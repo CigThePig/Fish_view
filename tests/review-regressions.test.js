@@ -13,6 +13,8 @@ import { isSupportedGlyph } from "../src/render/bitmap-font.js";
 import { SPIN_STEP_DEGREES, glyphPixelRects, spinDegrees } from "../src/render/glyph-raster.js";
 import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
+import { growthStagesFor, spriteDimensions } from "../src/art/sprites.js";
+import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import {
   ACTIVITIES,
   DWELL_SECONDS,
@@ -622,4 +624,112 @@ test("every glyph a feeding strike draws exists in the font", () => {
   assert.ok(marks > 20, `only ${marks} contact-mark frames were sampled`);
   assert.ok(seen.has("*"), "the strong contact mark never appeared");
   assert.ok(seen.has(":"), "the soft contact mark never appeared");
+});
+
+test("a feeding fish meets the sand at every size it can grow to", () => {
+  // The graze line used to be projected from the box that bounds a sprite, and
+  // the point a box puts furthest down when the fish leans is its bottom corner
+  // on the nose side - which is empty on every species in the roster, and
+  // emptier the larger the fish. A fry fed with its chin in the sand while the
+  // adult it grows into hovered better than half a row clear of it and could
+  // not reach the crest at full strike, so substrate feeding read worse the
+  // bigger the fish doing it. Every stage of every species is walked here
+  // because the defect was a law about size, not one bad sprite.
+  const KNOWN_HIGH_INK_FEET = new Set([
+    // The lowest character these three are drawn with - a "'" ventral fin, and
+    // the "·" a first-stage fry is made of - is one the font inks in the top of
+    // its own cell. The simulation models the cell a character occupies and not
+    // the ink inside it (see FORAGE_GRAZE_MODEL_MARGIN_ROWS), so these rest
+    // about a third of a row higher than the rest of the roster. That offset is
+    // a constant of the artwork rather than of the fish's size, which is what
+    // this test grades; the size law below covers them like everything else.
+    "tiny-dart", "tiny-dart:fry-1", "comma-tail:juvenile", "comma-tail:fry-1",
+  ]);
+
+  for (const orientation of ["landscape", "portrait"]) {
+    const config = orientationConfig(orientation);
+    const rowPixels = config.pixelHeight / config.rows;
+    const base = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
+    const index = 3;
+    const pitch = sceneTuning(base, "substrate-search").grazePitchDegrees;
+    const crest = substrateSurfaceY(base, base.cols * 0.5);
+    const measured = [];
+
+    for (const stage of new Set(individualSprites.flatMap((species) => growthStagesFor(species.id)))) {
+      // spriteForFish() hands back anything already carrying artwork, so a fish
+      // wearing a stage is measured and drawn as that stage by both sides
+      // without having to search for a seed and an age that produce it.
+      const grazing = {
+        ...base.individuals[index],
+        ...stage,
+        x: base.cols * 0.5,
+        behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
+        activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: 0 },
+        visual: {
+          ...base.individuals[index].visual,
+          pitch,
+          targetPitch: pitch,
+          facing: 1,
+          targetFacing: 1,
+          turnProgress: 1,
+        },
+      };
+      grazing.y = substrateGrazeY(grazing, base, grazing.x, index);
+
+      let strongest = 0;
+      for (let age = 0; age < 30; age += 0.01) {
+        const forage = forageActivity(
+          { ...grazing, activity: { ...grazing.activity, ageRealSeconds: age } },
+          index,
+          base,
+        );
+        if (forage.peck > 0.99) strongest = Math.max(strongest, forage.peckDisplacement);
+      }
+      assert.ok(strongest > 0, `${stage.id} never reached a full strike`);
+
+      const clearanceOf = (fish) => {
+        const scene = render({
+          ...base,
+          individuals: base.individuals.map((value, i) => (i === index ? fish : value)),
+        });
+        const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
+        const lowestInk = Math.max(
+          ...glyphsForObject(scene, object)
+            .flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
+        ) / rowPixels;
+        return crest - lowestInk;
+      };
+
+      const { height } = spriteDimensions(stage);
+      measured.push({
+        id: stage.id,
+        height,
+        graze: clearanceOf(grazing),
+        strike: clearanceOf({ ...grazing, y: grazing.y + strongest }),
+      });
+    }
+
+    for (const stage of measured) {
+      if (KNOWN_HIGH_INK_FEET.has(stage.id)) continue;
+      assert.ok(
+        stage.graze >= 0 && stage.graze <= 0.28,
+        `${orientation} ${stage.id} grazed ${stage.graze.toFixed(2)} rows off the crest`,
+      );
+      assert.ok(
+        stage.strike < -0.05,
+        `${orientation} ${stage.id} struck to ${stage.strike.toFixed(2)} rows without reaching the crest`,
+      );
+    }
+
+    // The law itself: a fish that has grown does not feed further off the sand
+    // than one that has not. Before the silhouette projection the tallest
+    // artwork grazed 0.56 rows clear against a fry's 0.15.
+    const worst = (fits) => Math.max(...measured.filter(fits).map((stage) => stage.graze));
+    const grown = worst((stage) => stage.height >= 5);
+    const young = worst((stage) => stage.height <= 2 && !KNOWN_HIGH_INK_FEET.has(stage.id));
+    assert.ok(
+      grown <= young + 0.12,
+      `${orientation} grown fish grazed ${grown.toFixed(2)} rows off the crest against a fry's ${young.toFixed(2)}`,
+    );
+  }
 });
