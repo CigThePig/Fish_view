@@ -1,3 +1,5 @@
+import { CELL_HEIGHT } from "../sim/config.js";
+
 const rows = (...patterns) => patterns.map((pattern) => Number.parseInt(pattern, 2));
 
 export const BITMAP_FONT = Object.freeze({
@@ -87,17 +89,28 @@ export function glyphPixels(glyph) {
 // exactly: rounding origin and size independently opens one-pixel seams inside
 // a glyph at any scale above 1, which is what made stems and blades look
 // dashed even where their sampling was continuous.
-export function glyphPixelRects({ char, x, y, scaleX = 1, scaleY = 1 }) {
+// `slant` leans the character itself, as an italic does: every pixel run is
+// pushed sideways in proportion to how far it sits from the middle of the cell.
+// A five-by-seven bitmap cannot be turned - rotating one at this size destroys
+// the character - but it can be sheared, and shearing keeps every run
+// axis-aligned, so a glyph still costs the same run of filled rectangles on the
+// panel as it did upright. Without it a pitched fish is a leaning arrangement
+// of upright letters, which reads as much flatter than its own axis.
+export function glyphPixelRects({ char, x, y, scaleX = 1, scaleY = 1, slant = 0 }) {
   const originX = Math.round(x);
   const originY = Math.round(y);
+  const centerY = (CELL_HEIGHT / 2) * scaleY;
   return glyphPixels(char).map((pixel) => {
-    const left = originX + Math.round(pixel.x * scaleX);
-    const top = originY + Math.round(pixel.y * scaleY);
-    const right = originX + Math.round((pixel.x + pixel.width) * scaleX);
-    const bottom = originY + Math.round((pixel.y + pixel.height) * scaleY);
+    const top = Math.round(pixel.y * scaleY);
+    const bottom = Math.round((pixel.y + pixel.height) * scaleY);
+    const lean = slant === 0
+      ? 0
+      : Math.round((centerY - (top + bottom) / 2) * slant);
+    const left = originX + lean + Math.round(pixel.x * scaleX);
+    const right = originX + lean + Math.round((pixel.x + pixel.width) * scaleX);
     return {
       x: left,
-      y: top,
+      y: originY + top,
       width: Math.max(1, right - left),
       height: Math.max(1, bottom - top),
     };

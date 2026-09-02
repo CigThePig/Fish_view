@@ -106,6 +106,16 @@ function genericRowLean(row, height) {
   return -centered * (0.1 / Math.max(1, (height - 1) / 2));
 }
 
+// The tangent of the turn actually applied to the drawing. The ink is sheared
+// by the same angle the body is turned through, so a character leans with the
+// fish rather than standing upright inside a leaning arrangement.
+export function pitchSlant(pitch, facing = 1, turnScale = 1) {
+  const bounded = clamp(Number.isFinite(pitch) ? pitch : 0, -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES);
+  if (bounded === 0) return 0;
+  syncRotation(bounded, facing, clamp(Number.isFinite(turnScale) ? turnScale : 1, 0, 1));
+  return rotationCos === 0 ? 0 : rotationSin / rotationCos;
+}
+
 export function pitchCoordinate(x, y, {
   facing = 1,
   pitch = 0,

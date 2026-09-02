@@ -35,11 +35,17 @@ function glyphSignature(glyphs, layer, fill) {
 }
 
 export function glyphBounds(glyph) {
+  const width = CELL_WIDTH * glyph.scaleX;
+  const height = CELL_HEIGHT * glyph.scaleY;
+  // A sheared glyph leans out of its own cell by half its height at the slant,
+  // in both directions. Damage tracking restores from these bounds, so they
+  // have to cover the ink or a leaning fish smears across the water it left.
+  const lean = Math.abs(glyph.slant ?? 0) * height / 2;
   return {
-    x: glyph.x,
+    x: glyph.x - lean,
     y: glyph.y,
-    width: CELL_WIDTH * glyph.scaleX,
-    height: CELL_HEIGHT * glyph.scaleY,
+    width: width + lean * 2,
+    height,
   };
 }
 
@@ -165,6 +171,7 @@ export function positionedGlyph(metrics, {
   fg,
   scaleX = 1,
   scaleY = 1,
+  slant = 0,
 }) {
   const physicalScaleX = (metrics.cellWidth / CELL_WIDTH) * scaleX;
   const physicalScaleY = (metrics.cellHeight / CELL_HEIGHT) * scaleY;
@@ -175,6 +182,7 @@ export function positionedGlyph(metrics, {
     fg,
     scaleX: physicalScaleX,
     scaleY: physicalScaleY,
+    slant,
   };
 }
 

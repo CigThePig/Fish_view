@@ -35,15 +35,24 @@ export const INDIVIDUAL_VISUAL_SCALE_MAX = 1.26;
 // work the substrate. A clearance computed against a different lean than the one
 // drawn is how a feeding fish ends up either hovering above its own debris or
 // buried in the floor.
-export const PITCH_POSE_ROTATION_FRACTION = 0.58;
-// The rotation is not the whole lean: each sprite also carries a hand-authored
-// nose-down shear that the renderer applies on top of it, and the substrate
-// clearance has to reserve for both. The combined lean is measured rather than
-// derived - `npm run measure:screen` reports it, and the grazing-depth test
-// checks the reservation against the ink that actually lands on the panel - so
-// this is the measured total with a little margin, not a second guess at the
-// artwork.
-export const PITCH_POSE_TOTAL_FRACTION = 0.86;
+//
+// The share deliberately over-states the physical angle - a thirty degree pitch
+// draws as about thirty-eight - because the characters cannot be rotated, only
+// their positions can, and a body assembled from upright letters reads flatter
+// than its own axis. The ink is sheared to lean with it (see pitchSlant), which
+// carries much of the impression and lets the positions stay tighter than they
+// would otherwise have to be: past about 1.0 the glyphs start spreading off the
+// body instead of travelling with it.
+export const PITCH_POSE_ROTATION_FRACTION = 0.8;
+// What the substrate clearance reserves for that lean. It is not simply the
+// share above: the renderer builds its opaque body from a box of its own - tail
+// columns excluded, a swell added, a per-sprite scale - which this side
+// deliberately cannot see, and the two disagree by up to a third of a row in
+// either direction depending on the sprite. So this is a reservation tuned
+// against rendered frames rather than a second model of the artwork: the seed
+// sweep in tests/review-regressions.test.js grades where feeding fish actually
+// land, and `npm run measure:screen` reports the lean the panel receives.
+export const PITCH_POSE_TOTAL_FRACTION = 0.95;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
 // Drives never reach 0 or 1: a fish is never perfectly satisfied and never

@@ -87,9 +87,15 @@ export function substrateSafeY(fish, state, worldX = fish.x) {
 // any fish can be drawn at; both are the right call for a fish crossing open
 // water and both are wrong for one working the substrate, where the reserve
 // simply parks it in mid-water with its debris falling out of reach below.
+// The posture is the forage lean, not the fish's instantaneous pitch. Tracking
+// the live angle makes the graze line climb exactly as the strike drives the
+// fish down - the reservation grows with the lean, the clamp lifts the fish,
+// and the two cancel almost perfectly. Reserving for the steady feeding posture
+// instead leaves the strike free to reach past it, which is the whole point of
+// a strike: the nose goes into the sand and comes back out.
 export function fishGrazeClearanceRows(
   fishOrSprite,
-  pitchDegrees = fishOrSprite?.visual?.pitch ?? 0,
+  pitchDegrees = FORAGE_PITCH_BIAS_DEGREES,
 ) {
   const sprite = spriteFor(fishOrSprite);
   const { width, height } = spriteDimensions(sprite);

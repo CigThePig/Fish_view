@@ -22,7 +22,7 @@ import { forageActivity } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
-import { pitchCoordinate } from "./fish-pitch.js?v=phase4-growth-20260901";
+import { pitchCoordinate, pitchSlant } from "./fish-pitch.js?v=phase4-growth-20260901";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=phase4-growth-20260901";
 import {
@@ -1059,6 +1059,7 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     pitch,
     cellAspect,
   });
+  const slant = pitchSlant(pitch, turning.facing, turning.widthScale);
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: fish.x + point.x * scale,
@@ -1066,6 +1067,7 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     fg: maskColor(point.mask, fish.seed, masks),
     scaleX: (0.9 + turning.widthScale * 0.1) * scale,
     scaleY: scale,
+    slant,
   }));
   const fill = bodyFill(sprite, metrics, {
     worldX: fish.x,
@@ -1322,6 +1324,10 @@ export function renderSpriteScene(sprite, {
   const spriteSeed = individualSprites.findIndex(
     (candidate) => candidate.id === (sprite.speciesId ?? sprite.id),
   ) + 1;
+  // The lab is a reference for the artwork, so it leans its ink exactly as the
+  // tank does; a pose that reads differently here than it does in the water
+  // would be worse than useless for authoring against.
+  const labSlant = pitchSlant(pitch, facingValue, turnScale);
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: logicalWidth / 2 + point.x,
@@ -1329,6 +1335,7 @@ export function renderSpriteScene(sprite, {
     fg: maskColor(point.mask, spriteSeed, palette.masks),
     scaleX: 0.9 + turnScale * 0.1,
     scaleY: 1,
+    slant: labSlant,
   }));
   addGlyphObject(builder, {
     id: `lab:${sprite.id}:${facing}`,

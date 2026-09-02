@@ -179,9 +179,11 @@ test("pitch turns the drawing by a real angle and by the same angle in every asp
       const magnitude = Math.abs(delta);
       // The authored shear alone put about a sixth of the simulated pitch on
       // the panel - four pixels across a fifty pixel fish - which is a posture
-      // the viewer never sees. The drawing is now also turned bodily, so most
-      // of the angle survives to the glass.
-      assert.ok(magnitude >= 26 && magnitude <= 36, `${mode.name}/${facing} pitched pose was ${magnitude.toFixed(2)}°`);
+      // the viewer never sees. The drawing is now turned bodily as well, and
+      // deliberately past the physical angle: glyphs cannot rotate, only their
+      // positions can, so a body built from characters has to lean further than
+      // the physics to look like it leans at all.
+      assert.ok(magnitude >= 33 && magnitude <= 44, `${mode.name}/${facing} pitched pose was ${magnitude.toFixed(2)}°`);
       magnitudes.push(magnitude);
     }
   }
@@ -206,8 +208,8 @@ test("pitch keeps the ASCII drawing whole instead of scattering it", () => {
       // within about a cell of where it was, the silhouette does not balloon,
       // and no glyph overtakes its neighbour along the body.
       for (let index = 0; index < level.length; index += 1) {
-        assert.ok(Math.abs(strong[index].y - level[index].y) <= 1.2, `${sprite.id} displaced a glyph by more than 1.2 rows`);
-        assert.ok(Math.abs(strong[index].x - level[index].x) <= 1.8, `${sprite.id} displaced a glyph sideways by more than 1.8 columns`);
+        assert.ok(Math.abs(strong[index].y - level[index].y) <= 1.5, `${sprite.id} displaced a glyph by more than 1.5 rows`);
+        assert.ok(Math.abs(strong[index].x - level[index].x) <= 2.6, `${sprite.id} displaced a glyph sideways by more than 2.6 columns`);
       }
       assert.ok(extent(strong) / extent(level) <= 1.35, `${sprite.id} spread out while pitching`);
       for (let index = 1; index < level.length; index += 1) {

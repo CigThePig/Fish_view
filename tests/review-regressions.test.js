@@ -8,6 +8,8 @@ import {
 } from "../src/render/plants.js";
 import { scenePalette } from "../src/render/palette.js";
 import { render } from "../src/render/render.js";
+import { glyphPixelRects } from "../src/render/bitmap-font.js";
+import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import {
   ACTIVITIES,
@@ -354,4 +356,47 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
   }
   assert.ok(checked > 200, "no debris frames were sampled");
   assert.ok(midTurn > 0, "no fish pecked while mid-turn, so the guard proved nothing");
+});
+
+test("a pitched fish leans its characters, not just their positions", () => {
+  // Five-by-seven bitmaps cannot be turned - rotating one at this size destroys
+  // the character - so the ink is sheared instead, by the same angle the body
+  // is turned through. Without it a pitched fish is a leaning arrangement of
+  // upright letters, which reads far flatter than its own axis.
+  const state = createAquariumState({ orientation: "landscape", seed: 331, wallClockHours: 12 });
+  const index = 0;
+  const posed = (pitch) => render({
+    ...state,
+    individuals: state.individuals.map((fish, i) => (i === index
+      ? { ...fish, visual: { ...fish.visual, pitch, targetPitch: pitch, facing: 1, targetFacing: 1, turnProgress: 1 } }
+      : fish)),
+  });
+
+  const level = posed(0);
+  const levelObject = level.objects.find((object) => object.id.startsWith(`individual:${index}:`));
+  const levelGlyphs = glyphsForObject(level, levelObject);
+  assert.ok(levelGlyphs.every((glyph) => (glyph.slant ?? 0) === 0), "a level fish leans nothing");
+
+  const pitched = posed(30);
+  const pitchedObject = pitched.objects.find((object) => object.id.startsWith(`individual:${index}:`));
+  const pitchedGlyphs = glyphsForObject(pitched, pitchedObject);
+  const slant = pitchedGlyphs[0].slant;
+  assert.ok(Math.abs(slant) > 0.4, `a fully pitched fish sheared its ink by only ${slant}`);
+  assert.ok(pitchedGlyphs.every((glyph) => glyph.slant === slant), "one fish, one lean");
+
+  // The ink actually moves, and the bounds cover where it moved to - damage
+  // tracking restores from those bounds, so ink outside them smears.
+  const rects = glyphPixelRects(pitchedGlyphs[0]);
+  const upright = glyphPixelRects({ ...pitchedGlyphs[0], slant: 0 });
+  assert.ok(
+    rects.some((rect, i) => rect.x !== upright[i].x),
+    "the sheared glyph rasterised identically to an upright one",
+  );
+  const bounds = glyphBounds(pitchedGlyphs[0]);
+  for (const rect of rects) {
+    assert.ok(
+      rect.x >= Math.floor(bounds.x) && rect.x + rect.width <= Math.ceil(bounds.x + bounds.width),
+      "sheared ink fell outside the bounds damage tracking restores from",
+    );
+  }
 });
