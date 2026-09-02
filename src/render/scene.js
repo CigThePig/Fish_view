@@ -1,5 +1,14 @@
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
-import { SLANT_STEPS, quantizeSlant } from "./bitmap-font.js";
+import { glyphRasterBounds } from "./glyph-raster.js?v=true-rotation-20260902";
+
+// A thousandth of a glyph's own scale: a step moves the far edge of the tallest
+// character by a fortieth of a pixel, and makes the raster reproducible from a
+// number the damage signature can hold exactly.
+export const SCALE_STEPS = 1000;
+
+export function quantizeScale(scale) {
+  return Number.isFinite(scale) ? Math.round(scale * SCALE_STEPS) / SCALE_STEPS : 0;
+}
 
 function hashText(hash, value) {
   const text = String(value);
@@ -17,18 +26,23 @@ function glyphSignature(glyphs, layer, fill) {
     hash = hashText(hash, glyph.char);
     hash = hashText(hash, Math.round(glyph.x));
     hash = hashText(hash, Math.round(glyph.y));
-    // The backend rounds every lit-pixel offset through the glyph's own scale,
-    // so a change too small to move the scale by one part in a hundred can
-    // still move a pixel. Hashing at 1% left stretched plant stems repainting
-    // one column late and trailing a stale stroke behind them.
-    hash = hashText(hash, Math.round(glyph.scaleX * 1000));
-    hash = hashText(hash, Math.round(glyph.scaleY * 1000));
-    // The lean is raster state exactly like the scales are: it pushes lit pixels
-    // sideways inside a cell whose rounded anchor has not moved, so a signature
-    // blind to it leaves the previous ink standing until some other property
-    // happens to change. The rasteriser snaps the lean to the same grid this
-    // hashes, so ink that moved cannot hash the same.
-    hash = hashText(hash, Math.round(quantizeSlant(glyph.slant ?? 0) * SLANT_STEPS));
+    // The rasteriser rounds every span edge through the glyph's own scale, so
+    // an arbitrarily small change of scale can still move a lit pixel: it only
+    // has to push some offset across a half. No precision of hash fixes that,
+    // because there is no precision below which a crossing is impossible -
+    // which is why the scale is snapped in positionedGlyph to exactly the grid
+    // hashed here. The raster is then a pure function of numbers this carries
+    // exactly, and ink that moved cannot hash the same.
+    hash = hashText(hash, Math.round(glyph.scaleX * SCALE_STEPS));
+    hash = hashText(hash, Math.round(glyph.scaleY * SCALE_STEPS));
+    // Rotation is raster state exactly like the scales are: it moves lit pixels
+    // inside a cell whose rounded anchor has not moved, so a signature blind to
+    // it leaves the previous ink standing until some other property happens to
+    // change. The rasteriser reads nothing but these two integers, so ink that
+    // moved cannot hash the same - which is the practical dividend of
+    // quantising the rotation rather than carrying a float.
+    hash = hashText(hash, glyph.spin ?? 0);
+    hash = hashText(hash, glyph.spinAspect ?? 0);
     hash = hashText(hash, glyph.fg);
   }
   for (const rectangle of fill) {
@@ -41,19 +55,12 @@ function glyphSignature(glyphs, layer, fill) {
   return `${glyphs.length}:${fill.length}:${hash >>> 0}`;
 }
 
+// Exactly the rectangle this glyph paints into, rotation included. A rotated
+// character reaches well outside its own cell - a pipe turned thirty degrees
+// spans eleven extra units sideways - and damage tracking restores only inside
+// these bounds, so ink outside them would smear across the water it left.
 export function glyphBounds(glyph) {
-  const width = CELL_WIDTH * glyph.scaleX;
-  const height = CELL_HEIGHT * glyph.scaleY;
-  // A sheared glyph leans out of its own cell by half its height at the slant,
-  // in both directions. Damage tracking restores from these bounds, so they
-  // have to cover the ink or a leaning fish smears across the water it left.
-  const lean = Math.abs(glyph.slant ?? 0) * height / 2;
-  return {
-    x: glyph.x - lean,
-    y: glyph.y,
-    width: width + lean * 2,
-    height,
-  };
+  return glyphRasterBounds(glyph);
 }
 
 function combinedBounds(glyphs, padding = 1, fill = []) {
@@ -133,7 +140,7 @@ export function addGlyphObject(builder, { id, layer, glyphs, padding = 1, fill =
 // a layer while one is visibly nearer than the other. Their opaque bodies make
 // an ID-based tie-breaker incorrect: the farther fish can be painted last and
 // erase part of the nearer fish. scaleY is monotonic with the same continuous
-// depth value and is already hashed at 0.1% precision for damage tracking, so it
+// depth value and is already snapped to a thousandth for damage tracking, so it
 // gives us a matching, effectively free within-lane occlusion key.
 function individualOcclusionOrder(builder, object) {
   if (!object.id.startsWith("individual:") || object.glyphCount <= 0) return 0;
@@ -178,10 +185,13 @@ export function positionedGlyph(metrics, {
   fg,
   scaleX = 1,
   scaleY = 1,
-  slant = 0,
+  // Which cached glyph rotation to draw, and at what unit aspect. Zero is the
+  // upright raster, which is what everything but a pitched fish uses.
+  spin = 0,
+  spinAspect = 0,
 }) {
-  const physicalScaleX = (metrics.cellWidth / CELL_WIDTH) * scaleX;
-  const physicalScaleY = (metrics.cellHeight / CELL_HEIGHT) * scaleY;
+  const physicalScaleX = quantizeScale((metrics.cellWidth / CELL_WIDTH) * scaleX);
+  const physicalScaleY = quantizeScale((metrics.cellHeight / CELL_HEIGHT) * scaleY);
   return {
     char,
     x: worldX * metrics.cellWidth - (CELL_WIDTH * physicalScaleX) / 2,
@@ -189,7 +199,8 @@ export function positionedGlyph(metrics, {
     fg,
     scaleX: physicalScaleX,
     scaleY: physicalScaleY,
-    slant,
+    spin,
+    spinAspect,
   };
 }
 

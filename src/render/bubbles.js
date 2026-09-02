@@ -8,7 +8,7 @@ import { SURFACE_Y_ROWS } from "../sim/environment.js";
 import { sampleSigned } from "../sim/prng.js";
 import { laneForDepth } from "./depth.js?v=visual-depth-20260830";
 import { mixColor } from "./palette.js?v=visual-depth-20260830";
-import { addGlyphObject, positionedGlyph } from "./scene.js?v=opaque-bodies-20260830";
+import { addGlyphObject, positionedGlyph } from "./scene.js?v=true-rotation-20260902";
 
 const NEAR_BUBBLE_SCALE = 0.28;
 
