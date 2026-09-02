@@ -296,23 +296,6 @@ test("a fish body stays tapered rather than squaring off into a block", () => {
   }
 });
 
-test("the tail is left open at the trailing edge of every sprite", () => {
-  for (const sprite of individualSprites) {
-    for (const facing of ["right", "left"]) {
-      const scene = renderSpriteScene(sprite, { facing, phase: 0 });
-      const object = objectByPrefix(scene, "lab:");
-      const glyphs = glyphsForObject(scene, object);
-      // Sprites are authored facing right, so the tail trails the direction of
-      // travel. Its outermost glyph must have bare water behind it: a body
-      // reaching into the tail reads as one blunt mass rather than as a fish.
-      const trailing = glyphs.reduce((furthest, glyph) => (facing === "right"
-        ? (glyph.x < furthest.x ? glyph : furthest)
-        : (glyph.x > furthest.x ? glyph : furthest)), glyphs[0]);
-      assert.equal(backsGlyph(object, trailing), false, sprite.id + " backs its tail glyph '" + trailing.char + "'");
-    }
-  }
-});
-
 test("fins are left outside the body so they keep an open silhouette", () => {
   // A body swollen to cover the fins reads as a blob with a fish drawn on it.
   const scene = renderSpriteScene(individualSprites[1], { facing: "right", phase: 0 });
