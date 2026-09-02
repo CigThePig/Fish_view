@@ -2,12 +2,13 @@ import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
 import { render } from "./render/render.js";
 import {
   SCENE_FIELDS,
-  STEERING_FIELDS,
+  constrainedSceneEdit,
   constrainedSteeringEdit,
   sceneFieldsFor,
+  steeringFieldsFor,
   steeringKeyLabel,
   steeringKeysFor,
-} from "./dev/choreography-fields.js?v=choreography-tuning-20260902";
+} from "./dev/choreography-fields.js?v=choreography-tuning-20260902b";
 import {
   SHOWCASE_DEFAULT_SEED,
   SHOWCASE_SCENARIOS,
@@ -84,7 +85,7 @@ function setTunedValue(control, value) {
   const { table, key } = control;
   const patch = table === "steering"
     ? constrainedSteeringEdit(resolvedSteeringProfile(state, key), control.definition.key, value)
-    : { [control.definition.key]: value };
+    : constrainedSceneEdit(resolvedSceneTuning(state, key), control.definition.key, value);
   const group = { ...(tuning[table][key] ?? {}), ...patch };
   tuning = { ...tuning, [table]: { ...tuning[table], [key]: group } };
   applyTuning();
@@ -224,7 +225,7 @@ function buildEditor() {
   }
 
   for (const key of steeringKeys) {
-    const fields = STEERING_FIELDS.map((definition) => makeField("steering", key, definition));
+    const fields = steeringFieldsFor(key).map((definition) => makeField("steering", key, definition));
     groups.push(makeGroup(
       steeringKeyLabel(key),
       key.includes(":")

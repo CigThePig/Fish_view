@@ -57,6 +57,26 @@ export function constrainedSteeringEdit(profile, key, value) {
   return { [key]: value };
 }
 
+const SCENE_INTERVAL_PAIRS = Object.freeze([
+  Object.freeze(["stageSecondsMin", "stageSecondsMax"]),
+  Object.freeze(["trailingMinRows", "trailingMaxRows"]),
+  Object.freeze(["besideMinRows", "besideMaxRows"]),
+  Object.freeze(["panicNearRows", "panicFarRows"]),
+]);
+
+// Scene ranges are intervals too. Keep the edited endpoint and move its mate
+// when necessary, exactly as the steering speed interval does.
+export function constrainedSceneEdit(profile, key, value) {
+  const pair = SCENE_INTERVAL_PAIRS.find(([minimum, maximum]) => (
+    (key === minimum || key === maximum) && minimum in profile && maximum in profile
+  ));
+  if (!pair) return { [key]: value };
+  const [minimum, maximum] = pair;
+  if (key === minimum && value > profile[maximum]) return { [minimum]: value, [maximum]: value };
+  if (key === maximum && value < profile[minimum]) return { [minimum]: value, [maximum]: value };
+  return { [key]: value };
+}
+
 export const SCENE_FIELDS = Object.freeze({
   cruise: Object.freeze([
     field("speedBase", "Speed", "rows/s before personality", 0.02, 1.2, 0.005),
@@ -179,6 +199,19 @@ export const SCENE_FIELDS = Object.freeze({
 export function steeringKeysFor(activity) {
   return Object.keys(STEERING_PROFILES)
     .filter((key) => key === activity || key.startsWith(activity + ":"));
+}
+
+const VELOCITY_TARGET_ACTIVITIES = new Set([
+  ACTIVITIES.schoolFollow,
+  ACTIVITIES.individualFollow,
+  ACTIVITIES.companionCruise,
+]);
+
+export function steeringFieldsFor(key) {
+  const activity = key.split(":")[0];
+  return STEERING_FIELDS.filter((definition) => (
+    definition.key !== "velocityMatch" || VELOCITY_TARGET_ACTIVITIES.has(activity)
+  ));
 }
 
 export function steeringKeyLabel(key) {

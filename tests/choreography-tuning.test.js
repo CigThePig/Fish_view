@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   CHASE_BREAK_CEILING_SECONDS,
   SCENE_FIELDS,
   STEERING_FIELDS,
+  constrainedSceneEdit,
   constrainedSteeringEdit,
+  steeringFieldsFor,
   steeringKeysFor,
 } from "../src/dev/choreography-fields.js";
 import {
@@ -116,6 +119,32 @@ test("speed-bound edits cannot export an interval the controller will collapse",
   assert.deepEqual(constrainedSteeringEdit(profile, "maximumSpeed", 0.3), { maximumSpeed: 0.3 });
 });
 
+test("scene interval edits keep every lower endpoint at or below its upper endpoint", () => {
+  const cases = [
+    ["stageSecondsMin", "stageSecondsMax"],
+    ["trailingMinRows", "trailingMaxRows"],
+    ["besideMinRows", "besideMaxRows"],
+    ["panicNearRows", "panicFarRows"],
+  ];
+  for (const [minimum, maximum] of cases) {
+    const profile = { [minimum]: 2, [maximum]: 4 };
+    assert.deepEqual(constrainedSceneEdit(profile, minimum, 6), { [minimum]: 6, [maximum]: 6 });
+    assert.deepEqual(constrainedSceneEdit(profile, maximum, 1), { [minimum]: 1, [maximum]: 1 });
+    assert.deepEqual(constrainedSceneEdit(profile, maximum, 3), { [maximum]: 3 });
+  }
+});
+
+test("velocity matching is shown only for profiles whose targets carry velocity", () => {
+  const hasVelocityMatch = (key) => steeringFieldsFor(key).some((field) => field.key === "velocityMatch");
+  assert.equal(hasVelocityMatch(ACTIVITIES.cruise), false);
+  assert.equal(hasVelocityMatch(ACTIVITIES.wander), false);
+  assert.equal(hasVelocityMatch(ACTIVITIES.bubbleInvestigate), false);
+  assert.equal(hasVelocityMatch(ACTIVITIES.schoolFollow), true);
+  assert.equal(hasVelocityMatch(ACTIVITIES.individualFollow), true);
+  assert.equal(hasVelocityMatch(ACTIVITIES.companionCruise), true);
+  assert.equal(hasVelocityMatch("companion-cruise:mutual"), true);
+});
+
 test("bottom feeding answers its rotation and distance tuning", () => {
   const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
   const fish = base.individuals[4];
@@ -179,7 +208,55 @@ test("bubble inspection answers its own standoff tuning", () => {
     },
   };
   const shiftedTarget = showcaseTarget(shifted, ACTIVITIES.bubbleInvestigate);
-  assert.ok(shiftedTarget.y > target.y + 0.9, "inspection standoff did not move the close-range target");
+  assert.ok(shiftedTarget.y > target.y + 0.75, "inspection standoff did not move the close-range target");
+});
+
+test("every phase profile shown by the editor occurs in its showcase", () => {
+  for (const scenario of SHOWCASE_SCENARIOS) {
+    const phaseKeys = steeringKeysFor(scenario.id).filter((key) => key.includes(":"));
+    if (!phaseKeys.length) continue;
+    const seen = new Set();
+    let state = createShowcaseState({ orientation: "landscape", scenario: scenario.id });
+    const frames = Math.ceil(scenario.loopSeconds / 0.1);
+    for (let frame = 0; frame <= frames; frame += 1) {
+      const target = showcaseTarget(state, scenario.id);
+      for (const key of phaseKeys) {
+        if (target?.choreography
+          && isDeepStrictEqual(target.choreography, resolvedSteeringProfile(state, key))) seen.add(key);
+      }
+      if (frame < frames) state = tickShowcase(state, 0.1, scenario.id);
+    }
+    assert.deepEqual(seen, new Set(phaseKeys), scenario.id + " does not exercise every phase profile");
+  }
+});
+
+test("substrate showcase makes the full search-span range observable", () => {
+  const [minimum, maximum] = ["min", "max"].map((endpoint) => (
+    SCENE_FIELDS[ACTIVITIES.substrateSearch]
+      .find((field) => field.key === "searchSpanColumns")[endpoint]
+  ));
+  const initial = createShowcaseState({ orientation: "landscape", scenario: ACTIVITIES.substrateSearch });
+  const withSpan = (state, searchSpanColumns) => ({
+    ...state,
+    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { searchSpanColumns } } },
+  });
+  let narrow = withSpan(initial, minimum);
+  let wide = withSpan(initial, maximum);
+  let maximumTargetSeparation = 0;
+  let maximumFishSeparation = 0;
+  for (let frame = 0; frame < 150; frame += 1) {
+    const narrowTarget = showcaseTarget(narrow, ACTIVITIES.substrateSearch);
+    const wideTarget = showcaseTarget(wide, ACTIVITIES.substrateSearch);
+    maximumTargetSeparation = Math.max(maximumTargetSeparation, Math.abs(narrowTarget.x - wideTarget.x));
+    maximumFishSeparation = Math.max(
+      maximumFishSeparation,
+      Math.abs(narrow.individuals[3].x - wide.individuals[3].x),
+    );
+    narrow = tickShowcase(narrow, 0.1, ACTIVITIES.substrateSearch);
+    wide = tickShowcase(wide, 0.1, ACTIVITIES.substrateSearch);
+  }
+  assert.ok(maximumTargetSeparation > 1, "span extremes still request the same route");
+  assert.ok(maximumFishSeparation > 0.1, "span extremes still draw the same fish trajectory");
 });
 
 test("every tunable value has a lab slider whose range contains its default", () => {

@@ -1,4 +1,4 @@
-import { createBubbleWorldRecords } from "../sim/bubbles.js";
+import { bubbleWaterTop, createBubbleWorldRecords } from "../sim/bubbles.js";
 import { clamp } from "../sim/entities.js";
 import {
   ACTIVITIES,
@@ -21,11 +21,12 @@ export const SHOWCASE_DEFAULT_SEED = hashSeed(SHOWCASE_SEED_LABEL);
 const SUBJECT_INDEX = 3;
 const SUBSTRATE_APPROACH_ROWS = 2.6;
 const COMPANION_INDEX = 4;
+const FORAGE_PREVIEW_SPANS = Object.freeze([0.5, 20]);
 
 export const SHOWCASE_SCENARIOS = Object.freeze([
   Object.freeze({ id: "cruise", label: "Cruise", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
   Object.freeze({ id: "open-water-wander", label: "Open-water wander", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
-  Object.freeze({ id: "bubble-investigate", label: "Bubble investigation", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
+  Object.freeze({ id: "bubble-investigate", label: "Bubble investigation", subjects: [SUBJECT_INDEX], loopSeconds: 8.3 }),
   Object.freeze({ id: "plant-investigate", label: "Plant investigation", subjects: [SUBJECT_INDEX], loopSeconds: 8.2 }),
   Object.freeze({ id: "plant-weave", label: "Plant weave", subjects: [SUBJECT_INDEX], loopSeconds: 9.5 }),
   Object.freeze({ id: "school-follow", label: "School follow", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
@@ -123,26 +124,69 @@ function posedFish(fish, state, {
   };
 }
 
+function foragePreviewFish(fish, state, preserveAge) {
+  let best = null;
+  for (let x = 4.5; x <= state.cols - 4.5; x += 0.5) {
+    const candidate = posedFish(fish, state, {
+      x,
+      y: substrateSafeY(adult(fish), state, x) - SUBSTRATE_APPROACH_ROWS,
+      vx: 0.16,
+      vy: 0.08,
+      behavior: "forage",
+      activity: ACTIVITIES.substrateSearch,
+      preserveAge,
+    });
+    const candidateState = {
+      ...state,
+      individuals: state.individuals.map((other, index) => index === SUBJECT_INDEX ? candidate : other),
+    };
+    const targets = FORAGE_PREVIEW_SPANS.map((searchSpanColumns) => resolveActivityTarget(
+      candidate,
+      SUBJECT_INDEX,
+      {
+        ...candidateState,
+        choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { searchSpanColumns } } },
+      },
+      candidate.activity,
+    ));
+    if (targets.some((target) => !target)) continue;
+    const separation = Math.abs(targets[0].x - targets[1].x);
+    if (!best || separation > best.separation) best = { fish: candidate, separation };
+  }
+  return best?.fish ?? posedFish(fish, state, {
+    x: state.cols * 0.48,
+    y: substrateSafeY(adult(fish), state, state.cols * 0.48) - SUBSTRATE_APPROACH_ROWS,
+    vx: 0.16,
+    vy: 0.08,
+    behavior: "forage",
+    activity: ACTIVITIES.substrateSearch,
+    preserveAge,
+  });
+}
+
 function bubbleOpportunity(initial, subject) {
   const adult = { ...subject, ageDays: Math.max(500, subject.ageDays ?? 0) };
-  let selectedState = initial;
-  let selectedBubble = null;
+  const desiredPopSeconds = 7.6;
+  let selected = null;
   for (let offset = 0; offset <= 90; offset += 0.5) {
     const candidateState = { ...initial, elapsedRealSeconds: initial.elapsedRealSeconds + offset };
-    const candidate = createBubbleWorldRecords(candidateState)
+    const candidates = createBubbleWorldRecords(candidateState)
       .filter((bubble) => bubble.phase === "rise"
         && ["stream", "isolated", "touch"].includes(bubble.kind)
-        && bubble.progress < 0.62
         && bubble.worldY <= substrateSafeY(adult, candidateState, bubble.worldX) - 3.25
-        && bubble.worldY >= surfaceSafeY(adult, candidateState, bubble.worldX) + 1.4)
-      .sort((left, right) => right.worldY - left.worldY || left.id.localeCompare(right.id))[0];
-    if (candidate) {
-      selectedState = candidateState;
-      selectedBubble = candidate;
-      break;
+        && bubble.worldY >= surfaceSafeY(adult, candidateState, bubble.worldX) + 1.4);
+    for (const bubble of candidates) {
+      const popSeconds = Math.max(0, (bubble.worldY - bubbleWaterTop()) / bubble.speed);
+      const score = Math.abs(popSeconds - desiredPopSeconds);
+      if (!selected || score < selected.score
+        || (score === selected.score && bubble.id.localeCompare(selected.bubble.id) < 0)) {
+        selected = { state: candidateState, bubble, score };
+      }
     }
   }
-  return { state: selectedState, bubble: selectedBubble };
+  return selected
+    ? { state: selected.state, bubble: selected.bubble }
+    : { state: initial, bubble: null };
 }
 
 function showcasePlant(state) {
@@ -253,8 +297,10 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   } else if (scenario.id === ACTIVITIES.bubbleInvestigate && bubble) {
     const approachSide = bubble.worldX < state.cols / 2 ? 1 : -1;
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
-      x: bubble.worldX + approachSide * 5.1,
-      y: bubble.worldY + 3.1,
+      // Close enough to inspect before this deliberately late-rise bubble
+      // reaches the surface, while still leaving a visible pursuit.
+      x: bubble.worldX + approachSide * 2,
+      y: bubble.worldY + 0.65,
       vx: -approachSide * 0.26,
       vy: -0.08,
       behavior: "explore",
@@ -308,16 +354,10 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
     // Measured from the substrate rather than from the tank height: the loop
     // has to show the descent and still leave room for the pecks that follow
     // it, and a fraction of the rows spends most of a landscape loop falling.
-    const searchX = state.cols * 0.48;
-    individuals[SUBJECT_INDEX] = posedFish(subject, state, {
-      x: searchX,
-      y: substrateSafeY(adult(subject), state, searchX) - SUBSTRATE_APPROACH_ROWS,
-      vx: 0.16,
-      vy: 0.08,
-      behavior: "forage",
-      activity: ACTIVITIES.substrateSearch,
-      preserveAge,
-    });
+    // Choose the deterministic starting lane through the production resolver.
+    // At this lane the editor's narrow and wide search spans ask for visibly
+    // different route points instead of both hitting the same lead clamp.
+    individuals[SUBJECT_INDEX] = foragePreviewFish(subject, state, preserveAge);
   } else if (scenario.id === ACTIVITIES.surfaceInvestigate) {
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
       x: state.cols * 0.48,
@@ -340,7 +380,9 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
       vy: 0,
       behavior: "rest",
       activity: ACTIVITIES.openWaterRest,
-      target: { targetType: "waypoint", targetX: center.x + 0.3, targetY: center.y },
+      // Begin outside the settle radius, then arrive in time to show the quiet
+      // drift profile during the same loop.
+      target: { targetType: "waypoint", targetX: center.x + 2.3, targetY: center.y },
       preserveAge,
     });
   } else if (scenario.id === ACTIVITIES.plantShelter) {
