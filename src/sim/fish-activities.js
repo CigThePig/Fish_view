@@ -822,7 +822,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
       ? Math.max(0, Math.sin(inspectClock * 0.56)) ** 5
       : 0;
     const below = inspecting
-      ? 0.48 - curiousLunge * 0.34 + Math.sin(inspectClock) * 0.22
+      ? tuning.inspectStandoffRows - curiousLunge * 0.34 + Math.sin(inspectClock) * 0.22
       : tuning.standoffRows + (1 - traits.boldness) * 0.36;
     const socialProof = nearbyFishCount(state, bubble.worldX, bubble.worldY, 2.8, fish.seed) > 0;
     const enthusiasm = 0.78 + traits.boldness * 0.18

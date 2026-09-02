@@ -5,9 +5,16 @@ import {
   CHASE_BREAK_CEILING_SECONDS,
   SCENE_FIELDS,
   STEERING_FIELDS,
+  constrainedSteeringEdit,
   steeringKeysFor,
 } from "../src/dev/choreography-fields.js";
-import { showcaseScenario } from "../src/dev/behavior-showcase.js";
+import {
+  SHOWCASE_SCENARIOS,
+  createShowcaseState,
+  showcaseScenario,
+  showcaseTarget,
+  tickShowcase,
+} from "../src/dev/behavior-showcase.js";
 import { DWELL_SECONDS } from "../src/sim/fish-activities.js";
 import {
   DEFAULT_STEERING_PROFILE,
@@ -96,6 +103,19 @@ test("overrides ride on state and never touch the module tables", () => {
   assert.equal(sceneTuning(null, ACTIVITIES.cruise), SCENE_TUNING.cruise);
 });
 
+test("speed-bound edits cannot export an interval the controller will collapse", () => {
+  const profile = { minimumSpeed: 0.1, maximumSpeed: 0.4 };
+  assert.deepEqual(constrainedSteeringEdit(profile, "minimumSpeed", 0.5), {
+    minimumSpeed: 0.5,
+    maximumSpeed: 0.5,
+  });
+  assert.deepEqual(constrainedSteeringEdit(profile, "maximumSpeed", 0.05), {
+    minimumSpeed: 0.05,
+    maximumSpeed: 0.05,
+  });
+  assert.deepEqual(constrainedSteeringEdit(profile, "maximumSpeed", 0.3), { maximumSpeed: 0.3 });
+});
+
 test("bottom feeding answers its rotation and distance tuning", () => {
   const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
   const fish = base.individuals[4];
@@ -141,6 +161,25 @@ test("chase tuning moves both fish, not only the chaser", () => {
   assert.equal(tuned.evasionSpeed, 1.1);
   // Untouched entries still come from the authored table.
   assert.equal(tuned.breakSeconds, SCENE_TUNING[ACTIVITIES.playfulChase].breakSeconds);
+});
+
+test("bubble inspection answers its own standoff tuning", () => {
+  let state = createShowcaseState({ orientation: "landscape", scenario: ACTIVITIES.bubbleInvestigate });
+  let target = showcaseTarget(state, ACTIVITIES.bubbleInvestigate);
+  for (let frame = 0; frame < 100 && target?.choreographyPhase !== "inspect"; frame += 1) {
+    state = tickShowcase(state, 0.1, ACTIVITIES.bubbleInvestigate);
+    target = showcaseTarget(state, ACTIVITIES.bubbleInvestigate);
+  }
+  assert.equal(target?.choreographyPhase, "inspect", "showcase never reached close inspection");
+
+  const shifted = {
+    ...state,
+    choreographyTuning: {
+      scene: { [ACTIVITIES.bubbleInvestigate]: { inspectStandoffRows: 1.48 } },
+    },
+  };
+  const shiftedTarget = showcaseTarget(shifted, ACTIVITIES.bubbleInvestigate);
+  assert.ok(shiftedTarget.y > target.y + 0.9, "inspection standoff did not move the close-range target");
 });
 
 test("every tunable value has a lab slider whose range contains its default", () => {
@@ -189,4 +228,13 @@ test("the lab can reach every profile an activity actually uses", () => {
     ACTIVITIES.playfulChase,
     "playful-chase:break",
   ]);
+});
+
+test("every tunable activity has a real showcase/editor entry", () => {
+  const showcased = new Set(SHOWCASE_SCENARIOS.map((scenario) => scenario.id));
+  const tunable = new Set([
+    ...Object.keys(STEERING_PROFILES).map((key) => key.split(":")[0]),
+    ...Object.keys(SCENE_TUNING),
+  ]);
+  assert.deepEqual(showcased, tunable);
 });

@@ -37,9 +37,25 @@ export const STEERING_FIELDS = Object.freeze([
   field("positionGain", "Position gain", "how hard a distance error is answered", 0, 2, 0.01),
   field("velocityMatch", "Velocity match", "share of the target's own velocity adopted", 0, 1, 0.01),
   field("pitchScale", "Pitch scale", "how much of the climb angle is drawn", 0, 1.5, 0.01),
-  field("pitchResponse", "Pitch response", "higher snaps the nose round sooner", 0.2, 8, 0.05),
-  field("turnDuration", "Turn duration", "seconds to swing through a facing change", 0.1, 2, 0.01),
+  // These bounds are also enforced by tickVisualPose(). Keeping the editor on
+  // the same interval means every displayed/exported value reaches the fish.
+  field("pitchResponse", "Pitch response", "higher snaps the nose round sooner", 1, 7, 0.05),
+  field("turnDuration", "Turn duration", "seconds to swing through a facing change", 0.2, 1.5, 0.01),
 ]);
+
+// minimumSpeed and maximumSpeed describe one interval. The controller used to
+// silently collapse an inverted interval at runtime, leaving the lab and its
+// copied source claiming a value the fish could not use. Move the other end
+// with the edited end instead, so the requested value remains authoritative.
+export function constrainedSteeringEdit(profile, key, value) {
+  if (key === "minimumSpeed" && value > profile.maximumSpeed) {
+    return { minimumSpeed: value, maximumSpeed: value };
+  }
+  if (key === "maximumSpeed" && value < profile.minimumSpeed) {
+    return { minimumSpeed: value, maximumSpeed: value };
+  }
+  return { [key]: value };
+}
 
 export const SCENE_FIELDS = Object.freeze({
   cruise: Object.freeze([
@@ -74,7 +90,8 @@ export const SCENE_FIELDS = Object.freeze({
     field("acquireSpeed", "Acquire speed", "rows/s in the first moment of noticing", 0.02, 1.4, 0.005),
     field("pursueSpeed", "Pursue speed", "rows/s closing on the bubble", 0.02, 1.4, 0.005),
     field("inspectSpeed", "Inspect speed", "rows/s hovering under it", 0.01, 0.8, 0.005),
-    field("standoffRows", "Standoff", "rows kept below the bubble", 0, 3, 0.01),
+    field("standoffRows", "Pursuit standoff", "rows kept below the bubble while closing", 0, 3, 0.01),
+    field("inspectStandoffRows", "Inspection standoff", "rows kept below the bubble while inspecting", 0, 3, 0.01),
     field("lookAheadSeconds", "Lead", "seconds ahead of the rising bubble it aims", 0, 2, 0.01),
     field("acquirePitchDegrees", "Acquire rotation", "degrees · negative is nose-up", -32, 32, 0.5),
     field("inspectPitchDegrees", "Inspect rotation", "degrees · negative is nose-up", -32, 32, 0.5),

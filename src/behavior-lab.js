@@ -3,6 +3,7 @@ import { render } from "./render/render.js";
 import {
   SCENE_FIELDS,
   STEERING_FIELDS,
+  constrainedSteeringEdit,
   sceneFieldsFor,
   steeringKeyLabel,
   steeringKeysFor,
@@ -81,7 +82,10 @@ function applyTuning() {
 
 function setTunedValue(control, value) {
   const { table, key } = control;
-  const group = { ...(tuning[table][key] ?? {}), [control.definition.key]: value };
+  const patch = table === "steering"
+    ? constrainedSteeringEdit(resolvedSteeringProfile(state, key), control.definition.key, value)
+    : { [control.definition.key]: value };
+  const group = { ...(tuning[table][key] ?? {}), ...patch };
   tuning = { ...tuning, [table]: { ...tuning[table], [key]: group } };
   applyTuning();
   // A phase profile inherits every field it does not list, so editing the

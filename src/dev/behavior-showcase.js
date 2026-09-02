@@ -24,6 +24,7 @@ const COMPANION_INDEX = 4;
 
 export const SHOWCASE_SCENARIOS = Object.freeze([
   Object.freeze({ id: "cruise", label: "Cruise", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
+  Object.freeze({ id: "open-water-wander", label: "Open-water wander", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
   Object.freeze({ id: "bubble-investigate", label: "Bubble investigation", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
   Object.freeze({ id: "plant-investigate", label: "Plant investigation", subjects: [SUBJECT_INDEX], loopSeconds: 8.2 }),
   Object.freeze({ id: "plant-weave", label: "Plant weave", subjects: [SUBJECT_INDEX], loopSeconds: 9.5 }),
@@ -36,6 +37,9 @@ export const SHOWCASE_SCENARIOS = Object.freeze([
   Object.freeze({ id: "substrate-search", label: "Substrate search", subjects: [SUBJECT_INDEX], loopSeconds: 15 }),
   Object.freeze({ id: "surface-investigate", label: "Surface investigation", subjects: [SUBJECT_INDEX], loopSeconds: 13 }),
   Object.freeze({ id: "open-water-rest", label: "Open-water rest", subjects: [SUBJECT_INDEX], loopSeconds: 9 }),
+  Object.freeze({ id: "plant-shelter", label: "Plant shelter", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
+  Object.freeze({ id: "touch-react", label: "Touch reaction", subjects: [SUBJECT_INDEX], loopSeconds: 3 }),
+  Object.freeze({ id: "arrival-enter", label: "Arrival entry", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
 ]);
 
 const SCENARIO_BY_ID = new Map(SHOWCASE_SCENARIOS.map((scenario) => [scenario.id, scenario]));
@@ -151,6 +155,17 @@ function showcasePlant(state) {
     ))[0] ?? state.plants[0];
 }
 
+function showcaseShelterPlant(state, fish) {
+  return [...state.plants]
+    .sort((left, right) => plantHeight(right) - plantHeight(left) || left.seed - right.seed)
+    .find((plant) => resolveActivityTarget(
+      adult(fish),
+      SUBJECT_INDEX,
+      state,
+      activityState(ACTIVITIES.plantShelter, { targetType: "plant", targetId: plant.seed }),
+    )) ?? showcasePlant(state);
+}
+
 function quietBackgroundFish(fish, index, state) {
   const lane = state.rows * (0.35 + (index % 3) * 0.13);
   const point = safePosition(fish, state, fish.x, lane);
@@ -221,6 +236,18 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
       vy: 0,
       behavior: "cruise",
       activity: ACTIVITIES.cruise,
+      preserveAge,
+    });
+  } else if (scenario.id === ACTIVITIES.wander) {
+    const destination = { x: state.cols * 0.68, y: state.rows * 0.38 };
+    individuals[SUBJECT_INDEX] = posedFish(subject, state, {
+      x: state.cols * 0.3,
+      y: state.rows * 0.62,
+      vx: 0.24,
+      vy: -0.08,
+      behavior: "explore",
+      activity: ACTIVITIES.wander,
+      target: { targetType: "waypoint", targetX: destination.x, targetY: destination.y },
       preserveAge,
     });
   } else if (scenario.id === ACTIVITIES.bubbleInvestigate && bubble) {
@@ -314,6 +341,53 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
       behavior: "rest",
       activity: ACTIVITIES.openWaterRest,
       target: { targetType: "waypoint", targetX: center.x + 0.3, targetY: center.y },
+      preserveAge,
+    });
+  } else if (scenario.id === ACTIVITIES.plantShelter) {
+    // Shelter has stricter plant eligibility than inspection. Choose through
+    // the production resolver so the forced scene cannot immediately discard
+    // an invalid specimen and wander to a distant fallback.
+    const plant = showcaseShelterPlant(state, subject);
+    const preview = plantTargetPosition(subject, plant, state, { shelter: true });
+    individuals[SUBJECT_INDEX] = posedFish(subject, state, {
+      // Start at the resolved shelter point so the preview exercises the quiet
+      // shelter profile itself, not only its short approach phase. Recomputing
+      // the target from this pose selects the same side of the plant.
+      x: preview.x,
+      y: preview.y,
+      vx: preview.x < state.cols / 2 ? -0.06 : 0.06,
+      vy: 0,
+      behavior: "rest",
+      activity: ACTIVITIES.plantShelter,
+      target: { targetType: "plant", targetId: plant.seed },
+      preserveAge,
+    });
+  } else if (scenario.id === ACTIVITIES.touchReact) {
+    const touch = { x: center.x + 2.2, y: center.y - 0.5 };
+    individuals[SUBJECT_INDEX] = posedFish(subject, state, {
+      x: center.x - 2.1,
+      y: center.y + 0.6,
+      vx: 0.42,
+      vy: -0.1,
+      behavior: "explore",
+      activity: ACTIVITIES.touchReact,
+      target: { targetType: "touch", targetX: touch.x, targetY: touch.y },
+      preserveAge,
+    });
+    state = {
+      ...state,
+      reaction: { ...touch, ageSeconds: 0, durationSeconds: 3.2 },
+    };
+  } else if (scenario.id === ACTIVITIES.arrivalEnter) {
+    const destination = { x: state.cols * 0.34, y: state.rows * 0.44 };
+    individuals[SUBJECT_INDEX] = posedFish(subject, state, {
+      x: 4.5,
+      y: state.rows * 0.62,
+      vx: 0.36,
+      vy: -0.04,
+      behavior: "explore",
+      activity: ACTIVITIES.arrivalEnter,
+      target: { targetType: "waypoint", targetX: destination.x, targetY: destination.y },
       preserveAge,
     });
   }

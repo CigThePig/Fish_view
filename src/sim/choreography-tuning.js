@@ -334,6 +334,9 @@ export const SCENE_TUNING = Object.freeze({
     pursueSpeed: 0.63,
     inspectSpeed: 0.16,
     standoffRows: 0.58,
+    // Close inspection already used a tighter 0.48-row distance. Naming it
+    // separately preserves that motion while making the inspect phase tunable.
+    inspectStandoffRows: 0.48,
     lookAheadSeconds: 0.58,
     acquirePitchDegrees: -4,
     inspectPitchDegrees: -2,
