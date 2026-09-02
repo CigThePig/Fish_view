@@ -6,10 +6,23 @@
  */
 
 import { SCENE_TUNING, STEERING_PROFILES } from "../sim/choreography-tuning.js";
+import { ACTIVITIES, DWELL_SECONDS } from "../sim/fish-activities.js";
+import { showcaseScenario } from "./behavior-showcase.js";
 
 function field(key, label, hint, min, max, step) {
   return Object.freeze({ key, label, hint, min, max, step });
 }
+
+// A break the chase never lives long enough to reach is not a tuning value: the
+// activity is reselected once its dwell expires - the shortest sampled dwell is
+// the second entry - and the lab restarts its own loop on its own schedule. The
+// break slider therefore stops short of whichever deadline comes first, with
+// room left for the glide that follows the break.
+const CHASE_GLIDE_MARGIN_SECONDS = 0.4;
+export const CHASE_BREAK_CEILING_SECONDS = Math.min(
+  DWELL_SECONDS[ACTIVITIES.playfulChase][1],
+  showcaseScenario(ACTIVITIES.playfulChase).loopSeconds,
+) - CHASE_GLIDE_MARGIN_SECONDS;
 
 // Every profile carries the same twelve, because the steering controller
 // answers a target the same way whatever the fish thinks it is doing.
@@ -114,7 +127,14 @@ export const SCENE_FIELDS = Object.freeze({
     field("pursuitStandoffRows", "Standoff · pursuit", "rows short of the companion", 0, 5, 0.01),
     field("breakGlideSpeed", "Break glide speed", "rows/s once the chaser gives up", 0.02, 1, 0.005),
     field("recognitionRadiusRows", "Recognition radius", "rows within which the chase is noticed", 0.5, 12, 0.05),
-    field("breakSeconds", "Break after", "seconds before the chaser breaks off", 1, 15, 0.1),
+    field(
+      "breakSeconds",
+      "Break after",
+      "seconds before the chaser breaks off · bounded by how long a chase lives",
+      1,
+      CHASE_BREAK_CEILING_SECONDS,
+      0.1,
+    ),
     field("panicNearRows", "Panic · near", "rows at which the evader is fully alarmed", 0, 6, 0.05),
     field("panicFarRows", "Panic · far", "rows at which the evader stops caring", 0, 10, 0.05),
   ]),

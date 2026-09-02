@@ -79,10 +79,15 @@ function applyTuning() {
   if (state) state = { ...state, choreographyTuning: tuningForState() };
 }
 
-function setTunedValue(table, key, field, value) {
-  const group = { ...(tuning[table][key] ?? {}), [field]: value };
+function setTunedValue(control, value) {
+  const { table, key } = control;
+  const group = { ...(tuning[table][key] ?? {}), [control.definition.key]: value };
   tuning = { ...tuning, [table]: { ...tuning[table], [key]: group } };
   applyTuning();
+  // A phase profile inherits every field it does not list, so editing the
+  // activity profile moves the phase sliders too. Re-reading all of them keeps
+  // the panel showing what the tank is actually running.
+  syncFields(control);
   updateOutput();
 }
 
@@ -99,7 +104,30 @@ function clearTuning(keys) {
 
 /* Tuning editor ---------------------------------------------------------- */
 
-function makeField(definition, value, onInput) {
+// Every control on the panel, so a single edit can refresh the ones that read
+// from the value it changed.
+let fieldControls = [];
+
+function resolvedValue(control) {
+  return control.table === "scene"
+    ? resolvedSceneTuning(state, control.key)[control.definition.key]
+    : resolvedSteeringProfile(state, control.key)[control.definition.key];
+}
+
+function showValue(control) {
+  const value = resolvedValue(control);
+  control.number.value = String(round(value));
+  control.range.value = String(value);
+}
+
+function syncFields(except = null) {
+  for (const control of fieldControls) {
+    // The control being typed into keeps what the person is typing.
+    if (control !== except) showValue(control);
+  }
+}
+
+function makeField(table, key, definition) {
   const label = document.createElement("label");
   label.className = "tuning-field";
   label.dataset.tuningField = definition.key;
@@ -118,7 +146,6 @@ function makeField(definition, value, onInput) {
   number.min = String(definition.min);
   number.max = String(definition.max);
   number.step = String(definition.step);
-  number.value = String(round(value));
   number.setAttribute("aria-label", definition.label + " exact value");
 
   const range = document.createElement("input");
@@ -126,12 +153,13 @@ function makeField(definition, value, onInput) {
   range.min = String(definition.min);
   range.max = String(definition.max);
   range.step = String(definition.step);
-  range.value = String(value);
   range.setAttribute("aria-label", definition.label);
+
+  const control = { table, key, definition, number, range };
 
   range.addEventListener("input", () => {
     number.value = range.value;
-    onInput(Number(range.value));
+    setTunedValue(control, Number(range.value));
   });
   number.addEventListener("input", () => {
     if (number.value === "") return;
@@ -139,10 +167,16 @@ function makeField(definition, value, onInput) {
     if (!Number.isFinite(parsed)) return;
     const clamped = Math.max(definition.min, Math.min(definition.max, parsed));
     range.value = String(clamped);
-    onInput(clamped);
+    setTunedValue(control, clamped);
   });
+  // A typed value outside the field's range is clamped before it reaches the
+  // tank. Showing the number back on commit stops the panel from claiming a
+  // value the simulation never used.
+  number.addEventListener("change", () => showValue(control));
 
   label.append(heading, number, range);
+  showValue(control);
+  fieldControls.push(control);
   return label;
 }
 
@@ -174,13 +208,10 @@ function buildEditor() {
     : `${steeringKeys.length} steering profile${steeringKeys.length === 1 ? "" : "s"} shape this activity.`;
 
   const groups = [];
+  fieldControls = [];
 
   if (sceneFields.length) {
-    const fields = sceneFields.map((definition) => makeField(
-      definition,
-      resolvedSceneTuning(state, activity)[definition.key],
-      (value) => setTunedValue("scene", activity, definition.key, value),
-    ));
+    const fields = sceneFields.map((definition) => makeField("scene", activity, definition));
     groups.push(makeGroup(
       "Scene · " + activity,
       "Distances, speeds, and rotations that shape where the fish is asked to be.",
@@ -189,12 +220,7 @@ function buildEditor() {
   }
 
   for (const key of steeringKeys) {
-    const resolved = resolvedSteeringProfile(state, key);
-    const fields = STEERING_FIELDS.map((definition) => makeField(
-      definition,
-      resolved[definition.key],
-      (value) => setTunedValue("steering", key, definition.key, value),
-    ));
+    const fields = STEERING_FIELDS.map((definition) => makeField("steering", key, definition));
     groups.push(makeGroup(
       steeringKeyLabel(key),
       key.includes(":")

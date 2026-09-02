@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CHASE_BREAK_CEILING_SECONDS,
   SCENE_FIELDS,
   STEERING_FIELDS,
   steeringKeysFor,
 } from "../src/dev/choreography-fields.js";
+import { showcaseScenario } from "../src/dev/behavior-showcase.js";
+import { DWELL_SECONDS } from "../src/sim/fish-activities.js";
 import {
   DEFAULT_STEERING_PROFILE,
   SCENE_TUNING,
@@ -163,6 +166,18 @@ test("every tunable value has a lab slider whose range contains its default", ()
       assert.ok(definition in values, activity + "." + definition + " is a slider for nothing");
     }
   }
+});
+
+// A value the lab lets you export but the aquarium can never reach is worse
+// than no slider: the copied chase would simply never break.
+test("the break slider cannot export a chase that outlives its own dwell", () => {
+  const [, dwellLow] = DWELL_SECONDS[ACTIVITIES.playfulChase];
+  const loopSeconds = showcaseScenario(ACTIVITIES.playfulChase).loopSeconds;
+  const breakField = SCENE_FIELDS[ACTIVITIES.playfulChase].find((field) => field.key === "breakSeconds");
+  assert.ok(breakField.max < dwellLow, `break up to ${breakField.max}s outlives a ${dwellLow}s chase`);
+  assert.ok(breakField.max < loopSeconds, `break up to ${breakField.max}s outlives a ${loopSeconds}s lab loop`);
+  assert.equal(breakField.max, CHASE_BREAK_CEILING_SECONDS);
+  assert.ok(SCENE_TUNING[ACTIVITIES.playfulChase].breakSeconds <= breakField.max);
 });
 
 test("the lab can reach every profile an activity actually uses", () => {

@@ -151,7 +151,7 @@ test("bubble pursuit predicts a real rising bubble and produces a readable ascen
     x: fish.x + 4,
     y: fish.y - 3.2,
     speed: 0.42,
-    choreography: choreographyFor(ACTIVITIES.cruise),
+    choreography: choreographyFor(null, ACTIVITIES.cruise),
   };
   const pursuit = steerActivityVelocity(fish, target, {
     realDelta: 0.1,
