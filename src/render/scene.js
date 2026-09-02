@@ -1,4 +1,5 @@
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
+import { SLANT_STEPS, quantizeSlant } from "./bitmap-font.js";
 
 function hashText(hash, value) {
   const text = String(value);
@@ -22,6 +23,12 @@ function glyphSignature(glyphs, layer, fill) {
     // one column late and trailing a stale stroke behind them.
     hash = hashText(hash, Math.round(glyph.scaleX * 1000));
     hash = hashText(hash, Math.round(glyph.scaleY * 1000));
+    // The lean is raster state exactly like the scales are: it pushes lit pixels
+    // sideways inside a cell whose rounded anchor has not moved, so a signature
+    // blind to it leaves the previous ink standing until some other property
+    // happens to change. The rasteriser snaps the lean to the same grid this
+    // hashes, so ink that moved cannot hash the same.
+    hash = hashText(hash, Math.round(quantizeSlant(glyph.slant ?? 0) * SLANT_STEPS));
     hash = hashText(hash, glyph.fg);
   }
   for (const rectangle of fill) {
@@ -35,11 +42,17 @@ function glyphSignature(glyphs, layer, fill) {
 }
 
 export function glyphBounds(glyph) {
+  const width = CELL_WIDTH * glyph.scaleX;
+  const height = CELL_HEIGHT * glyph.scaleY;
+  // A sheared glyph leans out of its own cell by half its height at the slant,
+  // in both directions. Damage tracking restores from these bounds, so they
+  // have to cover the ink or a leaning fish smears across the water it left.
+  const lean = Math.abs(glyph.slant ?? 0) * height / 2;
   return {
-    x: glyph.x,
+    x: glyph.x - lean,
     y: glyph.y,
-    width: CELL_WIDTH * glyph.scaleX,
-    height: CELL_HEIGHT * glyph.scaleY,
+    width: width + lean * 2,
+    height,
   };
 }
 
@@ -165,6 +178,7 @@ export function positionedGlyph(metrics, {
   fg,
   scaleX = 1,
   scaleY = 1,
+  slant = 0,
 }) {
   const physicalScaleX = (metrics.cellWidth / CELL_WIDTH) * scaleX;
   const physicalScaleY = (metrics.cellHeight / CELL_HEIGHT) * scaleY;
@@ -175,6 +189,7 @@ export function positionedGlyph(metrics, {
     fg,
     scaleX: physicalScaleX,
     scaleY: physicalScaleY,
+    slant,
   };
 }
 

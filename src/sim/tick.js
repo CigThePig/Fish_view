@@ -22,8 +22,8 @@ import {
 } from "./fish-activities.js";
 import {
   MAX_FISH_PITCH_DEGREES,
-  forageActivity,
   forageEligible,
+  substrateGrazeY,
   substrateSafeY,
   surfaceSafeY,
 } from "./fish-motion.js";
@@ -332,18 +332,17 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   // the fish has to do about it.
   const deltaHours = Math.min(simDelta / 3600, realDelta * MAX_DRIVE_HOURS_PER_REAL_SECOND);
   const daylight = daylightFactor(state.timeOfDayHours);
-  const currentForage = forageActivity(fish, index, state);
-  const hungerRelief = currentForage.searching
-    ? deltaHours * 0.018 * (1 + currentForage.peck * 0.35)
-    : 0;
   const current = fish.behavior.current;
   const energyChange = current === "rest"
     ? deltaHours * 0.03
     : -deltaHours * (0.004 + traits.activity * 0.005);
   const engagement = socialEngagement(fish, state, school);
   const socialRelief = deltaHours * 0.024 * engagement;
+  // Hunger relief waits for the activity tick below: the peck the fish performs
+  // this frame is resolved there, and crediting a meal against the previous
+  // frame's phase would feed the fish from contact the renderer has moved past.
   const drives = {
-    hunger: clamp(fish.drives.hunger + deltaHours * 0.003 - hungerRelief, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+    hunger: clamp(fish.drives.hunger + deltaHours * 0.003, DRIVE_MINIMUM, DRIVE_MAXIMUM),
     energy: clamp(
       fish.drives.energy + energyChange + (1 - daylight) * deltaHours * 0.002,
       DRIVE_MINIMUM,
@@ -384,6 +383,12 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     school,
   });
   const { target } = activityFrame;
+  const hungerRelief = target?.forageSearching
+    ? deltaHours * 0.018 * (1 + (target.peck ?? 0) * 0.35)
+    : 0;
+  const fedDrives = hungerRelief > 0
+    ? { ...drives, hunger: clamp(drives.hunger - hungerRelief, DRIVE_MINIMUM, DRIVE_MAXIMUM) }
+    : drives;
 
   const evasion = chaseEvasionForFish(fishWithBehavior, state);
   const steered = steerActivityVelocity(fish, target, {
@@ -407,17 +412,19 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   }
 
   const minimumY = surfaceSafeY(fish, state, x);
-  const baseMaximumY = substrateSafeY(fish, state, x);
-  const peckAllowance = behavior.current === "forage" && target.forageSearching
-    ? Math.max(0, target.peckDisplacement ?? 0)
-    : 0;
-  const terrainMaximumY = baseMaximumY + peckAllowance;
+  // A grazing fish works against the substrate itself, not against the swimming
+  // envelope: the envelope keeps a fish crossing open water clear of terrain,
+  // and applying it to feeding is what held one a row above its own debris.
+  const grazing = Boolean(target.forageGrazing);
+  const terrainMaximumY = grazing
+    ? substrateGrazeY(fish, state, x, index)
+    : substrateSafeY(fish, state, x);
   // The permanent mid-water cast keeps the same clearance-adjusted
   // swimming envelope it had before terrain-aware foraging. Applying the
   // 68% ceiling to the raw water column lets large/pitched fish drift
   // visibly deeper because their body clearance is ignored.
   const protectedMaximumY = WATERLINE_ROWS
-    + Math.max(0, baseMaximumY - WATERLINE_ROWS) * 0.68;
+    + Math.max(0, terrainMaximumY - WATERLINE_ROWS) * 0.68;
   const maximumY = index < 3 ? Math.min(terrainMaximumY, protectedMaximumY) : terrainMaximumY;
 
   if (y < minimumY) {
@@ -427,6 +434,14 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     y = maximumY;
     vy = behavior.current === "forage" ? Math.min(0, vy) : -Math.abs(vy);
   }
+
+  // The strike is applied to the fish, not requested of it. Steering answers a
+  // position request over seconds, and a peck lasts a quarter of one: routed
+  // through the target it arrived as a single pixel of drift, well after its
+  // own debris. Driving it here puts the lunge and the puff on the same frame.
+  // The clamp above has already returned the fish to the graze line, so each
+  // frame's plunge is measured from the sand rather than stacking on the last.
+  if (target.forageSearching) y += Math.max(0, target.peckDisplacement ?? 0);
 
   const history = {
     ...fish.history,
@@ -444,7 +459,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     y,
     vx,
     vy,
-    drives,
+    drives: fedDrives,
     history,
     behavior,
     activity: activityFrame.activity,

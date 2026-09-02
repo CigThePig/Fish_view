@@ -22,7 +22,7 @@ import { forageActivity } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { glyphPixels } from "./bitmap-font.js";
-import { pitchCoordinate } from "./fish-pitch.js?v=phase4-growth-20260901";
+import { pitchCoordinate, pitchSlant } from "./fish-pitch.js?v=phase4-growth-20260901";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
 import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=phase4-growth-20260901";
 import {
@@ -273,6 +273,7 @@ function poseCoordinate(source, column, row, {
     row,
     width: source.width,
     height: source.height,
+    turnScale,
   });
   return {
     x: pitched.x,
@@ -1058,6 +1059,7 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     pitch,
     cellAspect,
   });
+  const slant = pitchSlant(pitch, turning.facing, turning.widthScale);
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: fish.x + point.x * scale,
@@ -1065,6 +1067,7 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     fg: maskColor(point.mask, fish.seed, masks),
     scaleX: (0.9 + turning.widthScale * 0.1) * scale,
     scaleY: scale,
+    slant,
   }));
   const fill = bodyFill(sprite, metrics, {
     worldX: fish.x,
@@ -1116,23 +1119,76 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
 function drawForageDebris(builder, state, palette, metrics) {
   state.individuals.forEach((fish, index) => {
     const activity = forageActivity(fish, index, state);
-    if (activity.debrisPhase === null) return;
-    const progress = activity.debrisPhase;
-    const salt = (activity.eventSeed % 97) * 61;
-    const count = 2 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
+    const striking = activity.peck > 0.35;
+    // The contact mark leads the puff: debris only begins a third of the way
+    // into a strike, and the mouth reaches the sand before that.
+    if (activity.debrisPhase === null && !striking) return;
+    const progress = activity.debrisPhase ?? 1;
+    const salt = (activity.debrisSeed % 97) * 61;
+    // Debris is the only part of a meal that stays on screen after the strike,
+    // and the substrate it rises from is already speckled with static marks in
+    // the sand's own colour. Silt lifted into the water catches the light: the
+    // puff is mixed towards the ripple highlight so it reads as something that
+    // just happened rather than as more of the floor.
+    const silt = mixColor(palette.substrateFg, palette.ripple, 0.62);
+    const settled = mixColor(palette.substrateFg, palette.ripple, 0.3);
+    // The puff belongs to the mouth, not to the middle of the fish, and the
+    // mouth is wherever the fish is actually *drawn* facing. Reading
+    // visual.facing directly put the cloud on the tail for the second half of
+    // every turn, because that is when turnPose() has already swung the drawing
+    // to targetFacing. The same pose carries the turn compression and the depth
+    // scale the body is drawn at, so the offset tracks the size on the panel
+    // rather than the sprite's authored width.
+    const turning = turnPose(fish);
+    const drawScale = depthScale(spreadDepth(
+      state.seed,
+      fish.seed,
+      index,
+      state.individuals.length,
+      state.elapsedRealSeconds,
+    ));
+    const mouthX = fish.x
+      + turning.facing * spriteDimensions(spriteForFish(fish)).width * 0.5 * 0.62
+      * turning.widthScale * drawScale;
+    // The terrain is not flat. Once the cue moved from the fish's centre to its
+    // visible mouth, keeping the centre's surface height could float or bury the
+    // mark by more than a quarter row on a slope. Sample the crest at the same
+    // horizontal origin the cue is actually drawn from.
+    const contactSurfaceY = substrateSurfaceY(state, mouthX);
+    const count = activity.debrisPhase === null
+      ? 0
+      : 5 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
     const glyphs = [];
     for (let particle = 0; particle < count; particle += 1) {
-      const rise = progress * sampleRange(fish.seed, 4710 + salt + particle, 0.34, 0.88);
-      const spread = sampleSigned(fish.seed, 4720 + salt + particle) * (0.16 + progress * 0.5);
+      const rise = progress * sampleRange(fish.seed, 4710 + salt + particle, 0.5, 1.35);
+      const spread = sampleSigned(fish.seed, 4720 + salt + particle) * (0.2 + progress * 0.8);
       const charChoice = sample01(fish.seed, 4730 + salt + particle);
-      const char = charChoice < 0.5 ? "." : charChoice < 0.78 ? "," : "'";
+      const char = charChoice < 0.42 ? "." : charChoice < 0.72 ? "," : charChoice < 0.88 ? "'" : ":";
       glyphs.push(positionedGlyph(metrics, {
         char,
-        worldX: fish.x + spread,
-        worldY: activity.surfaceY - 0.04 - rise,
-        fg: mixColor(palette.substrateBg, palette.substrateFg, 0.72),
-        scaleX: sampleRange(fish.seed, 4740 + salt + particle, 0.42, 0.62) * (1 - progress * 0.18),
-        scaleY: sampleRange(fish.seed, 4750 + salt + particle, 0.42, 0.62) * (1 - progress * 0.18),
+        worldX: mouthX + spread,
+        worldY: contactSurfaceY - 0.04 - rise,
+        // The cloud fades back towards the floor as it settles, so the puff
+        // reads as one event with a beginning and an end.
+        fg: mixColor(silt, settled, progress),
+        scaleX: sampleRange(fish.seed, 4740 + salt + particle, 0.58, 0.86) * (1 - progress * 0.24),
+        scaleY: sampleRange(fish.seed, 4750 + salt + particle, 0.58, 0.86) * (1 - progress * 0.24),
+      }));
+    }
+    // The contact itself: a bright mark where the mouth meets the sand, alive
+    // only for the frames of the strike. It is what makes the puff legible as
+    // the fish's doing rather than as drifting sediment.
+    if (striking) {
+      glyphs.push(positionedGlyph(metrics, {
+        // Both marks have to exist in the bitmap font: an unsupported character
+        // silently rasterises as the "?" glyph, which is how the softer half of
+        // every strike was drawing a question mark on the sand.
+        char: activity.peck > 0.72 ? "*" : ":",
+        worldX: mouthX,
+        worldY: contactSurfaceY - 0.12,
+        fg: mixColor(palette.substrateFg, palette.ripple, 0.85),
+        scaleX: 0.62 + activity.peck * 0.34,
+        scaleY: 0.62 + activity.peck * 0.34,
       }));
     }
     addGlyphObject(builder, {
@@ -1276,6 +1332,10 @@ export function renderSpriteScene(sprite, {
   const spriteSeed = individualSprites.findIndex(
     (candidate) => candidate.id === (sprite.speciesId ?? sprite.id),
   ) + 1;
+  // The lab is a reference for the artwork, so it leans its ink exactly as the
+  // tank does; a pose that reads differently here than it does in the water
+  // would be worse than useless for authoring against.
+  const labSlant = pitchSlant(pitch, facingValue, turnScale);
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: logicalWidth / 2 + point.x,
@@ -1283,6 +1343,7 @@ export function renderSpriteScene(sprite, {
     fg: maskColor(point.mask, spriteSeed, palette.masks),
     scaleX: 0.9 + turnScale * 0.1,
     scaleY: 1,
+    slant: labSlant,
   }));
   addGlyphObject(builder, {
     id: `lab:${sprite.id}:${facing}`,

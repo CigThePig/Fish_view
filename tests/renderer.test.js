@@ -169,13 +169,23 @@ test("the night floor stays quieter than the water it sits under", () => {
   assert.ok(average(grain.map((glyph) => Math.abs(colorLuminance(glyph.fg) - floor))) < 14);
 });
 
-test("deep night draws fish as dark silhouettes on the warm field", () => {
+test("deep night draws fish as dark silhouettes with a single lit accent", () => {
   const scene = render(createAquariumState({ orientation: "landscape", seed: 2, wallClockHours: 2 }));
   const individuals = scene.objects.filter((object) => object.id.startsWith("individual:"));
   const fishGlyphs = individuals.flatMap((object) => glyphsForObject(scene, object));
-  const fishLuminance = average(fishGlyphs.map((glyph) => colorLuminance(glyph.fg)));
+  const inkLuminance = fishGlyphs.map((glyph) => colorLuminance(glyph.fg)).sort((a, b) => a - b);
   const waterLuminance = average(scene.background.bands.map((band) => colorLuminance(band.color)));
-  assert.ok(fishLuminance < waterLuminance, fishLuminance + " should be darker than " + waterLuminance);
+  // The night palette is deliberately one warm hue family with the eye as its
+  // only accent, so the markings are graded without it: the body of the ink
+  // sits under the water it swims in, and the accent is the thing that does
+  // not. Averaging the eye back in would grade the accent as a fault.
+  const markings = inkLuminance.slice(0, Math.max(1, Math.round(inkLuminance.length * 0.8)));
+  const marking = average(markings);
+  assert.ok(marking < waterLuminance, marking + " should be darker than " + waterLuminance);
+  assert.ok(
+    inkLuminance.at(-1) > waterLuminance * 1.5,
+    inkLuminance.at(-1) + " accent should catch the light against " + waterLuminance,
+  );
   const bodies = individuals.flatMap((object) => object.fill);
   assert.ok(bodies.length > 0);
   assert.ok(average(bodies.map((span) => colorLuminance(span.color))) < waterLuminance);

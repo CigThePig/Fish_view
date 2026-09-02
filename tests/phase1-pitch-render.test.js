@@ -5,7 +5,7 @@ import { glyphPixelRects, glyphPixels } from "../src/render/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { individualSprites, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
-import { forageActivity, substrateSafeY } from "../src/sim/fish-motion.js";
+import { forageActivity, substrateGrazeY, substrateSafeY } from "../src/sim/fish-motion.js";
 import { createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
@@ -157,7 +157,7 @@ test("nose-down and nose-up semantics remain correct for both facings", () => {
   }
 });
 
-test("authored pitch is aspect-stable without literally rotating the ASCII drawing", () => {
+test("pitch turns the drawing by a real angle and by the same angle in every aspect", () => {
   const sprite = individualSprites.find((candidate) => candidate.id === "round-fin");
   assert.ok(sprite);
   const lab = renderSpriteScene(sprite, { staticPose: true });
@@ -177,22 +177,49 @@ test("authored pitch is aspect-stable without literally rotating the ASCII drawi
       const delta = wrappedDelta(levelAngle, pitchedAngle);
       assert.ok(delta * facing > 0, `${mode.name}/${facing} pitched in the wrong semantic direction`);
       const magnitude = Math.abs(delta);
-      assert.ok(magnitude >= 11 && magnitude <= 17, `${mode.name}/${facing} authored pose was ${magnitude.toFixed(2)}°`);
+      // The authored shear alone put about a sixth of the simulated pitch on
+      // the panel - four pixels across a fifty pixel fish - which is a posture
+      // the viewer never sees. The drawing is now turned bodily as well, and
+      // deliberately past the physical angle: glyphs cannot rotate, only their
+      // positions can, so a body built from characters has to lean further than
+      // the physics to look like it leans at all.
+      assert.ok(magnitude >= 33 && magnitude <= 44, `${mode.name}/${facing} pitched pose was ${magnitude.toFixed(2)}°`);
       magnitudes.push(magnitude);
     }
   }
-  assert.ok(Math.max(...magnitudes) - Math.min(...magnitudes) < 0.75);
+  // The turn is resolved in physical units, so a fish leans by the same angle
+  // on a wide panel, a tall one, and in the artwork lab.
+  assert.ok(Math.max(...magnitudes) - Math.min(...magnitudes) < 0.25);
 });
 
-test("authored pitch keeps the ASCII drawing compact instead of scattering upright glyphs", () => {
+test("pitch keeps the ASCII drawing whole instead of scattering it", () => {
   for (const sprite of individualSprites) {
     for (const facing of [1, -1]) {
       const level = poseSprite(sprite, { facing, pitch: 0, deformationStrength: 0, cellAspect: 2 });
       const strong = poseSprite(sprite, { facing, pitch: 30, deformationStrength: 0, cellAspect: 2 });
       assert.equal(level.length, strong.length);
+      const extent = (points) => {
+        const xs = points.map((point) => point.x);
+        const ys = points.map((point) => point.y);
+        return (Math.max(...xs) - Math.min(...xs) + 1) * (Math.max(...ys) - Math.min(...ys) + 1);
+      };
+      // A turn moves every glyph, which a shear did not - that is the point of
+      // it. What must not happen is the drawing coming apart: the ink stays
+      // within about a cell of where it was, the silhouette does not balloon,
+      // and no glyph overtakes its neighbour along the body.
       for (let index = 0; index < level.length; index += 1) {
-        assert.ok(Math.abs(strong[index].y - level[index].y) <= 0.4, `${sprite.id} displaced a glyph by more than 0.4 rows`);
-        assert.ok(Math.abs(strong[index].x - level[index].x) <= 0.11, `${sprite.id} displaced a glyph sideways by more than 0.11 columns`);
+        assert.ok(Math.abs(strong[index].y - level[index].y) <= 1.5, `${sprite.id} displaced a glyph by more than 1.5 rows`);
+        assert.ok(Math.abs(strong[index].x - level[index].x) <= 2.6, `${sprite.id} displaced a glyph sideways by more than 2.6 columns`);
+      }
+      assert.ok(extent(strong) / extent(level) <= 1.35, `${sprite.id} spread out while pitching`);
+      for (let index = 1; index < level.length; index += 1) {
+        const wasAhead = level[index].x - level[index - 1].x;
+        const isAhead = strong[index].x - strong[index - 1].x;
+        if (Math.abs(wasAhead) < 0.05) continue;
+        assert.ok(
+          Math.sign(wasAhead) === Math.sign(isAhead) || Math.abs(isAhead) < 0.05,
+          `${sprite.id} reordered its own glyphs while pitching`,
+        );
       }
     }
   }
@@ -264,7 +291,7 @@ test("production fish pitch does not change depth scale or layer", () => {
   }
 });
 
-test("active forage pecks emit one tiny deterministic debris object and approach emits none", () => {
+test("active forage pecks emit one deterministic debris object and approach emits none", () => {
   const base = createAquariumState({ orientation: "landscape", seed: 444, wallClockHours: 12 });
   const index = 3;
   const original = base.individuals[index];
@@ -277,7 +304,7 @@ test("active forage pecks emit one tiny deterministic debris object and approach
       // The peck cadence is an animation, so it advances on real seconds.
       behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: age, ageRealSeconds: age },
     };
-    candidate.y = substrateSafeY(candidate, base, candidate.x);
+    candidate.y = substrateGrazeY(candidate, base, candidate.x);
     const activity = forageActivity(candidate, index, base);
     if (activity.peckPhase !== null && activity.debrisPhase !== null && !activeFish) activeFish = candidate;
     if (activity.searching && activity.peckPhase === null && activity.debrisPhase === null && !quietFish) quietFish = candidate;
@@ -291,7 +318,10 @@ test("active forage pecks emit one tiny deterministic debris object and approach
   assert.deepEqual(first, second);
   const debris = first.objects.filter((object) => object.id.startsWith(`forage-debris:${index}:`));
   assert.equal(debris.length, 1);
-  assert.ok(debris[0].glyphCount >= 2 && debris[0].glyphCount <= 5);
+  // A puff of five to eight grains, plus the contact mark while the mouth is
+  // actually in the sand. Fewer than that and a meal was indistinguishable
+  // from the substrate's own static speckle.
+  assert.ok(debris[0].glyphCount >= 5 && debris[0].glyphCount <= 9);
 
   const quiet = render(withFish(quietFish));
   assert.equal(quiet.objects.some((object) => object.id.startsWith("forage-debris:")), false);

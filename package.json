@@ -8,6 +8,7 @@
     "start": "node tools/serve.mjs",
     "test": "node --test",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
+    "measure:screen": "node tools/measure-screen-legibility.mjs",
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs"
   },
   "devDependencies": {

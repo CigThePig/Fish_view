@@ -196,8 +196,21 @@ const PROFILE_OVERRIDES = Object.freeze({
   }),
 });
 
+// How opposed a requested heading may be before the turn is committed to a
+// side: just under a straight reversal, so the fish still swings through a wide
+// arc rather than pivoting, but never stalls on the axis.
+const REVERSAL_LIMIT_RADIANS = Math.PI - 0.09;
+const REVERSAL_DOT = Math.cos(REVERSAL_LIMIT_RADIANS);
+
 export const CHASE_RECOGNITION_RADIUS = 4.9;
-export const CHASE_BREAK_SECONDS = 4.8;
+export const CHASE_BREAK_SECONDS = 6.2;
+// How close the chaser has to get before the chased fish actually breaks.
+// Recognition reaches across the whole radius above - the fish knows it is
+// being followed long before it reacts - but bolting at that range meant
+// fleeing from five rows away, which no chaser can close, and the pair simply
+// ran the tank at a fixed distance. Reacting late is what lets the gap shut.
+const CHASE_PANIC_NEAR_ROWS = 1.3;
+const CHASE_PANIC_FAR_ROWS = 3.6;
 
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
   const length = Math.hypot(x, y);
@@ -208,6 +221,25 @@ function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
 function smoothstep(edge0, edge1, value) {
   const amount = clamp((value - edge0) / Math.max(0.00001, edge1 - edge0), 0, 1);
   return amount * amount * (3 - 2 * amount);
+}
+
+// A componentwise blend cannot cross an exact reversal. With a turn ease below
+// 0.5 the interpolated vector stays on the current side of zero and
+// normalization restores the old heading every frame, so a fish swimming right
+// at a same-height waypoint on its left would hold that heading until a wall
+// flipped it. Capping how opposed the requested heading may be gives the blend
+// a side to fall to: the side the request already leans to, or, for a heading
+// exactly reversed, one picked from the fish so the tank does not pivot in
+// unison. Ordinary corrections are left exactly as they were tuned.
+function turnableDirection(current, desired, seed) {
+  const dot = current.x * desired.x + current.y * desired.y;
+  if (dot > REVERSAL_DOT) return desired;
+  const cross = current.x * desired.y - current.y * desired.x;
+  const side = Math.abs(cross) > 0.00001
+    ? Math.sign(cross)
+    : ((mix32((seed ?? 0) >>> 0) & 1) === 0 ? -1 : 1);
+  const angle = Math.atan2(current.y, current.x) + side * REVERSAL_LIMIT_RADIANS;
+  return { x: Math.cos(angle), y: Math.sin(angle) };
 }
 
 export function choreographyFor(activity, overrides = {}) {
@@ -244,7 +276,7 @@ export function chaseEvasionForFish(fish, state) {
     const distance = Math.hypot(dx, dy);
     if (!Number.isFinite(distance) || distance > CHASE_RECOGNITION_RADIUS + 0.18) continue;
 
-    const proximity = 1 - smoothstep(CHASE_RECOGNITION_RADIUS - 0.55, CHASE_RECOGNITION_RADIUS + 0.18, distance);
+    const proximity = 1 - smoothstep(CHASE_PANIC_NEAR_ROWS, CHASE_PANIC_FAR_ROWS, distance);
     const recognition = smoothstep(0.3, 0.82, age);
     const breakFade = 1 - smoothstep(CHASE_BREAK_SECONDS - 0.35, CHASE_BREAK_SECONDS + 0.9, age);
     const strength = proximity * recognition * breakFade;
@@ -262,10 +294,14 @@ export function chaseEvasionForFish(fish, state) {
       dodgeSign * 0.4,
     );
     const traits = traitsFromSeed(fish.seed, fish.history);
+    // Evasion is a burst, not a cruise. Fleeing at a steady speed just holds
+    // the gap the chaser arrived with, and a chase whose distance never changes
+    // reads as two fish swimming in formation. The break comes when the chaser
+    // is closest, which is what opens the gap again after every pass.
     best = {
       x: direction.x,
       y: direction.y,
-      speed: 0.58 + traits.activity * 0.2 + strength * 0.1,
+      speed: 0.5 + traits.activity * 0.18 + proximity * 0.46,
       weight: 0.42 + strength * 0.5,
       strength,
       sourceSeed: chaser.seed,
@@ -325,11 +361,12 @@ export function steerActivityVelocity(fish, target, {
   const currentSpeed = Math.hypot(fish.vx, fish.vy);
   const currentDirection = safeNormalize(fish.vx, fish.vy, desiredDirection.x, desiredDirection.y);
   const turnEase = 1 - Math.exp(-delta * turningResponse);
+  const turnTarget = turnableDirection(currentDirection, desiredDirection, fish.seed);
   const steeredDirection = safeNormalize(
-    currentDirection.x + (desiredDirection.x - currentDirection.x) * turnEase,
-    currentDirection.y + (desiredDirection.y - currentDirection.y) * turnEase,
-    desiredDirection.x,
-    desiredDirection.y,
+    currentDirection.x + (turnTarget.x - currentDirection.x) * turnEase,
+    currentDirection.y + (turnTarget.y - currentDirection.y) * turnEase,
+    turnTarget.x,
+    turnTarget.y,
   );
   const blendResponse = accelerationResponse * (0.72 + clamp(behaviorBlend, 0, 1) * 0.28);
   const accelerationEase = 1 - Math.exp(-delta * blendResponse);

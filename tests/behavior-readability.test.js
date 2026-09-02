@@ -5,6 +5,7 @@ import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { bodyMotionForFish, render } from "../src/render/render.js";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
 import {
+  CHASE_BREAK_SECONDS,
   chaseEvasionForFish,
   choreographyFor,
   steerActivityVelocity,
@@ -18,11 +19,12 @@ import {
 import {
   FORAGE_PITCH_BIAS_DEGREES,
   forageActivity,
+  substrateGrazeY,
   substrateSafeY,
   surfaceSafeY,
 } from "../src/sim/fish-motion.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
-import { createAquariumState } from "../src/sim/state.js";
+import { createAquariumState, withSettings } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
 function withActivity(fish, behavior, activity, target = {}) {
@@ -195,7 +197,11 @@ test("playful chase is faster than following and gives the chased fish a bounded
     vx: 0.2,
     vy: 0,
   };
-  const chased = { ...chasedSource, x: 23.5, y: 8, vx: 0.2, vy: 0 };
+  // Close enough to bolt. A chased fish that flees the moment it is noticed -
+  // five rows out, further than any chaser can close - keeps a fixed gap, and a
+  // constant gap is a formation rather than a chase. The break comes late and
+  // hard instead, which is what makes the distance visibly open and shut.
+  const chased = { ...chasedSource, x: 21.6, y: 8, vx: 0.2, vy: 0 };
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0 ? chaser : index === 1 ? chased : fish),
@@ -219,6 +225,19 @@ test("playful chase is faster than following and gives the chased fish a bounded
   const away = { x: chased.x - chaser.x, y: chased.y - chaser.y };
   assert.ok(away.x * evasion.x + away.y * evasion.y > 0);
 
+  // Recognised but not yet panicking: at four rows the chased fish carries on
+  // with what it was doing, and the chaser gets to close the distance.
+  const distant = { ...chased, x: chaser.x + 4 };
+  const distantState = {
+    ...state,
+    individuals: state.individuals.map((fish, index) => (index === 1 ? distant : fish)),
+  };
+  const distantEvasion = chaseEvasionForFish(distant, distantState);
+  assert.ok(
+    !distantEvasion || distantEvasion.strength < 0.2,
+    "the chased fish bolted from further away than the chaser can close",
+  );
+
   let chasedState = state;
   for (let frame = 0; frame < 8; frame += 1) chasedState = tick(chasedState, 0.1);
   const movedChaser = chasedState.individuals[0];
@@ -229,7 +248,7 @@ test("playful chase is faster than following and gives the chased fish a bounded
 
   const breakingChaser = {
     ...chaser,
-    activity: { ...chaser.activity, ageRealSeconds: 6.2 },
+    activity: { ...chaser.activity, ageRealSeconds: CHASE_BREAK_SECONDS + 1.4 },
   };
   const breakingState = {
     ...state,
@@ -246,7 +265,7 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
   const index = 3;
   const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
   const fish = { ...source, x: 25 };
-  fish.y = substrateSafeY(fish, base, fish.x);
+  fish.y = substrateGrazeY(fish, base, fish.x);
 
   const eventStarts = [];
   let previousPeck = false;
@@ -265,7 +284,12 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
   const gaps = eventStarts.slice(1).map((age, i) => age - eventStarts[i]);
   assert.ok(Math.min(...gaps) < 1.3, "the peck cluster contains no close pair");
   assert.ok(Math.max(...gaps) > Math.min(...gaps) * 1.7, "the peck cadence is still metronomic");
-  assert.ok(peak.activity.peckDisplacement >= 0.3);
+  // The strike is a real displacement now rather than an offset added to a
+  // target, so it is authored large enough to see - a third of a row is eight
+  // pixels of lunge, and the screen-space tool checks what that costs on the
+  // panel - and small enough that a nose-down fish reaches into the substrate
+  // crest instead of through it.
+  assert.ok(peak.activity.peckDisplacement >= 0.28);
   assert.ok(peak.activity.peckDisplacement <= 0.45);
   assert.deepEqual(
     forageActivity(peak.fish, index, base),
@@ -275,10 +299,51 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
   const target = resolveActivityTarget(peak.fish, index, base, peak.fish.activity);
   assert.equal(target.choreographyPhase, "peck");
   assert.ok(target.postureBias >= FORAGE_PITCH_BIAS_DEGREES + 5.5);
-  assert.ok(target.y - substrateSafeY(peak.fish, base, target.x) >= 0.3);
+  // The target is the graze line itself: below the swimming envelope, and with
+  // no dip folded into it. Steering answers a position request over seconds,
+  // so a quarter-second strike routed through the target arrives as drift; the
+  // tick applies the plunge to the fish instead, which the next test measures.
+  assert.ok(target.forageGrazing);
+  assert.equal(target.y, substrateGrazeY(peak.fish, base, target.x));
+  assert.ok(target.y - substrateSafeY(peak.fish, base, target.x) > 0.2);
+  assert.ok(target.peckDisplacement >= 0.28);
 });
 
-test("the enlarged peck stays above real substrate ink in both orientations", () => {
+test("the strike moves the fish, not just its target", () => {
+  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 444, wallClockHours: 12 }), {
+    timeScale: 1,
+  });
+  const index = 3;
+  const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
+  const grazing = { ...source, x: 25 };
+  grazing.y = substrateGrazeY(grazing, base, grazing.x);
+  const state = {
+    ...base,
+    individuals: base.individuals.map((fish, i) => (i === index ? grazing : fish)),
+  };
+
+  // One second of ordinary ticks straddles a whole peck cluster: the fish has
+  // to visibly rise and fall inside it rather than creep towards a target.
+  let current = state;
+  const rows = [];
+  for (let step = 0; step < 60; step += 1) {
+    current = tick(current, 0.1);
+    const fish = current.individuals[index];
+    rows.push({ y: fish.y, peck: forageActivity(fish, index, current).peck });
+  }
+  const active = rows.filter((row) => row.peck > 0.8);
+  const idle = rows.filter((row) => row.peck === 0);
+  assert.ok(active.length > 0, "no peck reached its peak in six seconds of feeding");
+  const struck = Math.min(...active.map((row) => row.y));
+  const resting = Math.max(...idle.map((row) => row.y));
+  assert.ok(
+    Math.max(...active.map((row) => row.y)) - resting >= 0.22,
+    "the strike does not carry the fish below its grazing line",
+  );
+  assert.ok(struck >= resting - 0.05, "the fish drifted off the substrate between pecks");
+});
+
+test("the peck meets the substrate crest without burying the fish", () => {
   for (const orientation of ["landscape", "portrait"]) {
     const base = createAquariumState({ orientation, seed: 444, wallClockHours: 12 });
     const index = 3;
@@ -287,13 +352,13 @@ test("the enlarged peck stays above real substrate ink in both orientations", ()
     let best = null;
     for (let age = 0; age < 12; age += 0.02) {
       const fish = { ...source, x, activity: { ...source.activity, ageRealSeconds: age } };
-      fish.y = substrateSafeY(fish, base, x);
+      fish.y = substrateGrazeY(fish, base, x);
       const activity = forageActivity(fish, index, base);
       if (!best || activity.peckDisplacement > best.activity.peckDisplacement) best = { fish, activity };
     }
     const fish = {
       ...best.fish,
-      y: substrateSafeY(best.fish, base, x) + best.activity.peckDisplacement,
+      y: substrateGrazeY(best.fish, base, x) + best.activity.peckDisplacement,
       visual: { ...best.fish.visual, pitch: 26, targetPitch: 26 },
     };
     const state = {
@@ -309,10 +374,22 @@ test("the enlarged peck stays above real substrate ink in both orientations", ()
     }));
     const fillBottom = Math.max(...object.fill.map((span) => span.y + span.height));
     const visibleBottom = Math.max(glyphBottom, fillBottom);
-    const terrainPixels = substrateSurfaceY(state, x) * (scene.height / state.rows);
+    const rowPixels = scene.height / state.rows;
+    const terrainPixels = substrateSurfaceY(state, x) * rowPixels;
+    // A feeding fish is meant to reach into the crest - that contact is the
+    // whole cue - but no further than the shallow relief it is nosing through.
+    const entered = (visibleBottom - terrainPixels) / rowPixels;
     assert.ok(
-      visibleBottom <= terrainPixels,
-      `${orientation} peck entered substrate by ${(visibleBottom - terrainPixels).toFixed(2)}px`,
+      entered <= 0.6,
+      `${orientation} peck buried the fish ${entered.toFixed(2)} rows into the substrate`,
+    );
+    // This poses one fish at one angle; the seed sweep in review-regressions
+    // grades real ticks across four tanks and both orientations and is the
+    // tighter guard. What this one still catches is a clearance that has
+    // drifted far enough to leave a feeding fish in open water.
+    assert.ok(
+      entered >= -0.45,
+      `${orientation} peck stayed ${(-entered).toFixed(2)} rows clear of the substrate it feeds from`,
     );
   }
 });
