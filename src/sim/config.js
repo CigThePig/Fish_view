@@ -29,30 +29,28 @@ export const SUBSTRATE_ROWS = 2;
 // footprint. The simulation uses the same hard ceiling for conservative water
 // and substrate clearance without importing the renderer's depth module.
 export const INDIVIDUAL_VISUAL_SCALE_MAX = 1.26;
-// How much of a true rotation the drawn pitch pose performs. The renderer turns
-// a pitched fish bodily by this share of its angle, and the simulation has to
-// reserve room for the same lean when it decides how close a nose-down fish may
-// work the substrate. A clearance computed against a different lean than the one
-// drawn is how a feeding fish ends up either hovering above its own debris or
-// buried in the floor.
+// How much of a true rotation the drawn pitch is. One, because the renderer
+// now performs one: the glyph bitmaps are rotated rasters rather than sheared
+// upright characters, so a thirty degree pitch is drawn at thirty degrees and
+// nothing has to be exaggerated to make it read.
 //
-// The share deliberately over-states the physical angle - a thirty degree pitch
-// draws as about thirty-eight - because the characters cannot be rotated, only
-// their positions can, and a body assembled from upright letters reads flatter
-// than its own axis. The ink is sheared to lean with it (see pitchSlant), which
-// carries much of the impression and lets the positions stay tighter than they
-// would otherwise have to be: past about 1.0 the glyphs start spreading off the
-// body instead of travelling with it.
-export const PITCH_POSE_ROTATION_FRACTION = 0.8;
-// What the substrate clearance reserves for that lean. It is not simply the
-// share above: the renderer builds its opaque body from a box of its own - tail
-// columns excluded, a swell added, a per-sprite scale - which this side
-// deliberately cannot see, and the two disagree by up to a third of a row in
-// either direction depending on the sprite. So this is a reservation tuned
-// against rendered frames rather than a second model of the artwork: the seed
-// sweep in tests/review-regressions.test.js grades where feeding fish actually
-// land, and `npm run measure:screen` reports the lean the panel receives.
-export const PITCH_POSE_TOTAL_FRACTION = 0.95;
+// It was eight tenths, deliberately over-stated to about thirty-eight drawn
+// degrees at a thirty degree pitch, because a body assembled from upright
+// letters reads far flatter than its own axis and the positions were the only
+// thing that could lean. That compensation is gone with the shear it
+// compensated for. The constant stays because the substrate clearance has to
+// reserve room for exactly the lean that gets drawn.
+export const PITCH_ROTATION_FRACTION = 1;
+// What the substrate clearance reserves for that lean. It is no longer a
+// separate model of the drawing: the renderer rotates the fish by the full
+// angle, so the reservation is the full angle too. The remaining disagreement -
+// the renderer builds its opaque body from a box of its own, tail columns
+// excluded, a swell added, a per-sprite scale, which this side deliberately
+// cannot see - is carried by the measured margin in sim/fish-motion.js. The
+// seed sweep in tests/review-regressions.test.js grades where feeding fish
+// actually land, and `npm run measure:screen` reports the lean the panel
+// receives.
+export const PITCH_CLEARANCE_FRACTION = 1;
 export const DEFAULT_SEED = 0xa51c0a7e;
 
 // Drives never reach 0 or 1: a fish is never perfectly satisfied and never
