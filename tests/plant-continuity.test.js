@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PLANT_SPECIES } from "../src/art/plants.js";
-import { glyphPixelRects } from "../src/render/bitmap-font.js";
+import { glyphPixelRects } from "../src/render/glyph-raster.js";
 import {
   MAX_RENDERED_PLANT_GLYPHS,
   MAX_SAMPLES_PER_SEGMENT,

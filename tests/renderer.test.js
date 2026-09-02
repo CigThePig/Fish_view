@@ -204,6 +204,10 @@ test("the day and night ends of the arc are joined without a grey stage", () => 
   }
 });
 
+// One horizontal span per scanline of the tallest body the depth scale can
+// draw, with room to spare.
+const MAX_BODY_SPANS = 128;
+
 test("every individual fish is opaque, through every pose it swims", () => {
   for (const orientation of ["portrait", "landscape"]) {
     let state = createAquariumState({ orientation, seed: 11, wallClockHours: 13 });
@@ -217,10 +221,18 @@ test("every individual fish is opaque, through every pose it swims", () => {
       assert.ok(individuals.length > 0);
       for (const object of individuals) {
         assert.ok(object.fill.length > 0, object.id + " has no body");
-        // Cheap enough for a panel driver even with every fish on screen.
-        assert.ok(object.fill.length <= 9, object.id + " costs too many fills");
-        // The body is now built from narrow vertical slices, so measure the
-        // composed silhouette rather than requiring one rectangle to span it.
+        // A rasterised body is one horizontal span per scanline, so its cost
+        // is bounded by how tall the fish is drawn, not by an authored slice
+        // count. Nine rectangles was the old ceiling and it was a shape budget
+        // as much as a cost one: keeping to it is exactly what forced a rotated
+        // slice to be replaced by the bounding box around it. A hundred and
+        // twenty-eight small fills is nothing beside the pixels they carry.
+        assert.ok(
+          object.fill.length <= MAX_BODY_SPANS,
+          object.id + " drew " + object.fill.length + " body spans",
+        );
+        // The body is rasterised span by span, so measure the composed
+        // silhouette rather than requiring one rectangle to span it.
         const bodyLeft = Math.min(...object.fill.map((span) => span.x));
         const bodyRight = Math.max(...object.fill.map((span) => span.x + span.width));
         assert.ok(bodyRight - bodyLeft > cellWidth, object.id + " body is narrower than one cell");
@@ -397,9 +409,13 @@ test("touch ripple is immediate, deterministic, and expands continuously", () =>
   const initial = objectByPrefix(first, "reaction:ripple");
   assert.equal(initial.glyphCount, 17);
 
-  const touched = applyTouch(state, 20.25, 9.4);
-  const expandedScene = render(tick(touched, 0.1));
-  const expanded = objectByPrefix(expandedScene, "reaction:ripple");
+  // Object bounds are the pixels the object actually paints - glyph rasters,
+  // not whole glyph cells - so they are exact and integral. A tenth of a second
+  // of ripple growth can therefore land inside a single pixel and report the
+  // same width; three tenths cannot, and still must not jump.
+  let touched = applyTouch(state, 20.25, 9.4);
+  for (let step = 0; step < 3; step += 1) touched = tick(touched, 0.1);
+  const expanded = objectByPrefix(render(touched), "reaction:ripple");
   assert.ok(expanded.bounds.width > initial.bounds.width);
   assert.ok(expanded.bounds.width - initial.bounds.width < 12);
 });

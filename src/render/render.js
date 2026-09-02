@@ -1,4 +1,4 @@
-import { glyphFlip, mirrorRows, normalizeRows } from "../art/mirror.js";
+import { mirrorRows, normalizeRows } from "../art/mirror.js";
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import {
   individualSprites,
@@ -21,10 +21,10 @@ import { spriteForFish } from "../sim/fish-growth.js";
 import { forageActivity } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { glyphPixels } from "./bitmap-font.js";
-import { pitchCoordinate, pitchSlant } from "./fish-pitch.js?v=phase4-growth-20260901";
+import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
+import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
+import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=true-rotation-20260902";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
-import { BODY_PROFILES, DEFAULT_BODY_PROFILE } from "./body-profiles.js?v=phase4-growth-20260901";
 import {
   depthScale,
   laneForDepth,
@@ -45,7 +45,7 @@ import {
   finalizeScene,
   positionedGlyph,
   sceneMetrics,
-} from "./scene.js?v=opaque-bodies-20260830";
+} from "./scene.js?v=true-rotation-20260902";
 
 const TAU = Math.PI * 2;
 const BODY_MOTION_BY_ACTIVITY = Object.freeze({
@@ -220,94 +220,6 @@ function maskColor(symbol, seed, masks) {
     return masks[MASK_SYMBOLS[choice]];
   }
   return masks[symbol] ?? masks.C;
-}
-
-const spritePointCache = new Map();
-
-function spritePoints(sprite) {
-  if (spritePointCache.has(sprite.id)) return spritePointCache.get(sprite.id);
-  const { width, height } = spriteDimensions(sprite);
-  const shape = normalizeRows(sprite.shape, width);
-  const mask = normalizeRows(sprite.mask, width);
-  const points = [];
-  for (let row = 0; row < height; row += 1) {
-    for (let column = 0; column < width; column += 1) {
-      const char = [...shape[row]][column];
-      if (!char || char === " ") continue;
-      points.push({ char, mask: [...mask[row]][column], column, row });
-    }
-  }
-  const result = Object.freeze({ id: sprite.id, width, height, points: Object.freeze(points) });
-  spritePointCache.set(sprite.id, result);
-  return result;
-}
-
-// One pose function owns the geometry for both glyphs and the opaque body.
-// Keeping this shared is important: the fish flexes by column, so any underlay
-// generated from a separate rigid transform will visibly drift behind the ink.
-function poseCoordinate(source, column, row, {
-  facing = 1,
-  phase = 0,
-  deformationStrength = 1,
-  turnScale = 1,
-  pitch = 0,
-  cellAspect = CELL_HEIGHT / CELL_WIDTH,
-} = {}) {
-  const tail = source.width <= 1
-    ? 0
-    : clamp(1 - column / (source.width - 1), 0, 1);
-  const displayColumn = facing < 0 ? source.width - 1 - column : column;
-  const columnSpacing = 1 + Math.sin(phase + tail * 0.9) * 0.018 * deformationStrength;
-  const rowSpacing = 1 + Math.sin(phase * 0.72 + column * 0.31) * 0.012 * deformationStrength;
-  const localX = (displayColumn - (source.width - 1) / 2) * columnSpacing * turnScale;
-  const localY = (row - (source.height - 1) / 2) * rowSpacing;
-  const tailWeight = 0.1 + Math.pow(tail, 1.65) * 0.9;
-  const bodyWave = Math.sin(phase - column * 0.22) * 0.145 * tailWeight * deformationStrength;
-  const tailBeat = Math.sin(phase * 1.04 + 0.45) * 0.065 * Math.pow(tail, 3) * deformationStrength;
-  const pitched = pitchCoordinate(localX, localY + bodyWave + tailBeat, {
-    facing,
-    pitch,
-    cellAspect,
-    spriteId: source.id,
-    column,
-    row,
-    width: source.width,
-    height: source.height,
-    turnScale,
-  });
-  return {
-    x: pitched.x,
-    y: pitched.y,
-    tail,
-  };
-}
-
-export function poseSprite(sprite, {
-  facing = 1,
-  phase = 0,
-  deformationStrength = 1,
-  turnScale = 1,
-  pitch = 0,
-  cellAspect = CELL_HEIGHT / CELL_WIDTH,
-} = {}) {
-  const source = spritePoints(sprite);
-  return source.points.map((point) => {
-    const posed = poseCoordinate(source, point.column, point.row, {
-      facing,
-      phase,
-      deformationStrength,
-      turnScale,
-      pitch,
-      cellAspect,
-    });
-    return {
-      char: facing < 0 ? (glyphFlip[point.char] ?? point.char) : point.char,
-      mask: point.mask,
-      x: posed.x,
-      y: posed.y,
-      tail: posed.tail,
-    };
-  });
 }
 
 function turnPose(fish) {
@@ -777,254 +689,6 @@ function drawSchool(builder, state, palette, metrics) {
   });
 }
 
-// ASCII fish used to be see-through: water bands, plants, and every other fish
-// read straight through the sprite, which is what made a crowded school look
-// like scattered line fragments. Each fish gets one opaque body behind its
-// strokes. The body is nine vertical slices across a soft ellipse, and each
-// slice goes through the same pose transform as the glyph column beside it.
-// That keeps the fill attached while the fish flexes and during the edge-on
-// turn pose, without asking the panel driver to do anything but fillRect.
-const BODY_SPANS = 9;
-// A little more height than the ink strictly occupies, in cell units. `_` draws
-// along the bottom of its cell, so the roof and belly sit right on the body's
-// edge. A small swell backs those strokes without turning the silhouette square.
-const BODY_SWELL = 0.2;
-// One or two pixels of overlap keeps adjacent integer-snapped slices from
-// opening hairline water gaps as their centres move independently.
-const BODY_SLICE_OVERLAP = 1;
-
-// The source artwork is deliberately varied, so each sprite gets an authored
-// profile for body position, scale and taper. Those final values live in
-// body-profiles.js and are shared with the Typographic Motion Lab so Reset in
-// the lab always returns to the exact production geometry.
-const bodyBoxCache = new Map();
-const FIN_GLYPHS = new Set(["/", "\\"]);
-// The vocabulary asciiquarium draws a tail from: the fin itself, the stroke
-// pair that fans it, and the peduncle joining it to the body.
-const TAIL_GLYPHS = new Set([">", "<", "=", "/", "\\"]);
-
-// The body is fitted to the artwork rather than to the sprite's bounding box,
-// which is a good deal larger than the fish inside it. Two kinds of row are
-// fins, and fins stay outside the body so they keep their open ASCII
-// silhouette: a row carrying a single stroke, and an outermost row drawn only
-// from `/` and `\`. Everything else is fish and has to be backed - including
-// the `_` roof and belly of the short sprites, which any fixed fraction of the
-// sprite height leaves bare.
-// A glyph's lit pixels, as offsets in cell units from the cell's own centre.
-// Measuring the real ink matters: `_` draws along the bottom of its cell, so a
-// body sized from cell centres reaches most of a cell above the roof it backs
-// and leaves a tab sticking out over the fish. The horizontal extent is
-// symmetrised because the same body serves both facings, and a mirrored glyph
-// puts its ink on the other side of the cell.
-function inkExtent(char) {
-  const pixels = glyphPixels(char);
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  let reach = 0;
-  for (const pixel of pixels) {
-    minY = Math.min(minY, pixel.y);
-    maxY = Math.max(maxY, pixel.y + pixel.height);
-    reach = Math.max(reach, Math.abs(pixel.x - CELL_WIDTH / 2), Math.abs(pixel.x + pixel.width - CELL_WIDTH / 2));
-  }
-  return {
-    reach: reach / CELL_WIDTH,
-    top: (minY - CELL_HEIGHT / 2) / CELL_HEIGHT,
-    bottom: (maxY - CELL_HEIGHT / 2) / CELL_HEIGHT,
-  };
-}
-
-// Sprites are authored facing right, so the tail is the run of columns at the
-// trailing edge drawn only from tail glyphs. It stops at the first column
-// carrying anything else, which is where the body proper starts. The tail is
-// left open like the fins: an opaque body behind it would read as one blunt
-// mass rather than as a fish.
-function tailColumns(source) {
-  const columns = new Map();
-  for (const point of source.points) {
-    columns.set(point.column, (columns.get(point.column) ?? true) && TAIL_GLYPHS.has(point.char));
-  }
-  let end = 0;
-  while (columns.get(end) === true) end += 1;
-  return end;
-}
-
-function spriteBodyBox(sprite) {
-  if (bodyBoxCache.has(sprite.id)) return bodyBoxCache.get(sprite.id);
-  const source = spritePoints(sprite);
-  const tail = tailColumns(source);
-  const rows = new Map();
-  for (const point of source.points) {
-    const row = rows.get(point.row) ?? { count: 0, points: [], strokesOnly: true };
-    row.count += 1;
-    row.points.push(point);
-    row.strokesOnly = row.strokesOnly && FIN_GLYPHS.has(point.char);
-    rows.set(point.row, row);
-  }
-  let top = Number.POSITIVE_INFINITY;
-  let bottom = Number.NEGATIVE_INFINITY;
-  let left = Number.POSITIVE_INFINITY;
-  let right = Number.NEGATIVE_INFINITY;
-  for (const [index, row] of rows) {
-    const edge = index === 0 || index === source.height - 1;
-    if (row.count < 2 || (edge && row.strokesOnly)) continue;
-    for (const point of row.points) {
-      if (point.column < tail) continue;
-      const ink = inkExtent(point.char);
-      top = Math.min(top, index + ink.top);
-      bottom = Math.max(bottom, index + ink.bottom);
-      left = Math.min(left, point.column - ink.reach);
-      right = Math.max(right, point.column + ink.reach);
-    }
-  }
-  const box = Object.freeze({
-    // Cell units, measured from the sprite's own centre, so a body that sits
-    // off-centre inside its box travels with the fish.
-    offsetX: (left + right) / 2 - (source.width - 1) / 2,
-    offsetY: (top + bottom) / 2 - (source.height - 1) / 2,
-    radiusX: (right - left) / 2,
-    radiusY: (bottom - top) / 2,
-  });
-  bodyBoxCache.set(sprite.id, box);
-  return box;
-}
-
-function bodyFill(sprite, metrics, {
-  worldX,
-  worldY,
-  turnScale,
-  facing,
-  phase,
-  deformationStrength,
-  pitch = 0,
-  color,
-  // Distance scale. It multiplies the posed offsets rather than the pose
-  // itself, so the body keeps travelling with the same wave as the ink above
-  // it however far away the fish is.
-  scale = 1,
-}) {
-  const source = spritePoints(sprite);
-  // The earliest growth stages are a speck, a pair of chevrons, three
-  // characters. There is no silhouette there to make opaque, and a solid slab
-  // behind three glyphs reads as a rendering fault rather than as a young fish,
-  // so a fry is drawn as open ink exactly like the school it is the size of.
-  if (sprite.body === false) return [];
-  const box = spriteBodyBox(sprite);
-  if (!Number.isFinite(box.radiusX) || !Number.isFinite(box.radiusY)) return [];
-  const profile = BODY_PROFILES[sprite.id] ?? DEFAULT_BODY_PROFILE;
-  const centerColumn = (source.width - 1) / 2 + box.offsetX + profile.offsetX;
-  const centerRow = (source.height - 1) / 2 + box.offsetY + profile.offsetY;
-  const radiusX = box.radiusX * profile.radiusXScale;
-  const radiusY = (box.radiusY + BODY_SWELL) * profile.radiusYScale;
-  const sliceSourceWidth = (radiusX * 2) / BODY_SPANS;
-  // Glyph centres compress with turnScale, but each bitmap intentionally stays
-  // readable. Preserve that local ink width around each compressed slice so the
-  // body does not collapse to 32% while the characters remain about 93% wide.
-  const glyphScaleX = (0.9 + turnScale * 0.1) * scale;
-  const cellAspect = metrics.cellHeight / metrics.cellWidth;
-  const pose = { facing, phase, deformationStrength, turnScale, pitch, cellAspect };
-  const fill = [];
-
-  for (let index = 0; index < BODY_SPANS; index += 1) {
-    const localLeft = -radiusX + index * sliceSourceWidth;
-    const localRight = localLeft + sliceSourceWidth;
-    const localCenter = (localLeft + localRight) / 2;
-    const waist = radiusX > 0 ? Math.abs(localCenter) / radiusX : 0;
-    // Positive source-space X is the nose because all source sprites face right.
-    // Using a separate front shoulder lets pointed fish close around the nose instead
-    // of carrying a round bubble beyond it, while the rear half stays unchanged.
-    const shoulder = localCenter >= 0 ? profile.frontShoulder : profile.rearShoulder;
-    const taper = Math.sqrt(Math.max(0, 1 - waist ** shoulder));
-    const halfHeight = radiusY * taper;
-    if (halfHeight <= 0) continue;
-
-    const sourceColumn = centerColumn + localCenter;
-    const center = poseCoordinate(source, sourceColumn, centerRow, pose);
-    const top = poseCoordinate(source, sourceColumn, centerRow - halfHeight, pose);
-    const bottom = poseCoordinate(source, sourceColumn, centerRow + halfHeight, pose);
-    const leftEdge = poseCoordinate(source, centerColumn + localLeft, centerRow, pose);
-    const rightEdge = poseCoordinate(source, centerColumn + localRight, centerRow, pose);
-
-    const geometricWidth = Math.abs(rightEdge.x - leftEdge.x) * metrics.cellWidth * scale;
-    const localInkWidth = sliceSourceWidth * metrics.cellWidth * glyphScaleX;
-    // Narrow the end slices as well as shortening them. Besides keeping the
-    // silhouette round, this preserves the old renderer contract that a body
-    // cannot become a rectangular block.
-    const sliceWidth = Math.max(
-      2,
-      Math.max(geometricWidth, localInkWidth) * (0.6 + taper * 0.4) + BODY_SLICE_OVERLAP,
-    );
-    const centerX = (worldX + center.x * scale) * metrics.cellWidth;
-
-    let left;
-    let right;
-    let spanTop;
-    let spanBottom;
-    if (Math.abs(pitch) < 1e-12) {
-      // Preserve the calibrated level pose exactly. Existing body profiles and
-      // their registration regressions were tuned against these integer edges.
-      left = Math.round(centerX - sliceWidth / 2);
-      right = Math.round(centerX + sliceWidth / 2) + 1;
-      spanTop = Math.round((worldY + Math.min(top.y, bottom.y) * scale) * metrics.cellHeight);
-      spanBottom = Math.round((worldY + Math.max(top.y, bottom.y) * scale) * metrics.cellHeight) + 1;
-    } else {
-      // An authored pitch pose gives the top and bottom of a source slice tiny
-      // different horizontal offsets, so the slice is still a small quadrilateral.
-      // Bound those four posed corners with one axis-aligned fillRect: nine source
-      // slices still means nine rectangles on the target device.
-      const corners = [
-        poseCoordinate(source, centerColumn + localLeft, centerRow - halfHeight, pose),
-        poseCoordinate(source, centerColumn + localLeft, centerRow + halfHeight, pose),
-        poseCoordinate(source, centerColumn + localRight, centerRow - halfHeight, pose),
-        poseCoordinate(source, centerColumn + localRight, centerRow + halfHeight, pose),
-      ];
-      const cornerLeft = (worldX + Math.min(...corners.map((point) => point.x)) * scale) * metrics.cellWidth;
-      const cornerRight = (worldX + Math.max(...corners.map((point) => point.x)) * scale) * metrics.cellWidth;
-      const cornerTop = (worldY + Math.min(...corners.map((point) => point.y)) * scale) * metrics.cellHeight;
-      const cornerBottom = (worldY + Math.max(...corners.map((point) => point.y)) * scale) * metrics.cellHeight;
-      const pitchFraction = Math.min(1, Math.abs(pitch) / 30);
-      // The level body deliberately preserves enough local glyph width to
-      // stay opaque through an edge-on turn. Once the body pitches, that
-      // same safety width can extend through the authored tail at the rear
-      // end. Inset only the trailing edge of the first two source slices,
-      // proportional to pitch, while leaving their noseward edge and every
-      // interior slice untouched.
-      const rearBaseInset = sliceWidth
-        * (index === 0 ? 0.42 : index === 1 ? 0.08 : 0)
-        * pitchFraction;
-      let baseLeft = centerX - sliceWidth / 2;
-      let baseRight = centerX + sliceWidth / 2;
-      if (facing < 0) baseRight -= rearBaseInset;
-      else baseLeft += rearBaseInset;
-      const fullLeft = Math.min(cornerLeft, baseLeft);
-      const fullRight = Math.max(cornerRight, baseRight);
-      // Bounding the slightly skewed authored slice as a rectangle still adds
-      // tiny empty corners. At the rear those corners can reach into the open
-      // ASCII tail, so taper only that trailing-side excess across the two rear
-      // slices while retaining full coverage through the enclosed body.
-      const rearExpansionFactor = index === 0 ? 0 : index === 1 ? 0.45 : 1;
-      if (facing < 0) {
-        left = Math.round(fullLeft);
-        right = Math.round(baseRight + (fullRight - baseRight) * rearExpansionFactor) + 1;
-      } else {
-        left = Math.round(baseLeft - (baseLeft - fullLeft) * rearExpansionFactor);
-        right = Math.round(fullRight) + 1;
-      }
-      spanTop = Math.round(cornerTop);
-      spanBottom = Math.round(cornerBottom) + 1;
-    }
-    if (right - left < 1 || spanBottom - spanTop < 1) continue;
-
-    fill.push({
-      x: left,
-      y: spanTop,
-      width: right - left,
-      height: spanBottom - spanTop,
-      color,
-    });
-  }
-  return fill;
-}
-
 function individualParts(fish, state, palette, metrics, deformationStrength = 1, {
   // Where in the water column the fish is swimming: picks the band companion
   // painted behind it.
@@ -1059,17 +723,20 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
     pitch,
     cellAspect,
   });
-  const slant = pitchSlant(pitch, turning.facing, turning.widthScale);
+  // One fish, one rotation: the same angle turns the anchors above and picks
+  // the cached rotated raster every glyph is drawn from.
+  const { spin, spinAspect } = pitchGlyphSpin(pitch, turning.facing, turning.widthScale, cellAspect);
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: fish.x + point.x * scale,
     worldY: fish.y + point.y * scale + bob,
     fg: maskColor(point.mask, fish.seed, masks),
-    scaleX: (0.9 + turning.widthScale * 0.1) * scale,
+    scaleX: glyphWidthScale(turning.widthScale) * scale,
     scaleY: scale,
-    slant,
+    spin,
+    spinAspect,
   }));
-  const fill = bodyFill(sprite, metrics, {
+  const fill = fishBodyFill(sprite, metrics, {
     worldX: fish.x,
     worldY: fish.y + bob,
     turnScale: turning.widthScale,
@@ -1291,6 +958,14 @@ export function render(state, { deformationStrength = 1 } = {}) {
   return finalizeScene(builder);
 }
 
+// The lab draws on its own grid, and it has to keep the font's own 12x24 cell
+// proportion. It used to be 18x28: an authoring unit came out half again as
+// wide as it was tall, which squashed every character and - now that ink is
+// genuinely rotated rather than sheared - would have turned a thirty degree
+// pitch into a visibly different angle from the one the tank draws.
+const LAB_CELL_WIDTH = 18;
+const LAB_CELL_HEIGHT = LAB_CELL_WIDTH * (CELL_HEIGHT / CELL_WIDTH);
+
 export function renderSpriteScene(sprite, {
   facing = "right",
   phase = 0,
@@ -1299,13 +974,16 @@ export function renderSpriteScene(sprite, {
   staticPose = false,
   turnScale = 1,
   pitch = 0,
+  // Development view: "combined" is what the tank draws, the other two isolate
+  // one half of it so a rotation can be judged without the other half on top.
+  show = "combined",
 } = {}) {
   const { width: spriteWidth, height: spriteHeight } = spriteDimensions(sprite);
   const logicalWidth = spriteWidth + 4;
   const logicalHeight = spriteHeight + 3;
   const dimensions = {
-    width: Math.round(logicalWidth * 18),
-    height: Math.round(logicalHeight * 28),
+    width: Math.round(logicalWidth * LAB_CELL_WIDTH),
+    height: Math.round(logicalHeight * LAB_CELL_HEIGHT),
     logicalWidth,
     logicalHeight,
   };
@@ -1313,13 +991,14 @@ export function renderSpriteScene(sprite, {
   const builder = createSceneBuilder({
     ...dimensions,
     background: createBackground(dimensions, palette, 0x51a7, { withSubstrate: false, tankDepth: false }),
-    metadata: { paletteStage: palette.paletteStage, lab: true, pitch },
+    metadata: { paletteStage: palette.paletteStage, lab: true, pitch, show },
   });
   const metrics = sceneMetrics(builder);
   const effectiveDeformation = staticPose ? 0 : deformationStrength;
   const facingValue = facing === "left" ? -1 : 1;
   const cellAspect = metrics.cellHeight / metrics.cellWidth;
-  const points = poseSprite(sprite, {
+  const showBody = show !== "ascii";
+  const points = show === "body" ? [] : poseSprite(sprite, {
     facing: facingValue,
     phase,
     deformationStrength: effectiveDeformation,
@@ -1332,24 +1011,25 @@ export function renderSpriteScene(sprite, {
   const spriteSeed = individualSprites.findIndex(
     (candidate) => candidate.id === (sprite.speciesId ?? sprite.id),
   ) + 1;
-  // The lab is a reference for the artwork, so it leans its ink exactly as the
+  // The lab is a reference for the artwork, so it turns its ink exactly as the
   // tank does; a pose that reads differently here than it does in the water
   // would be worse than useless for authoring against.
-  const labSlant = pitchSlant(pitch, facingValue, turnScale);
+  const { spin, spinAspect } = pitchGlyphSpin(pitch, facingValue, turnScale, cellAspect);
   const glyphs = points.map((point) => positionedGlyph(metrics, {
     char: point.char,
     worldX: logicalWidth / 2 + point.x,
     worldY: logicalHeight / 2 + point.y,
     fg: maskColor(point.mask, spriteSeed, palette.masks),
-    scaleX: 0.9 + turnScale * 0.1,
+    scaleX: glyphWidthScale(turnScale),
     scaleY: 1,
-    slant: labSlant,
+    spin,
+    spinAspect,
   }));
   addGlyphObject(builder, {
     id: `lab:${sprite.id}:${facing}`,
     layer: LAYERS.individuals,
     glyphs,
-    fill: bodyFill(sprite, metrics, {
+    fill: showBody ? fishBodyFill(sprite, metrics, {
       worldX: logicalWidth / 2,
       worldY: logicalHeight / 2,
       turnScale,
@@ -1358,7 +1038,7 @@ export function renderSpriteScene(sprite, {
       deformationStrength: effectiveDeformation,
       pitch,
       color: bodyFillForDepth(palette, 0.5),
-    }),
+    }) : [],
     padding: 3,
   });
   return finalizeScene(builder);
@@ -1471,4 +1151,7 @@ export function renderPlantLabScene(speciesId, {
   return finalizeScene(builder);
 }
 
-export { individualSprites };
+// The pose and the opaque body live in their own modules now, but they are
+// still part of the renderer's surface: everything that draws a fish reaches
+// them through here.
+export { individualSprites, poseSprite, fishBodyFill };

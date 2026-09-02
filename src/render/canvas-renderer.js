@@ -1,6 +1,6 @@
-import { glyphPixelRects } from "./bitmap-font.js";
+import { glyphPixelRects } from "./glyph-raster.js?v=true-rotation-20260902";
 import { calculateDamage, coalesceDamage, rectanglesOverlap } from "./damage.js";
-import { glyphBounds } from "./scene.js?v=opaque-bodies-20260830";
+import { glyphBounds } from "./scene.js?v=true-rotation-20260902";
 
 function drawBackground(context, scene, region) {
   const background = scene.background;
@@ -74,6 +74,8 @@ function debugKey(debug) {
     Boolean(debug?.bounds),
     Boolean(debug?.damage),
     Boolean(debug?.skeleton),
+    Boolean(debug?.spans),
+    Boolean(debug?.ink),
   ].join(":");
 }
 
@@ -117,9 +119,13 @@ export class CanvasSceneRenderer {
     const paintRectangles = coalesceDamage([...damage.rects, ...cleanup]);
     for (const rectangle of paintRectangles) this.drawRegion(scene, rectangle);
 
-    if (debug.anchors || debug.bounds || debug.damage || debug.skeleton) this.drawDebug(scene, damage.rects, debug);
+    if (debug.anchors || debug.bounds || debug.damage || debug.skeleton || debug.spans || debug.ink) {
+      this.drawDebug(scene, damage.rects, debug);
+    }
     this.previousDebugRectangles = [
       ...(debug.damage ? damage.rects : []),
+      ...(debug.spans ? scene.objects.flatMap((object) => object.fill ?? []) : []),
+      ...(debug.ink ? scene.glyphs.map((glyph) => glyphBounds(glyph)) : []),
       ...(debug.skeleton ? (scene.metadata.skeletonLines ?? []).map((line) => ({
         x: Math.min(line.x1, line.x2),
         y: Math.min(line.y1, line.y2),
@@ -172,6 +178,27 @@ export class CanvasSceneRenderer {
           Math.ceil(object.bounds.width) - 1,
           Math.ceil(object.bounds.height) - 1,
         );
+      }
+    }
+    // Every rectangle the opaque body actually asks the panel for. Seeing the
+    // spans is how a rasterisation problem is told apart from a shape problem:
+    // a staircase of wide blocks and a smooth diagonal look alike until the
+    // rectangles are outlined.
+    if (debug.spans) {
+      context.strokeStyle = "#7be3a2";
+      for (const object of scene.objects) {
+        for (const span of object.fill ?? []) {
+          context.strokeRect(span.x + 0.5, span.y + 0.5, Math.max(1, span.width - 1), Math.max(1, span.height - 1));
+        }
+      }
+    }
+    // The exact rectangle each glyph's rotated raster paints into, which is also
+    // what damage tracking restores from.
+    if (debug.ink) {
+      context.strokeStyle = "#c58cff";
+      for (const glyph of scene.glyphs) {
+        const bounds = glyphBounds(glyph);
+        context.strokeRect(bounds.x + 0.5, bounds.y + 0.5, Math.max(1, bounds.width - 1), Math.max(1, bounds.height - 1));
       }
     }
     if (debug.anchors) {

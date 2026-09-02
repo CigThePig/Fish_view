@@ -98,8 +98,11 @@ test("a mature maximum-population aquarium renders finite, unique, supported obj
       // Two extra individuals must not cost per-fish body geometry.
       const fish = scene.objects.filter((object) => object.id.startsWith("individual:"));
       assert.equal(fish.length, MAX_INDIVIDUALS);
-      assert.ok(fish.every((object) => object.fill.length <= 9),
-        "an individual exceeded the nine-rectangle body fill budget");
+      // The body is one horizontal span per scanline of a rotated silhouette,
+      // so its cost follows how tall the fish is drawn rather than an authored
+      // slice count.
+      assert.ok(fish.every((object) => object.fill.length <= 128),
+        "an individual exceeded the body fill cost ceiling");
       // Depth ordering survives the larger cast and garden.
       const layers = scene.objects.map((object) => object.layer);
       assert.deepEqual(layers, [...layers].sort((left, right) => left - right));
@@ -128,7 +131,9 @@ test("ordinary motion in a mature Phase 3 aquarium never requests a full redraw"
           .map((object) => object.fill.length));
         previous = next;
       }
-      assert.equal(maximumFill, 9, "the individual body fill budget moved");
+      // Not an equality any more: the span count follows the drawn height of
+      // the largest fish on screen, which legitimately differs between seeds.
+      assert.ok(maximumFill > 0 && maximumFill <= 128, `an individual drew ${maximumFill} body spans`);
       assert.ok(worstDamage < 0.98, `${orientation}/${seed} damaged ${(worstDamage * 100).toFixed(1)}%`);
     }
   }

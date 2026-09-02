@@ -4,7 +4,7 @@ import {
   CELL_HEIGHT,
   CELL_WIDTH,
   INDIVIDUAL_VISUAL_SCALE_MAX,
-  PITCH_POSE_TOTAL_FRACTION,
+  PITCH_CLEARANCE_FRACTION,
 } from "./config.js";
 import { individualDepthScale, spreadDepth } from "./depth.js";
 import { spriteForFish } from "./fish-growth.js";
@@ -27,10 +27,17 @@ export const FORAGE_SEARCH_DISTANCE_ROWS = 0.82;
 export const FORAGE_GRAZE_CONTACT_ROWS = 0.06;
 export const FORAGE_PECK_ROWS = 0.30;
 // The logical sprite box and the renderer's opaque-body box intentionally do
-// not share font/profile internals. Keep a small measured reserve for that
-// mismatch after applying the exact depth scale; without it a near-midplane
-// juvenile can still put the opaque body just over 0.6 rows through the crest.
-const FORAGE_GRAZE_MODEL_MARGIN_ROWS = 0.12;
+// not share font/profile internals, and this is the measured reserve for that
+// mismatch after the exact depth scale is applied. It is now zero: the reserve
+// was covering an opaque body that, at pitch, was drawn as the axis-aligned
+// bounding box around each rotated slice and so reached further below the fish
+// than the fish did. The body is rasterised as the rotated silhouette itself
+// now, and the two models agree closely enough that adding to the reserve only
+// lifts a feeding fish off the sand it is supposed to be working. The constant
+// stays because it is where a measured disagreement belongs - `npm run
+// measure:screen` reports the gap the panel receives, and the seed sweep in
+// tests/review-regressions.test.js grades the other side of it.
+const FORAGE_GRAZE_MODEL_MARGIN_ROWS = 0;
 // The furthest ahead a grazing fish will chase its route point. The forage
 // route drifts across the tank faster than a fish creeping along at a tenth of
 // a row per second can follow, and an unreachable target makes the steering
@@ -121,7 +128,7 @@ export function fishGrazeClearanceRows(
     * Math.PI / 180;
   const horizontalAsRows = width / 2 * (CELL_WIDTH / CELL_HEIGHT);
   const projected = height / 2 * Math.cos(pitch)
-    + horizontalAsRows * Math.sin(pitch) * PITCH_POSE_TOTAL_FRACTION;
+    + horizontalAsRows * Math.sin(pitch) * PITCH_CLEARANCE_FRACTION;
   const scale = clamp(
     Number.isFinite(visualScale) ? visualScale : INDIVIDUAL_VISUAL_SCALE_MAX,
     0,

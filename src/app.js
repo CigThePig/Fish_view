@@ -1,5 +1,5 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
-import { render } from "./render/render.js?v=phase4-growth-20260901";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=true-rotation-20260902";
+import { render } from "./render/render.js?v=true-rotation-20260902";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
 import { DEFAULT_SEED } from "./sim/config.js";
