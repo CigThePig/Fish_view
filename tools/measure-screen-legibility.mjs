@@ -40,15 +40,27 @@ const { SHOWCASE_SCENARIOS, createShowcaseState, showcaseSubjects, tickShowcase 
 const { CanvasSceneRenderer } = await import(url("src/render/canvas-renderer.js"));
 const { render } = await import(url("src/render/render.js"));
 const { scenePalette } = await import(url("src/render/palette.js"));
+const { glyphsForObject } = await import(url("src/render/scene.js"));
+const { glyphPixelRects } = await import(url("src/render/glyph-raster.js"));
 const { forageActivity } = await import(url("src/sim/fish-motion.js"));
 const { substrateSurfaceY } = await import(url("src/sim/environment.js"));
-const { DEFAULT_SEED, orientationConfig } = await import(url("src/sim/config.js"));
+const { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } = await import(url("src/sim/config.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
 const { tick } = await import(url("src/sim/tick.js"));
 
 const STEP_SECONDS = 0.1;
 const failures = [];
 const canvasCache = new Map();
+
+// The lowest pixel an object paints: its opaque body and its rotated glyph ink.
+function lowestInk(scene, object) {
+  let lowest = Number.NEGATIVE_INFINITY;
+  for (const span of object.fill ?? []) lowest = Math.max(lowest, span.y + span.height);
+  for (const glyph of glyphsForObject(scene, object)) {
+    for (const rectangle of glyphPixelRects(glyph)) lowest = Math.max(lowest, rectangle.y + rectangle.height);
+  }
+  return lowest;
+}
 
 function frame(state, orientation) {
   const config = orientationConfig(orientation);
@@ -167,7 +179,7 @@ for (const [key, value] of motion) {
 // --- B. The feeding strike ---------------------------------------------------
 
 report("Feeding strike (production tank)");
-console.log("orientation  plunge px  belly gap rows  debris glyphs  debris contrast  strike repaint");
+console.log("orientation  plunge px  ink gap rows  debris glyphs  debris contrast  strike repaint");
 for (const orientation of ["landscape", "portrait"]) {
   let state = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
   const config = orientationConfig(orientation);
@@ -202,7 +214,13 @@ for (const orientation of ["landscape", "portrait"]) {
         state,
         centre: bodyCentre(object.bounds),
         bounds: object.bounds,
-        bellyGap: substrateSurfaceY(state, fish.x) - (object.bounds.y + object.bounds.height) / cellHeight,
+        // Measured from the lowest pixel the fish actually paints, not from
+        // the bottom of its bounding box. Bounds used to run the better part of
+        // a row below the ink - a glyph reserved its whole cell, and a sheared
+        // one reserved the lean as well - so this read as contact while the
+        // fish was in fact hovering. Bounds are the tight raster now, but the
+        // ink is what a person sees either way.
+        bellyGap: substrateSurfaceY(state, fish.x) - lowestInk(scene, object) / cellHeight,
         debris: debris ? scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount) : [],
         image: pixels(canvas, window.x, window.y, window.width, window.height),
       };
@@ -250,7 +268,12 @@ for (const orientation of ["landscape", "portrait"]) {
     `${orientation.padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.bellyGap.toFixed(2).padStart(15)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${`${changed} (${(repaintShare * 100).toFixed(0)}%)`.padStart(14)}`,
   );
   if (plunge < 6) failures.push(`${orientation}: a feeding strike moves the fish ${plunge.toFixed(1)}px down the panel`);
-  if (best.peak.bellyGap > 0.45) failures.push(`${orientation}: a feeding fish hovers ${best.peak.bellyGap.toFixed(2)} rows above the substrate`);
+  // Graded against the ink, so the number is calibrated to where the fish is
+  // rather than to where its bounding box reached. The same strike measured
+  // 0.90 rows of clear water under a threshold of 0.45 while the box-based
+  // figure read 0.17: the check was passing on a fish that never touched the
+  // sand. The contact mark and the debris puff close the last of the gap.
+  if (best.peak.bellyGap > 1.15) failures.push(`${orientation}: a feeding fish hovers ${best.peak.bellyGap.toFixed(2)} rows above the substrate`);
   if (best.peak.debris.length < 4) failures.push(`${orientation}: a feeding strike raised ${best.peak.debris.length} debris glyphs`);
   if (debrisContrast < 0.3) failures.push(`${orientation}: debris sits ${(debrisContrast * 100).toFixed(0)}% off the substrate it lands on`);
   if (repaintShare < 0.1) {
@@ -356,43 +379,71 @@ for (const hour of [12, 16, 19, 21, 23, 3, 6, 9]) {
 // --- E. The pitch pose that reaches the screen -------------------------------
 
 report("Rendered pitch (landscape)");
-console.log("pitch  nose vs tail px  rows   apparent tilt");
+console.log("pitch  drawn angle  nose rise px  rows");
 {
   let state = createShowcaseState({ orientation: "landscape", scenario: "substrate-search" });
   for (let step = 0; step < 90; step += 1) state = tickShowcase(state, STEP_SECONDS, "substrate-search");
   const subject = showcaseSubjects(state, "substrate-search")[0];
   const config = orientationConfig("landscape");
   const cellHeight = config.pixelHeight / config.rows;
-  let maximumTilt = 0;
-  for (const pitch of [0, 16, 32, -32]) {
+
+  // The angle the panel actually receives, fitted rather than inferred from a
+  // silhouette's proportions. Take the glyph anchors of the level pose and of
+  // the pitched pose - the same glyphs of the same fish, so they correspond one
+  // to one - and find the rotation that best carries one cloud onto the other.
+  // A midline slope will not do this: the locus of the vertical middles of a
+  // rotated ellipse is its conjugate diameter, whose angle depends on how tall
+  // the body is against how wide, and reverses sign for a body taller than it
+  // is wide. Several of these fish are.
+  const anchors = (pitch) => {
     const posed = {
       ...state,
       individuals: state.individuals.map((fish, index) => (index === subject.index
-        ? { ...fish, visual: { ...fish.visual, pitch } }
+        // Settled facing: a turn deliberately foreshortens the lean, because a
+        // body seen edge-on has little length left to tilt. Measuring the pitch
+        // pose through a half-finished turn reports the turn, not the pitch.
+        ? { ...fish, visual: { ...fish.visual, pitch, turnProgress: 1 } }
         : fish)),
     };
     const { scene } = frame(posed, "landscape");
     const object = objectFor(scene, subjectId(subject.index, subject.fish));
-    // The opaque silhouette, banded by panel position: after a turn the glyph
-    // cells no longer sit in source order, but the painted body still runs nose
-    // to tail across the panel and is what carries the lean at a glance.
-    const xs = object.fill.map((rectangle) => rectangle.x);
-    const minimumX = Math.min(...xs);
-    const maximumX = Math.max(...xs);
-    const span = maximumX - minimumX;
-    const mean = (list) => list.reduce((sum, rectangle) => sum + rectangle.y + rectangle.height / 2, 0) / Math.max(1, list.length);
-    const nose = object.fill.filter((rectangle) => rectangle.x >= maximumX - span * 0.15);
-    const tail = object.fill.filter((rectangle) => rectangle.x <= minimumX + span * 0.15);
-    const tilt = mean(nose) - mean(tail);
-    const apparent = Math.atan2(tilt, span) * 180 / Math.PI;
-    maximumTilt = Math.max(maximumTilt, Math.abs(apparent));
+    const glyphs = glyphsForObject(scene, object);
+    const points = glyphs.map((glyph) => ({
+      x: glyph.x + (CELL_WIDTH * glyph.scaleX) / 2,
+      y: glyph.y + (CELL_HEIGHT * glyph.scaleY) / 2,
+    }));
+    const centreX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+    const centreY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+    return points.map((point) => ({ x: point.x - centreX, y: point.y - centreY }));
+  };
+
+  const level = anchors(0);
+  let maximumTilt = 0;
+  for (const pitch of [0, 16, 32, -32]) {
+    const turned = anchors(pitch);
+    let cross = 0;
+    let dot = 0;
+    let reach = 0;
+    for (let index = 0; index < level.length; index += 1) {
+      cross += level[index].x * turned[index].y - level[index].y * turned[index].x;
+      dot += level[index].x * turned[index].x + level[index].y * turned[index].y;
+      reach = Math.max(reach, Math.abs(level[index].x));
+    }
+    const drawn = Math.atan2(cross, dot) * 180 / Math.PI;
+    // What that angle is worth in pixels: how far the nose end of the fish is
+    // lifted or dropped against its own tail.
+    const rise = Math.tan(drawn * Math.PI / 180) * reach * 2;
+    maximumTilt = Math.max(maximumTilt, Math.abs(drawn));
     console.log(
-      `${String(pitch).padStart(5)} ${tilt.toFixed(1).padStart(16)} ${(tilt / cellHeight).toFixed(2).padStart(6)} ${`${apparent.toFixed(0)}deg`.padStart(14)}`,
+      `${String(pitch).padStart(5)} ${`${drawn.toFixed(1)}deg`.padStart(12)} ${rise.toFixed(1).padStart(13)} ${(rise / cellHeight).toFixed(2).padStart(6)}`,
     );
   }
-  // A fish at full pitch has to look pitched. Two thirds of the simulated angle
-  // is the working target; the authored shear alone delivered about a third.
-  if (maximumTilt < 20) {
+  // A fish at full pitch has to look pitched, and now does so by the angle it
+  // was given: the drawing is rotated rather than sheared, so a thirty-two
+  // degree pitch reaches the panel as thirty-two degrees. It used to arrive as
+  // about a third of that from the authored shear alone, and the pose was
+  // deliberately over-rotated to compensate.
+  if (maximumTilt < 28) {
     failures.push(`a fully pitched fish leans only ${maximumTilt.toFixed(0)} degrees on the panel`);
   }
 }

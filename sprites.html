@@ -6,14 +6,14 @@
     <meta name="theme-color" content="#07100f">
     <title>Fish View — Typographic motion lab</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="sprite-sheet.css?v=stage-sculpting-20260902">
+    <link rel="stylesheet" href="sprite-sheet.css?v=true-rotation-20260902">
   </head>
   <body class="sprite-page">
     <header>
       <div>
         <p class="eyebrow">Deterministic art validation</p>
         <h1>Typographic motion lab</h1>
-        <p>Pick a fish and a life stage on the left. It is drawn beside the sliders that sculpt it, so a tuning pass never scrolls.</p>
+        <p>Pick a fish and a life stage on the left. It is drawn beside the sliders that sculpt it, so a tuning pass never scrolls, and swept through its whole pitch range so a rotation regression is visible rather than inferred.</p>
       </div>
       <a href="index.html">Return to aquarium</a>
     </header>
@@ -28,6 +28,10 @@
             <h2 id="workbench-title">Fish-specific body profile</h2>
             <p id="workbench-summary" class="workbench__summary"></p>
             <div id="workbench-views" class="workbench-views"></div>
+            <div class="workbench__sweep">
+              <p class="workbench__label" id="pitch-sweep-label">Pitch sweep · frozen pose · both facings</p>
+              <div id="pitch-sweep" class="pitch-sweep" role="group" aria-labelledby="pitch-sweep-label"></div>
+            </div>
             <div class="workbench__stages">
               <p class="workbench__label" id="stage-strip-label">Life stage · youngest first</p>
               <div id="stage-strip" class="stage-strip" role="group" aria-labelledby="stage-strip-label"></div>
@@ -76,6 +80,13 @@
                 <label>Turn width <output id="turn-output">1.00</output>
                   <input id="turn-control" type="range" min="0.32" max="1" step="0.02" value="1">
                 </label>
+                <label>Show
+                  <select id="show-control">
+                    <option value="combined">Combined</option>
+                    <option value="ascii">ASCII only</option>
+                    <option value="body">Opaque body only</option>
+                  </select>
+                </label>
                 <label>Palette
                   <select id="palette-control">
                     <option value="day">Day</option>
@@ -91,6 +102,8 @@
                 <label class="check-control"><input id="anchors-control" type="checkbox"> Glyph anchors</label>
                 <label class="check-control"><input id="bounds-control" type="checkbox"> Object bounds</label>
                 <label class="check-control"><input id="damage-control" type="checkbox"> Damage rectangles</label>
+                <label class="check-control"><input id="spans-control" type="checkbox"> Body spans</label>
+                <label class="check-control"><input id="ink-control" type="checkbox"> Glyph raster bounds</label>
               </div>
             </details>
           </div>
@@ -101,6 +114,6 @@
     <footer>
       Artwork from <em>asciiquarium 1.1</em> by Kirk Baucom; most ASCII art by Joan Stark. GPL v2 or later.
     </footer>
-    <script type="module" src="src/sprite-sheet.js?v=stage-sculpting-20260902"></script>
+    <script type="module" src="src/sprite-sheet.js?v=true-rotation-20260902"></script>
   </body>
 </html>

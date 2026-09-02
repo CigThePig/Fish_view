@@ -1,9 +1,9 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=phase1-pitch-20260830";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=true-rotation-20260902";
 import {
   applyBodyProfileToSpriteScene,
   bodyProfileForSprite,
-} from "./render/body-profile-lab.js?v=stage-sculpting-20260902";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=stage-sculpting-20260902";
+} from "./render/body-profile-lab.js?v=true-rotation-20260902";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=true-rotation-20260902";
 import { growthStagesFor, spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
@@ -13,6 +13,11 @@ const CYCLE_SECONDS = 3.4;
 // they are drawn small and are not affected by the workbench zoom.
 const THUMBNAIL_SCALE = 0.5;
 const STRIP_SCALE = 0.45;
+// The pitch sweep. A rotation regression is obvious side by side and almost
+// invisible one pose at a time, so the lab draws the selected stage at every
+// step of its own range, in both facings, on one row each.
+const SWEEP_PITCHES = Object.freeze([-30, -20, -10, 0, 10, 20, 30]);
+const SWEEP_SCALE = 0.42;
 
 const PROFILE_FIELDS = Object.freeze([
   Object.freeze({
@@ -78,6 +83,10 @@ const controls = {
   deformationOutput: document.querySelector("#deformation-output"),
   zoom: document.querySelector("#zoom-control"),
   zoomOutput: document.querySelector("#zoom-output"),
+  sweep: document.querySelector("#pitch-sweep"),
+  show: document.querySelector("#show-control"),
+  spans: document.querySelector("#spans-control"),
+  ink: document.querySelector("#ink-control"),
   anchors: document.querySelector("#anchors-control"),
   bounds: document.querySelector("#bounds-control"),
   damage: document.querySelector("#damage-control"),
@@ -130,6 +139,7 @@ const profileState = new Map(
 const rosterViews = [];
 const stripViews = [];
 const workbenchViews = [];
+const sweepViews = [];
 const rosterCards = new Map();
 const rosterThumbs = new Map();
 
@@ -187,6 +197,38 @@ for (const definition of [
   const view = makeFigure(definition.label);
   controls.workbenchViews.append(view.figure);
   workbenchViews.push({ ...view, ...definition, sprite: selectedStage().sprite });
+}
+
+// One row per facing, one canvas per angle. The captions carry the angle rather
+// than the fish, because what is being read here is whether the drawing turns
+// evenly and symmetrically - not what species it is.
+function buildPitchSweep() {
+  sweepViews.length = 0;
+  controls.sweep.replaceChildren();
+  for (const facing of ["right", "left"]) {
+    const row = document.createElement("div");
+    row.className = "pitch-sweep__row";
+    const label = document.createElement("p");
+    label.className = "workbench__label";
+    label.textContent = "Facing " + facing;
+    row.append(label);
+    const strip = document.createElement("div");
+    strip.className = "pitch-sweep__strip";
+    for (const pitch of SWEEP_PITCHES) {
+      const view = makeFigure(pitch > 0 ? "+" + pitch + "°" : pitch + "°");
+      strip.append(view.figure);
+      sweepViews.push({
+        ...view,
+        sprite: selectedStage().sprite,
+        facing,
+        staticPose: true,
+        scale: SWEEP_SCALE,
+        pitchOverride: pitch,
+      });
+    }
+    row.append(strip);
+    controls.sweep.append(row);
+  }
 }
 
 function buildStageStrip() {
@@ -438,6 +480,7 @@ function refreshEditor() {
     view.button.classList.toggle("is-selected", view.button.dataset.stageId === stage.id);
   }
   for (const view of workbenchViews) view.sprite = stage.sprite;
+  for (const view of sweepViews) view.sprite = stage.sprite;
 
   updateOutput();
 }
@@ -446,21 +489,26 @@ function refreshEditor() {
 
 function drawView(view, options, debug, zoom) {
   const phase = currentPhase * TAU;
+  // A sweep cell fixes its own angle and ignores the pitch slider; everything
+  // else follows the controls.
+  const pose = view.pitchOverride === undefined
+    ? options
+    : { ...options, pitch: view.pitchOverride };
   const scene = renderSpriteScene(view.sprite, {
     facing: view.facing,
     phase,
     staticPose: view.staticPose,
-    ...options,
+    ...pose,
   });
   // A growth stage without an opaque body has nothing for the profile pass to
   // reshape; running it anyway would paint a black slab behind three glyphs.
   const profile = profileState.get(view.sprite.id);
-  if (profile) {
+  if (profile && pose.show !== "ascii") {
     applyBodyProfileToSpriteScene(scene, view.sprite, profile, {
       facing: view.facing,
       phase,
       staticPose: view.staticPose,
-      ...options,
+      ...pose,
     });
   }
   view.renderer.draw(scene, debug);
@@ -477,15 +525,20 @@ function renderAll() {
     paletteMode: controls.palette.value,
     pitch,
     turnScale,
+    show: controls.show.value,
   };
   const debug = {
     anchors: controls.anchors.checked,
     bounds: controls.bounds.checked,
     damage: controls.damage.checked,
+    spans: controls.spans.checked,
+    ink: controls.ink.checked,
   };
-  for (const view of [...workbenchViews, ...stripViews, ...rosterViews]) {
-    drawView(view, options, debug, zoom);
-  }
+  // The roster and life-stage pickers are pickers: they always show the fish as
+  // the tank draws it, whatever the workbench is currently isolating.
+  const pickerOptions = { ...options, show: "combined" };
+  for (const view of [...workbenchViews, ...sweepViews]) drawView(view, options, debug, zoom);
+  for (const view of [...stripViews, ...rosterViews]) drawView(view, pickerOptions, debug, zoom);
   controls.phase.value = String(currentPhase);
   controls.phaseOutput.textContent = currentPhase.toFixed(2);
   controls.pitchOutput.textContent = pitch.toFixed(0) + "°";
@@ -541,6 +594,9 @@ for (const control of [
   controls.anchors,
   controls.bounds,
   controls.damage,
+  controls.show,
+  controls.spans,
+  controls.ink,
 ]) {
   control.addEventListener("input", renderAll);
   control.addEventListener("change", renderAll);
@@ -555,6 +611,7 @@ function frame(timestamp) {
   requestAnimationFrame(frame);
 }
 
+buildPitchSweep();
 buildStageStrip();
 refreshEditor();
 renderAll();

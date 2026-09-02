@@ -363,6 +363,41 @@
   padding: 0.35rem;
 }
 
+/* The pitch sweep. One scrolling row per facing so the seven angles stay on one
+   line at any panel width - reading a rotation means comparing neighbours, and
+   a wrapped row hides exactly the comparison being made. */
+.workbench__sweep {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pitch-sweep {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.pitch-sweep__row {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.pitch-sweep__strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.pitch-sweep__strip .sprite-facing {
+  flex: 0 0 auto;
+  padding: 0.2rem;
+}
+
+.pitch-sweep__strip .sprite-facing canvas {
+  max-height: 120px;
+}
+
 .stage-strip .sprite-facing canvas,
 .sprite-growth .sprite-facing canvas {
   max-height: 96px;
