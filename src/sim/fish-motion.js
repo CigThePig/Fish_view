@@ -20,10 +20,13 @@ export const MAX_FISH_PITCH_DEGREES = 32;
 // Steep enough that the nose is unmistakably the leading edge of the fish. The
 // lean is not decoration: it is what lets a tall fish get its mouth to the sand
 // without putting its whole underside in it, because rotating the drawing moves
-// the mouth down and the tail up at the same time. Four degrees short of the
-// ceiling, so the extra rotation at the top of a strike still has somewhere to
-// go.
-export const FORAGE_PITCH_BIAS_DEGREES = 28;
+// the mouth down and the tail up at the same time.
+//
+// It stops six degrees short of MAX_FISH_PITCH_DEGREES because the strike adds
+// its own rotation on top and the two share that one ceiling: authored to reach
+// it exactly, so the graze lean is as steep as it can be and every degree of
+// the peck rotation is still drawn.
+export const FORAGE_PITCH_BIAS_DEGREES = 26;
 export const SURFACE_PITCH_BIAS_DEGREES = -10;
 // How far off the graze line still counts as working the substrate. This is a
 // contact band, not an approach band: everything downstream of it - the feeding
@@ -51,8 +54,9 @@ export const FORAGE_GRAZE_CONTACT_ROWS = 0.06;
 // So the mouth comes down to the sand and the body follows it in. This is how
 // far in it is allowed to go: enough that a grown fish gets its nose to the
 // crest and its underside grazes through it, not so far that the drawing sits
-// in the floor. A fry never reaches it - its mouth is its lowest ink, so it
-// parks exactly where it always did.
+// in the floor. A fry never reaches it - its mouth is its lowest ink, so the
+// contact allowance above is what places it, and the bite only ever binds on a
+// fish tall enough for the two to differ.
 export const FORAGE_GRAZE_BURIAL_ROWS = 1.25;
 export const FORAGE_PECK_ROWS = 0.30;
 // The logical sprite box and the renderer's opaque-body box intentionally do
@@ -67,16 +71,14 @@ export const FORAGE_PECK_ROWS = 0.30;
 // measure:screen` reports the gap the panel receives, and the seed sweep in
 // tests/review-regressions.test.js grades the other side of it.
 //
-// What remains of the disagreement is about a fifth of a row, and it is now a
-// constant of the rasteriser rather than of the fish: the simulation projects
-// upright ink boxes, and the renderer paints a rotated raster whose quantised
-// spans sit fractionally inside them. It was not always constant. While the
-// model reserved whole cells rather than the ink in them, the overshoot ran
-// from a sixth of a row to well over half depending on which character a
-// sprite happened to stand on, which put three stages of the roster a third
-// of a row higher than the rest. `glyphInkReach` closed that; the remainder is
-// uniform across the roster, and the authored contact and bite allowances are
-// calibrated with it in, which is why this stays zero.
+// There is almost nothing left of the disagreement. The model projects the
+// rasteriser's own pixels, in the rasteriser's own cell, so over the whole
+// roster it predicts the rendered ink to within three hundredths of a row at
+// every feeding angle. It did not start there: reserving whole cells overshot
+// by a sixth of a row to well over half depending on which character a sprite
+// stood on, and bounding a glyph's pixels into one corner still overshot by a
+// fifth. What is left is quantisation, it is not a function of the fish, and
+// the authored allowances mean what they say - which is why this stays zero.
 const FORAGE_GRAZE_MODEL_MARGIN_ROWS = 0;
 // The furthest ahead a grazing fish will chase its route point. The forage
 // route drifts across the tank faster than a fish creeping along at a tenth of
@@ -96,6 +98,11 @@ const DEBRIS_TAIL_SECONDS = 0.82;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+function smoothstep(value) {
+  const amount = clamp(value, 0, 1);
+  return amount * amount * (3 - 2 * amount);
 }
 
 function positiveModulo(value, modulus) {
@@ -125,6 +132,38 @@ export function fishVerticalClearanceRows(fishOrSprite) {
   const projected = halfHeight * Math.cos(MAX_PITCH_RADIANS)
     + horizontalAsRows * Math.sin(MAX_PITCH_RADIANS);
   return projected * INDIVIDUAL_VISUAL_SCALE_MAX + CLEARANCE_MARGIN_ROWS;
+}
+
+// The pose a fish is drawn in, from the turn its simulation state is holding.
+//
+// This lives on the simulation side because `visual.turnProgress` is simulation
+// state and because the graze line has to agree with it: a fish's mouth is what
+// it feeds with, and the crest under a mouth is not the crest under the fish
+// unless the terrain is flat. The renderer and the substrate both ask this one
+// function where the drawing is facing and how much of its width is left, so
+// the fish, the sand it is measured against, and the puff it throws cannot come
+// apart mid-turn.
+//
+// A fish turning through the glass swings its drawing to the new facing halfway
+// through, and is compressed to a third of its width at that moment - which is
+// also why the nose barely leads the body there.
+export function turnPose(fish) {
+  const visual = fish?.visual ?? {
+    facing: (fish?.vx ?? 0) < 0 ? -1 : 1,
+    targetFacing: (fish?.vx ?? 0) < 0 ? -1 : 1,
+    turnProgress: 1,
+  };
+  if (!(visual.turnProgress < 1)) return { facing: visual.targetFacing, widthScale: 1 };
+  if (visual.turnProgress < 0.5) {
+    return {
+      facing: visual.facing,
+      widthScale: 1 - smoothstep(visual.turnProgress * 2) * 0.68,
+    };
+  }
+  return {
+    facing: visual.targetFacing,
+    widthScale: 0.32 + smoothstep((visual.turnProgress - 0.5) * 2) * 0.68,
+  };
 }
 
 export function forageEligible(index) {
@@ -201,7 +240,11 @@ export function fishGrazeClearanceRows(
     const reach = inkReachRows(point, drop, lean);
     if (reach > underside) underside = reach;
   }
-  const mouth = inkReachRows(spriteMouthOffset(sprite), drop, lean);
+  let mouth = 0;
+  for (const point of spriteMouthOffset(sprite).reach) {
+    const reach = inkReachRows(point, drop, lean);
+    if (reach > mouth) mouth = reach;
+  }
   const scale = clamp(
     Number.isFinite(visualScale) ? visualScale : INDIVIDUAL_VISUAL_SCALE_MAX,
     0,
@@ -214,7 +257,14 @@ export function fishGrazeClearanceRows(
     mouth * scale - contactRows,
     underside * scale - Math.max(0, burialRows),
   );
-  return Math.max(0.2, reserve + FORAGE_GRAZE_MODEL_MARGIN_ROWS);
+  // Never below the crest itself: a reserve is how far the fish's centre is held
+  // above the sand, and a negative one would park the centre inside it. The
+  // floor used to be a fifth of a row, from when the model reserved whole cells
+  // and nothing could legitimately want less - but a fry that is a single "·"
+  // legitimately wants almost none, and the floor was holding it a sixth of a
+  // row above sand its own ink could not then reach. The bite above is what
+  // bounds the other end.
+  return Math.max(0, reserve + FORAGE_GRAZE_MODEL_MARGIN_ROWS);
 }
 
 export function individualVisualScale(fish, index, state) {
@@ -233,16 +283,40 @@ export function individualVisualScale(fish, index, state) {
   return individualDepthScale(distance);
 }
 
+// How far ahead of the fish's centre its mouth is drawn, in columns. The lean
+// swings the nose forward and down, mirroring puts it on the other side, and a
+// fish turning through the glass has hardly any length left to lead with.
+export function mouthLeadColumns(fish, pitchDegrees, visualScale = 1) {
+  const sprite = spriteFor(fish);
+  const mouth = spriteMouthOffset(sprite);
+  const pitch = clamp(Number.isFinite(pitchDegrees) ? pitchDegrees : 0, -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES)
+    * Math.PI / 180;
+  const pose = turnPose(fish);
+  // The same rotation the renderer applies, done in row units and converted
+  // back: a lean shortens the reach forward as it lengthens the reach down.
+  const forward = mouth.dx * Math.cos(pitch) - mouth.dy * Math.sin(pitch) * (CELL_HEIGHT / CELL_WIDTH);
+  return forward * pose.widthScale * (pose.facing < 0 ? -1 : 1) * visualScale;
+}
+
 export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
   // Rotation and distance together: the lean the fish feeds at decides how much
   // of its body projects downwards, and the contact allowance decides how close
   // that projection may come to the crest.
+  //
+  // The crest is sampled under the mouth, not under the fish. The terrain is not
+  // flat, a grown fish's mouth leads its centre by two to three columns, and the
+  // relief changes by more than a tenth of a row across that span - so a graze
+  // line taken at the centre put the fish above or into the sand depending on
+  // which way it was facing, while the contact mark it threw was already being
+  // drawn against the terrain under the mouth. This is the same sample.
   const tuning = sceneTuning(state, "substrate-search");
-  return substrateSurfaceY(state, worldX)
+  const scale = individualVisualScale(fish, index, state);
+  const mouthX = worldX + mouthLeadColumns(fish, tuning.grazePitchDegrees, scale);
+  return substrateSurfaceY(state, mouthX)
     - fishGrazeClearanceRows(
       fish,
       tuning.grazePitchDegrees,
-      individualVisualScale(fish, index, state),
+      scale,
       tuning.grazeContactRows,
       tuning.grazeBurialRows,
     );

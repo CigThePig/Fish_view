@@ -1,7 +1,6 @@
 import { mirrorRows, normalizeRows } from "../art/mirror.js";
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import {
-  glyphInkReach,
   individualSprites,
   schoolGlyphs,
   spriteDimensions,
@@ -20,7 +19,7 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
-import { forageActivity } from "../sim/fish-motion.js";
+import { forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
@@ -222,25 +221,6 @@ function maskColor(symbol, seed, masks) {
     return masks[MASK_SYMBOLS[choice]];
   }
   return masks[symbol] ?? masks.C;
-}
-
-function turnPose(fish) {
-  const visual = fish.visual ?? {
-    facing: fish.vx < 0 ? -1 : 1,
-    targetFacing: fish.vx < 0 ? -1 : 1,
-    turnProgress: 1,
-  };
-  if (visual.turnProgress >= 1) return { facing: visual.targetFacing, widthScale: 1 };
-  if (visual.turnProgress < 0.5) {
-    return {
-      facing: visual.facing,
-      widthScale: 1 - smoothstep(visual.turnProgress * 2) * 0.68,
-    };
-  }
-  return {
-    facing: visual.targetFacing,
-    widthScale: 0.32 + smoothstep((visual.turnProgress - 0.5) * 2) * 0.68,
-  };
 }
 
 // How far a given horizontal position is dimmed by the tank's side falloff.
@@ -798,21 +778,13 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
 // noise on the sand rather than as one event.
 function mouthOffset(sprite, { facing, turnScale, pitch, cellAspect }) {
   const source = spritePoints(sprite);
-  // The mouth offset is measured to the ink's lower nose corner, which is what
-  // the graze line is set by; the puff is thrown from the middle of the mouth
-  // glyph, so the pose is taken at the cell the ink belongs to.
   const mouth = spriteMouthOffset(sprite);
-  const ink = glyphInkReach(mouthCharacter(source, mouth));
   return poseCoordinate(
     source,
-    mouth.dx - ink.right + (source.width - 1) / 2,
-    mouth.dy - ink.bottom + (source.height - 1) / 2,
+    mouth.dx + (source.width - 1) / 2,
+    mouth.dy + (source.height - 1) / 2,
     { facing, phase: 0, deformationStrength: 0, turnScale, pitch, cellAspect },
   );
-}
-
-function mouthCharacter(source, mouth) {
-  return source.points[mouth.glyph]?.char ?? ">";
 }
 
 function drawForageDebris(builder, state, palette, metrics) {

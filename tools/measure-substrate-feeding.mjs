@@ -27,7 +27,7 @@ import { glyphPixelRects } from "../src/render/glyph-raster.js";
 import { render } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
-import { DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
+import { CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
 import { ACTIVITIES, createActivityState } from "../src/sim/fish-activities.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
@@ -154,18 +154,23 @@ function sceneWith(state, fish) {
 // grew. `buried` is how far its underside has passed through the crest to put
 // the mouth there, which is what stops the cure being worse than the disease.
 // Both are read off the rasterised glyph rectangles: the panel's own ink.
-function contactRows(state, fish, rowPixels, sprite) {
+function contactRows(state, fish, metrics, sprite) {
+  const { rowPixels, columnPixels } = metrics;
   const scene = sceneWith(state, fish);
   const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${SUBJECT_INDEX}:`));
   const glyphs = glyphsForObject(scene, object);
   const bottomOf = (list) => Math.max(
     ...list.flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
   ) / rowPixels;
-  const crest = substrateSurfaceY(state, fish.x);
   const mouthGlyph = glyphs[spriteMouthOffset(sprite).glyph] ?? glyphs[0];
+  // Each part is measured against the crest under itself. The terrain is not
+  // flat and a grown fish's mouth leads its centre by two to three columns, so
+  // one crest sample for the whole animal is a third of a row of noise - and it
+  // is the crest under the mouth that the contact mark is drawn against.
+  const mouthX = (mouthGlyph.x + CELL_WIDTH * mouthGlyph.scaleX / 2) / columnPixels;
   return {
-    mouth: crest - bottomOf([mouthGlyph]),
-    buried: bottomOf(glyphs) - crest,
+    mouth: substrateSurfaceY(state, mouthX) - bottomOf([mouthGlyph]),
+    buried: bottomOf(glyphs) - substrateSurfaceY(state, fish.x),
   };
 }
 
@@ -173,7 +178,10 @@ export function measureFeeding(tuning = null) {
   const results = [];
   for (const orientation of ORIENTATIONS) {
     const config = orientationConfig(orientation);
-    const rowPixels = config.pixelHeight / config.rows;
+    const metrics = {
+      rowPixels: config.pixelHeight / config.rows,
+      columnPixels: config.pixelWidth / config.cols,
+    };
     const state = {
       ...createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }),
       ...(tuning ? { choreographyTuning: tuning } : {}),
@@ -184,8 +192,8 @@ export function measureFeeding(tuning = null) {
       const { peak } = strikeCycle(state, grazing);
       const striking = { ...agedAt(grazing, peak.age), y: grazing.y + peak.forage.peckDisplacement };
       const { width, height } = spriteDimensions(stage);
-      const rest = contactRows(state, grazing, rowPixels, stage);
-      const hit = contactRows(state, striking, rowPixels, stage);
+      const rest = contactRows(state, grazing, metrics, stage);
+      const hit = contactRows(state, striking, metrics, stage);
       results.push({
         orientation,
         id: stage.id,

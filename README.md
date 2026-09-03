@@ -303,22 +303,34 @@ The graze line now brings the mouth down to the crest and lets the underside
 follow it in, as far as the authored `grazeBurialRows` bite and no further; the
 fish stops at whichever of the two comes first. The feeding lean does the rest
 of the work - rotating the drawing moves the mouth down and the tail up at once
-- which is why the authored graze rotation is four degrees short of the pitch
-ceiling rather than the gentle tilt it used to be. Over every growth stage of
-all seven species in both orientations, the mouth grazes within a quarter row of
-the crest and strikes into it, and the whole roster sits inside a twelfth of a
-row of itself.
+- which is why the authored graze rotation is steep rather than the gentle tilt
+it used to be. It stops six degrees short of the pitch ceiling because the
+strike's own rotation is added on top and the two share that ceiling: authored
+to reach it exactly, so the lean is as steep as it can be and every degree of
+the peck rotation is still drawn rather than clipped away in `tickVisualPose()`.
+
+Over every growth stage of all seven species in both orientations, the mouth
+grazes between 0.05 rows under the crest and 0.04 rows over it, and strikes
+0.14 to 0.43 rows in; the whole roster sits inside a twelfth of a row of itself.
+Across four tanks of ordinary ticks, every full strike now lands its mouth at or
+under the crest, where the worst used to hover 0.61 rows above it.
 
 Three pieces of geometry make that measurable, all of them properties of the
 artwork and all cached per sprite:
 
-- **`glyphInkReach`** - how far a character's ink reaches inside its own cell.
-  A cell is not the mark drawn in it: an apostrophe inks the top third of its
-  cell, and the `·` a first-stage fry is made of is one dot in the middle of an
-  empty one. Read from the same bitmaps the renderer rasterises, so the two
-  cannot drift. This is why `src/art/bitmap-font.js` sits in the art layer: the
-  character artwork is artwork, and the simulation is entitled to ask how big
-  the marks it is placing actually are.
+- **`glyphInkReach`** - the lit pixels of a character that can be its lowest
+  when the drawing leans. A cell is not the mark drawn in it: an apostrophe inks
+  the top third of its cell, and the `·` a first-stage fry is made of is one dot
+  in the middle of an empty one. Nor is the mark the box around it: a `>` reaches
+  furthest right halfway down and furthest down at its back, and bounding those
+  together invents ink at a corner the rasteriser never paints. What is kept is
+  the staircase - the pixels no other pixel of the same glyph is both lower and
+  further forward than - taken from the rasteriser's own rectangles in the same
+  12x24 cell `positionedGlyph` places them in. That is why
+  `src/art/bitmap-font.js` sits in the art layer: the character artwork is
+  artwork, and the simulation is entitled to ask how big the marks it is placing
+  actually are. Over the roster the model predicts the rendered ink to within
+  three hundredths of a row, so the authored allowances mean what they say.
 - **`spriteUndersideProfile`** - the points whose ink can be the lowest thing
   the drawing has when it leans. Within a column the cells rotate as a stack, so
   the prune is by dominance: a cell is dropped only when another in the same
@@ -328,6 +340,15 @@ artwork and all cached per sprite:
   slot `5` is the nose glyph the way slot `4` is the eye. The renderer uses the
   same offset to throw the contact mark and the silt from the mouth it actually
   drew, instead of from a fixed fraction of the sprite's width.
+
+The crest is sampled under the mouth rather than under the fish. Terrain is not
+flat, a grown fish's nose leads its centre by two to three columns, and the
+relief changes by more than a tenth of a row across that span - so a graze line
+taken at the centre floated or buried the fish depending on which way it faced,
+while the contact mark it threw was already being drawn against the terrain
+under the mouth. Both now ask `turnPose()`, which moved to the simulation side
+for the purpose: `visual.turnProgress` is simulation state, and the fish, the
+sand it is measured against and the puff it throws must not come apart mid-turn.
 
 `npm run measure:feeding` walks the whole roster and prints, per stage, how far
 the mouth sits above the crest at rest and at the deepest strike and how much of
@@ -514,13 +535,13 @@ representative signatures are:
 | Plant weave | 0.43, 25.7°, four alternating stages | 0.44, 30.2°, four alternating stages |
 | Companion cruise | 0.49, 3.6°, 3.69-row mean spacing | 0.49, 3.6°, 3.69-row mean spacing |
 | Playful chase | 0.84, 50 evasion frames | 0.84, 50 evasion frames |
-| Substrate search | 0.57, 32.0°, 4 pecks | 0.58, 32.0°, 5 pecks |
+| Substrate search | 0.57, 32.0°, 4 pecks | 0.58, 32.0°, 4 pecks |
 | Surface investigation | 0.68, 32.0°, 6.36 rows vertical travel | 0.68, 32.0°, 7.46 rows |
 | Open-water rest | 0.04 peak / 0.02 average speed | 0.04 / 0.02 |
 
 With the default seed at noon, the ordinary ten-minute diagnostic recorded six
 to eight bubble investigations, three playful chases, three companion cruises,
-eight individual follows, one substrate-search bout with 10-12 visible pecks,
+eight individual follows, one substrate-search bout with 9-12 visible pecks,
 four plant/rest-shelter visits, and six open-water rests in each orientation;
 portrait also reached two surface investigations. These are opportunity audits,
 not quotas: other personalities and world seeds retain their own mix.

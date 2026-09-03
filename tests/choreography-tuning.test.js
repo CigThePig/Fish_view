@@ -36,6 +36,7 @@ import {
   choreographyFor,
 } from "../src/sim/fish-choreography.js";
 import {
+  MAX_FISH_PITCH_DEGREES,
   FORAGE_GRAZE_BURIAL_ROWS,
   FORAGE_GRAZE_CONTACT_ROWS,
   FORAGE_PECK_ROWS,
@@ -145,6 +146,55 @@ test("velocity matching is shown only for profiles whose targets carry velocity"
   assert.equal(hasVelocityMatch(ACTIVITIES.individualFollow), true);
   assert.equal(hasVelocityMatch(ACTIVITIES.companionCruise), true);
   assert.equal(hasVelocityMatch("companion-cruise:mutual"), true);
+});
+
+test("the authored feeding rotations fit the pitch ceiling between them", () => {
+  // Nose-down rotation is bounded at MAX_FISH_PITCH_DEGREES for every fish, and
+  // the graze lean and the strike's extra rotation share that one ceiling. When
+  // the pair over-ran it the excess was silently clipped in tickVisualPose():
+  // a 28-degree lean with an 11-degree peck drew a 4-degree strike, and every
+  // peckPitchDegrees from 4 to 32 produced exactly the same frame. The authored
+  // pair has to fit, so that the numbers in the tuning table are the rotations
+  // the panel receives.
+  const forage = SCENE_TUNING[ACTIVITIES.substrateSearch];
+  assert.ok(
+    forage.grazePitchDegrees + forage.peckPitchDegrees <= MAX_FISH_PITCH_DEGREES,
+    `graze ${forage.grazePitchDegrees} + peck ${forage.peckPitchDegrees} exceeds the `
+    + `${MAX_FISH_PITCH_DEGREES} degree ceiling, so most of the strike would be clipped`,
+  );
+
+  // And a setting that does over-run is bounded where it is composed rather
+  // than at the clamp, so the lab shows a capped strike instead of a silent one.
+  const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const grazing = {
+    ...base.individuals[4],
+    y: substrateGrazeY(base.individuals[4], base, base.individuals[4].x, 4),
+    behavior: { current: "forage", previous: "forage", blend: 1, ageSeconds: 9, ageRealSeconds: 9 },
+    activity: {
+      current: ACTIVITIES.substrateSearch,
+      previous: ACTIVITIES.substrateSearch,
+      ageRealSeconds: 6,
+      targetType: null,
+      targetId: null,
+      targetX: null,
+      targetY: null,
+    },
+  };
+  const state = { ...base, individuals: base.individuals.map((f, i) => (i === 4 ? grazing : f)) };
+  const withPeck = (peckPitchDegrees) => resolveActivityTarget(grazing, 4, {
+    ...state,
+    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { peckPitchDegrees } } },
+  }, grazing.activity).postureBias;
+  assert.ok(withPeck(0) <= withPeck(6), "a larger peck rotation has to lean the fish further");
+  assert.equal(
+    withPeck(40),
+    withPeck(MAX_FISH_PITCH_DEGREES - SCENE_TUNING[ACTIVITIES.substrateSearch].grazePitchDegrees),
+    "a peck rotation past the ceiling has to saturate at the headroom, not past it",
+  );
+  assert.ok(
+    withPeck(40) <= MAX_FISH_PITCH_DEGREES,
+    "the composed feeding posture has to stay inside the rotation ceiling",
+  );
 });
 
 test("bottom feeding answers its rotation and distance tuning", () => {

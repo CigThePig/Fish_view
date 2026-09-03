@@ -15,7 +15,7 @@ import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import { growthStagesFor, spriteDimensions, spriteMouthOffset } from "../src/art/sprites.js";
 import { spriteForFish } from "../src/sim/fish-growth.js";
-import { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_PECK_ROWS } from "../src/sim/fish-motion.js";
+import { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_GRAZE_CONTACT_ROWS, FORAGE_PECK_ROWS } from "../src/sim/fish-motion.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import {
   ACTIVITIES,
@@ -345,6 +345,7 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   const orientation = "landscape";
   const config = orientationConfig(orientation);
   const rowPixels = config.pixelHeight / config.rows;
+  const cellWidth = config.pixelWidth / config.cols;
   const base = createAquariumState({ orientation, seed: 2, wallClockHours: 12 });
   const index = 3;
   const resting = base.individuals[index];
@@ -380,13 +381,26 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   };
   const scene = render(state);
   const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
-  const lowestInk = Math.max(
-    ...glyphsForObject(scene, object)
-      .flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
+  const glyphs = glyphsForObject(scene, object);
+  const bottomOf = (list) => Math.max(
+    ...list.flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
   ) / rowPixels;
-  const gap = substrateSurfaceY(state, feeding.x) - lowestInk;
-  assert.ok(gap <= 0.55, `far feeding ink hovered ${gap.toFixed(2)} rows above its contact mark`);
-  assert.ok(gap >= -0.6, `far feeding ink buried ${(-gap).toFixed(2)} rows into the substrate`);
+  // The mouth against the crest under the mouth. Both halves of that matter at
+  // this distance: the fish is drawn near 0.72x, so a reserve taken at the
+  // global maximum scale left it a row of clear water, and its nose leads its
+  // centre by more than two columns, so a crest sampled at the centre is not
+  // the crest its own contact mark is drawn against.
+  const mouth = glyphs[spriteMouthOffset(spriteForFish(feeding)).glyph];
+  const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / cellWidth;
+  const gap = substrateSurfaceY(state, mouthX) - bottomOf([mouth]);
+  assert.ok(gap <= 0.35, `far feeding mouth hovered ${gap.toFixed(2)} rows above its contact mark`);
+  assert.ok(gap >= -0.6, `far feeding mouth drove ${(-gap).toFixed(2)} rows under the crest`);
+  // Reaching it costs body, and the authored bite is the ceiling on that cost.
+  const buried = bottomOf(glyphs) - substrateSurfaceY(state, feeding.x);
+  assert.ok(
+    buried <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
+    `far feeding fish buried ${buried.toFixed(2)} rows of itself`,
+  );
 });
 
 test("the puff is thrown from the mouth the fish is drawn with, not the one it is turning away from", () => {
@@ -657,6 +671,7 @@ test("a feeding fish gets its mouth to the sand at every size it can grow to", (
   for (const orientation of ["landscape", "portrait"]) {
     const config = orientationConfig(orientation);
     const rowPixels = config.pixelHeight / config.rows;
+    const cellWidth = config.pixelWidth / config.cols;
     const base = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
     const index = 3;
     const pitch = sceneTuning(base, "substrate-search").grazePitchDegrees;
@@ -707,7 +722,14 @@ test("a feeding fish gets its mouth to the sand at every size it can grow to", (
         ) / rowPixels;
         const mouth = glyphs[spriteMouthOffset(stage).glyph];
         assert.ok(mouth, `${stage.id} was drawn without the glyph its artwork calls its mouth`);
-        return { mouth: crest - bottomOf([mouth]), buried: bottomOf(glyphs) - crest };
+        // Each part against the crest under itself. A grown fish's mouth leads
+        // its centre by two to three columns and the relief changes across that
+        // span, so one sample for the whole animal is a third of a row of noise.
+        const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / cellWidth;
+        return {
+          mouth: substrateSurfaceY(base, mouthX) - bottomOf([mouth]),
+          buried: bottomOf(glyphs) - crest,
+        };
       };
 
       const { height } = spriteDimensions(stage);
@@ -718,7 +740,7 @@ test("a feeding fish gets its mouth to the sand at every size it can grow to", (
 
     for (const stage of measured) {
       assert.ok(
-        stage.rest >= 0 && stage.rest <= 0.35,
+        stage.rest >= -(FORAGE_GRAZE_CONTACT_ROWS + 0.1) && stage.rest <= 0.35,
         `${orientation} ${stage.id} grazed with its mouth ${stage.rest.toFixed(2)} rows off the crest`,
       );
       assert.ok(

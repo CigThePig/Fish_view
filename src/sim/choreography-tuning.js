@@ -401,8 +401,8 @@ export const SCENE_TUNING = Object.freeze({
   // to put the mouth there - and the search band is a contact band, not an
   // approach one, because everything downstream of it claims the fish is eating.
   "substrate-search": Object.freeze({
-    grazePitchDegrees: 28,
-    peckPitchDegrees: 11,
+    grazePitchDegrees: 26,
+    peckPitchDegrees: 6,
     grazeContactRows: 0.06,
     grazeBurialRows: 1.25,
     peckRows: 0.3,

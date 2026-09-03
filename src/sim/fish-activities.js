@@ -5,6 +5,7 @@ import { sceneTuning } from "./choreography-tuning.js";
 import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import {
+  MAX_FISH_PITCH_DEGREES,
   forageActivity,
   forageEligible,
   substrateGrazeY,
@@ -97,6 +98,15 @@ export const DWELL_SECONDS = Object.freeze({
 
 function positiveModulo(value, modulus) {
   return ((value % modulus) + modulus) % modulus;
+}
+
+// How much of an authored strike rotation the pitch ceiling actually leaves.
+// Nose-down rotation is bounded at MAX_FISH_PITCH_DEGREES for every fish, and
+// the feeding lean has already spent most of it.
+function peckRotationHeadroom(grazeDegrees, peckDegrees) {
+  const graze = Math.max(0, Number.isFinite(grazeDegrees) ? grazeDegrees : 0);
+  const peck = Math.max(0, Number.isFinite(peckDegrees) ? peckDegrees : 0);
+  return Math.min(peck, Math.max(0, MAX_FISH_PITCH_DEGREES - graze));
 }
 
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
@@ -1017,8 +1027,17 @@ export function resolveActivityTarget(fish, index, state, activity, {
         : tuning.descendSpeed + traits.activity * 0.18,
       // The strike snaps the nose down as well as the body: posture is the cue
       // that survives when the fish is small on the panel.
+      //
+      // The two rotations share one ceiling, and the sum is bounded here rather
+      // than left to the clamp in tickVisualPose(). Silently clipping it makes
+      // the authored peck rotation a lie - with a graze lean four degrees short
+      // of the ceiling, every setting from four degrees upwards drew the same
+      // strike - and a knob whose top three quarters do nothing is worse than
+      // one with a smaller range. The authored pair is graded against this
+      // ceiling in tests/choreography-tuning.test.js.
       postureBias: forage.searching
-        ? tuning.grazePitchDegrees + forage.peck * tuning.peckPitchDegrees
+        ? tuning.grazePitchDegrees
+          + forage.peck * peckRotationHeadroom(tuning.grazePitchDegrees, tuning.peckPitchDegrees)
         : 0,
       forageGrazing: true,
       forageSearching: forage.searching,

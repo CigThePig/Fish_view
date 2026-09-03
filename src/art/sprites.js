@@ -15,7 +15,8 @@
  * before growth existed.
  */
 
-import { BITMAP_FONT, GLYPH_PIXEL_HEIGHT, GLYPH_PIXEL_WIDTH } from "./bitmap-font.js";
+import { glyphPixels } from "./bitmap-font.js";
+import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 
 export const artAttribution = Object.freeze({
   source: "asciiquarium 1.1",
@@ -228,8 +229,9 @@ export function spriteDimensions(sprite) {
   };
 }
 
-// How far a character's ink reaches down and forward inside its own cell, in
-// cell units from the cell's centre. Half a cell is the cell edge.
+// The lit pixels of a character that can be the lowest thing it draws once the
+// drawing leans, as offsets from the centre of its cell in cell units. Half a
+// cell is the cell edge.
 //
 // A cell is not the same thing as the mark drawn in it. An apostrophe inks the
 // top third of its cell and nothing below; the "·" a first-stage fry is made of
@@ -238,37 +240,50 @@ export function spriteDimensions(sprite) {
 // answers with the cell has a fish hovering a third of a row above the sand it
 // is supposed to be eating from, and no way to know it.
 //
-// This is the font's own answer, read from the same bitmaps the renderer
-// rasterises, so the two cannot drift apart. Clamped to the cell because the
-// pixel grid overhangs its nominal box by a unit at the far edge.
+// Nor is the mark the box around it. A ">" reaches furthest right halfway down
+// and furthest down at its back, and the corner where those two meet is empty:
+// bounding them together invents ink the rasteriser never paints and reserves
+// room for it. What is kept instead is the staircase - the pixels no other
+// pixel of the same glyph is both lower and further forward than - which is
+// exactly the set that can be the extreme in some direction. It is one point
+// for most characters and five for "/".
+//
+// Read from the same bitmaps the renderer rasterises, in the same 12x24 cell
+// `positionedGlyph` places them in, so the two cannot drift apart.
 const glyphInkCache = new Map();
 
-export function glyphInkReach(char) {
-  const cached = glyphInkCache.get(char);
-  if (cached) return cached;
-  const bitmap = BITMAP_FONT[char] ?? BITMAP_FONT["?"];
-  let bottom = Number.NEGATIVE_INFINITY;
-  let right = Number.NEGATIVE_INFINITY;
-  for (let row = 0; row < bitmap.length; row += 1) {
-    for (let column = 0; column < 5; column += 1) {
-      if (!(bitmap[row] & (1 << (4 - column)))) continue;
-      right = Math.max(right, 1 + column * 2 + 2);
-      bottom = Math.max(bottom, 1 + row * 3 + 3);
+function paretoLowestForward(points) {
+  const kept = [];
+  for (const point of points) {
+    if (kept.some((other) => other.dy >= point.dy && other.dx >= point.dx)) continue;
+    for (let index = kept.length - 1; index >= 0; index -= 1) {
+      if (point.dy >= kept[index].dy && point.dx >= kept[index].dx) kept.splice(index, 1);
     }
+    kept.push(point);
   }
-  const reach = Number.isFinite(bottom)
-    ? Object.freeze({
-      bottom: Math.min(0.5, bottom / GLYPH_PIXEL_HEIGHT - 0.5),
-      right: Math.min(0.5, right / GLYPH_PIXEL_WIDTH - 0.5),
-    })
-    : Object.freeze({ bottom: 0.5, right: 0.5 });
-  glyphInkCache.set(char, reach);
+  return kept;
+}
+
+export function glyphInkReach(character) {
+  const cached = glyphInkCache.get(character);
+  if (cached) return cached;
+  // The rasteriser's own rectangles, so there is nothing here to keep in step
+  // with it: the same spans it paints, read in the same 12x24 cell that
+  // `positionedGlyph` places them in.
+  const corners = glyphPixels(character).map((pixel) => ({
+    dx: (pixel.x + pixel.width) / CELL_WIDTH - 0.5,
+    dy: (pixel.y + pixel.height) / CELL_HEIGHT - 0.5,
+  }));
+  const reach = Object.freeze(
+    (corners.length ? paretoLowestForward(corners) : [{ dx: 0, dy: 0 }])
+      .map((point) => Object.freeze(point)),
+  );
+  glyphInkCache.set(character, reach);
   return reach;
 }
 
-// The underside of a sprite: the cells whose ink can be the lowest thing the
-// drawing has when it leans, each with the offset of its anchor from the centre
-// of the grid and how far its own ink reaches past that anchor.
+// The underside of a sprite: the points of ink that can be the lowest thing the
+// drawing has when it leans, as offsets from the centre of the anchor grid.
 //
 // A fish is not a rectangle. The box `spriteDimensions` reports is the right
 // answer for "how much room does this need", and the wrong one for "how close
@@ -277,52 +292,46 @@ export function glyphInkReach(char) {
 // species in the roster. That corner is a bigger lie about a bigger fish,
 // which is why anything measured from the box alone gets worse as a fish grows.
 //
-// Within one column the cells rotate as a stack, so the usual case is that only
-// the lowest of them can ever be lowest. The exception is a column whose lowest
-// cell carries less ink than one above it - an apostrophe under a slash - so
-// the prune is by dominance rather than by row: a cell is dropped only when
-// another in the same column reaches at least as far down and at least as far
-// forward, and therefore reaches at least as far at every angle. Every roster
-// sprite comes out at one point per column, which is what makes this cheap
-// enough to evaluate per fish per frame on the panel.
+// The same staircase prune that reduces a glyph reduces the sprite: a point is
+// dropped only when another reaches at least as far down *and* as far forward,
+// and therefore reaches at least as far at every angle. Whole cells fall out of
+// it - an apostrophe under a slash keeps both, a stack of slashes keeps one -
+// and the roster comes out between two and nine points, which is what makes
+// this cheap enough to evaluate per fish per frame on the panel.
 const undersideCache = new Map();
 
 export function spriteUndersideProfile(sprite) {
   const cached = sprite?.id ? undersideCache.get(sprite.id) : null;
   if (cached) return cached;
   const { width, height } = spriteDimensions(sprite);
-  const byColumn = new Map();
+  const points = [];
   for (let row = 0; row < sprite.shape.length; row += 1) {
     const cells = [...sprite.shape[row]];
     for (let column = 0; column < cells.length; column += 1) {
       const character = cells[column];
       if (!character || character === " ") continue;
-      const ink = glyphInkReach(character);
-      const candidate = {
-        dx: column - (width - 1) / 2 + ink.right,
-        dy: row - (height - 1) / 2 + ink.bottom,
-      };
-      const kept = (byColumn.get(column) ?? []).filter(
-        (other) => !(candidate.dy >= other.dy && candidate.dx >= other.dx),
-      );
-      if (!kept.some((other) => other.dy >= candidate.dy && other.dx >= candidate.dx)) {
-        kept.push(candidate);
+      for (const ink of glyphInkReach(character)) {
+        points.push({
+          dx: column - (width - 1) / 2 + ink.dx,
+          dy: row - (height - 1) / 2 + ink.dy,
+        });
       }
-      byColumn.set(column, kept);
     }
   }
-  const profile = Object.freeze(
-    [...byColumn.values()].flat().map((cell) => Object.freeze(cell)),
-  );
+  const profile = Object.freeze(paretoLowestForward(points).map((point) => Object.freeze(point)));
   if (sprite?.id) undersideCache.set(sprite.id, profile);
   return profile;
 }
 
-// Where a sprite's mouth is, as the offset of its ink's lower nose corner from
-// the centre of the anchor grid, in cells. Feeding is a statement about the
-// mouth: a fish grazes when its mouth is at the sand, and the puff of silt a
-// strike lifts is drawn from the mouth. The body's lowest ink answers a
-// different question, and on a five-row adult the two are two rows apart.
+// Where a sprite's mouth is: the cell its nose glyph occupies, and the ink in
+// that cell that can reach furthest into the sand.
+//
+// Feeding is a statement about the mouth. A fish grazes when its mouth is at
+// the sand, and the puff of silt a strike lifts is drawn from the mouth; the
+// body's lowest ink answers a different question, and on a five-row adult the
+// two are two rows apart. `dx`/`dy` are the cell's own anchor, which is what
+// the renderer poses to place the puff; `reach` is the same staircase as the
+// underside, which is what the graze line is set by.
 //
 // The artwork already says which cell it is. Mask slot "5" is the nose glyph on
 // every species that has one, the way slot "4" is the eye; the four stages
@@ -348,8 +357,7 @@ export function spriteMouthOffset(sprite) {
 
   let mouth = null;
   for (let row = 0; row < sprite.shape.length && !mouth; row += 1) {
-    const mask = maskAt(row);
-    const column = mask.indexOf("5");
+    const column = maskAt(row).indexOf("5");
     if (column >= 0 && rowAt(row)[column]?.trim()) mouth = { column, row };
   }
   if (!mouth) {
@@ -377,11 +385,14 @@ export function spriteMouthOffset(sprite) {
     if (cell && cell !== " ") glyph += 1;
   }
 
-  const ink = glyphInkReach(rowAt(mouth.row)[mouth.column]);
+  const dx = mouth.column - (width - 1) / 2;
+  const dy = mouth.row - (height - 1) / 2;
   const offset = Object.freeze({
-    dx: mouth.column - (width - 1) / 2 + ink.right,
-    dy: mouth.row - (height - 1) / 2 + ink.bottom,
+    dx,
+    dy,
     glyph,
+    reach: Object.freeze(glyphInkReach(rowAt(mouth.row)[mouth.column])
+      .map((ink) => Object.freeze({ dx: dx + ink.dx, dy: dy + ink.dy }))),
   });
   if (sprite?.id) mouthCache.set(sprite.id, offset);
   return offset;
