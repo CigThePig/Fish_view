@@ -29,7 +29,12 @@ import { glyphsForObject } from "../src/render/scene.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import { CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
-import { ACTIVITIES, createActivityState, peckRotationHeadroom } from "../src/sim/fish-activities.js";
+import {
+  ACTIVITIES,
+  createActivityState,
+  latchForageContact,
+  peckRotationHeadroom,
+} from "../src/sim/fish-activities.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { createAquariumState } from "../src/sim/state.js";
 
@@ -128,26 +133,30 @@ function strikePitch(tuning, peck) {
 }
 
 function strikeCycle(state, fish) {
-  const at = (age) => forageActivity(
-    { ...fish, activity: { ...fish.activity, ageRealSeconds: age } },
-    SUBJECT_INDEX,
-    state,
-  );
-  let peak = { age: 0, forage: at(0) };
+  // Silt belongs to a strike that landed, and the tick is what records which
+  // did. Walking ages without keeping that latch means no age ever reports a
+  // debris tail, and the sheet's settling panel silently repeats the strike
+  // instead of showing the puff it exists to show.
+  let activity = { ...fish.activity, contactSeed: null, priorContactSeed: null };
+  const at = (age) => {
+    const forage = forageActivity({ ...fish, activity: { ...activity, ageRealSeconds: age } }, SUBJECT_INDEX, state);
+    activity = latchForageContact({ ...activity, ageRealSeconds: age }, forage);
+    return forage;
+  };
+  let peak = { age: 0, forage: at(0), activity };
+  let debris = null;
   for (let age = 0; age < 30; age += 0.01) {
     const forage = at(age);
-    if (forage.peck > peak.forage.peck) peak = { age, forage };
+    if (forage.peck > peak.forage.peck) { peak = { age, forage, activity }; debris = null; }
+    if (!debris && peak.forage.peck > 0 && forage.debrisPhase !== null && forage.debrisPhase > 0.35) {
+      debris = { age, forage, activity };
+    }
   }
-  let debris = peak;
-  for (let age = peak.age; age < peak.age + 1.2; age += 0.01) {
-    const forage = at(age);
-    if (forage.debrisPhase !== null && forage.debrisPhase > 0.35) { debris = { age, forage }; break; }
-  }
-  return { peak, debris };
+  return { peak, debris: debris ?? peak };
 }
 
-function agedAt(fish, age, pitch = null) {
-  const posed = { ...fish, activity: { ...fish.activity, ageRealSeconds: age } };
+function agedAt(fish, age, pitch = null, activity = fish.activity) {
+  const posed = { ...fish, activity: { ...activity, ageRealSeconds: age } };
   if (pitch === null) return posed;
   return { ...posed, visual: { ...posed.visual, pitch, targetPitch: pitch } };
 }
@@ -203,7 +212,7 @@ export function measureFeeding(override = null) {
       const grazing = poseStage(state, stage, tuning.grazePitchDegrees);
       const { peak } = strikeCycle(state, grazing);
       const striking = {
-        ...agedAt(grazing, peak.age, strikePitch(tuning, peak.forage.peck)),
+        ...agedAt(grazing, peak.age, strikePitch(tuning, peak.forage.peck), peak.activity),
         y: grazing.y + peak.forage.peckDisplacement,
       };
       const { width, height } = spriteDimensions(stage);
@@ -290,11 +299,11 @@ async function writeSheet(target, only = null, override = null) {
     const grazing = poseStage(state, stage, tuning.grazePitchDegrees);
     const { peak, debris } = strikeCycle(state, grazing);
     const striking = {
-      ...agedAt(grazing, peak.age, strikePitch(tuning, peak.forage.peck)),
+      ...agedAt(grazing, peak.age, strikePitch(tuning, peak.forage.peck), peak.activity),
       y: grazing.y + peak.forage.peckDisplacement,
     };
     const settling = {
-      ...agedAt(grazing, debris.age, strikePitch(tuning, debris.forage.peck)),
+      ...agedAt(grazing, debris.age, strikePitch(tuning, debris.forage.peck), debris.activity),
       y: grazing.y + debris.forage.peckDisplacement,
     };
     const top = gap + row * (cropHeight * zoom + gap);

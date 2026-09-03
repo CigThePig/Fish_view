@@ -199,14 +199,19 @@ function inkReachRows(point, drop, lean) {
   return point.dy * drop + point.dx * lean;
 }
 
-// The lowest any of a set of ink points reaches once the drawing leans.
+// The lowest any of a set of ink points reaches once the drawing leans. Signed:
+// a nose-up fish reaches *above* its own centre, and flooring that at zero is
+// the difference between a conservative answer and a wrong one. Floored, a fish
+// pointing away from the sand reported its mouth at its centre - which reads as
+// contact whenever the centre itself has dropped below the crest, so a
+// scheduled strike could still fire and raise silt from clear water.
 function maxReachRows(points, drop, lean) {
-  let lowest = 0;
+  let lowest = Number.NEGATIVE_INFINITY;
   for (const point of points) {
     const reach = inkReachRows(point, drop, lean);
     if (reach > lowest) lowest = reach;
   }
-  return lowest;
+  return Number.isFinite(lowest) ? lowest : 0;
 }
 
 // The lean the renderer actually turns a drawing through, in radians, and the
