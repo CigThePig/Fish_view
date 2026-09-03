@@ -25,6 +25,7 @@ import {
   schoolSummary,
   socialEngagement,
 } from "../src/sim/fish-activities.js";
+import { latchForageContact } from "../src/sim/fish-activities.js";
 import { CHASE_BREAK_SECONDS, steerActivityVelocity } from "../src/sim/fish-choreography.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
@@ -176,16 +177,23 @@ test("debris keeps the seed of the peck that raised it when the next peck overla
     y: substrateGrazeY(resting, state, resting.x),
     behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
   };
-  const phaseAt = (ageRealSeconds) => forageActivity(fish, index, state, {
-    ...createActivityState(ACTIVITIES.substrateSearch),
-    ageRealSeconds,
-  });
+  // Silt belongs to a strike that landed, and only the tick knows which did, so
+  // it latches the contacting event on the activity. A fixture that never went
+  // through a tick has to keep the same latch or it has no debris at all.
+  let activity = createActivityState(ACTIVITIES.substrateSearch);
+  const phaseAt = (ageRealSeconds) => forageActivity(fish, index, state, { ...activity, ageRealSeconds });
+  const advanceTo = (ageRealSeconds) => {
+    const phase = phaseAt(ageRealSeconds);
+    activity = latchForageContact({ ...activity, ageRealSeconds }, phase);
+    return phase;
+  };
 
   let overlaps = 0;
+  let previousSeed = null;
   for (let age = 0; age < 40; age += 0.05) {
-    const phase = phaseAt(age);
+    const phase = advanceTo(age);
     assert.ok(phase.searching, "the fish is parked on the substrate and should be foraging");
-    if (phase.debrisPhase === null) continue;
+    if (phase.debrisPhase === null) { previousSeed = null; continue; }
     // The salt the renderer draws from must name the event whose tail is on
     // screen, not whichever peck the fish happens to be performing over it.
     assert.ok(Number.isInteger(phase.debrisSeed), "debris has no salt of its own to draw from");
@@ -196,7 +204,8 @@ test("debris keeps the seed of the peck that raised it when the next peck overla
       phase.eventSeed,
       "an overlapping peck reused its own salt for the previous peck's debris",
     );
-    assert.equal(phase.debrisSeed, phaseAt(age - 0.05).debrisSeed);
+    if (previousSeed === null) { previousSeed = phase.debrisSeed; continue; }
+    assert.equal(phase.debrisSeed, previousSeed);
   }
   assert.ok(overlaps > 0, "seed 9 no longer pecks closely enough to overlap a debris tail");
 });
@@ -313,14 +322,19 @@ test("a strike puts the mouth in the sand without burying the fish, on every see
           const scene = render(state);
           const object = scene.objects.find((candidate) => candidate.id === `individual:${index}:${fish.seed}`);
           if (!object?.fill?.length) continue;
-          const crest = substrateSurfaceY(state, fish.x);
-          const entered = Math.max(...object.fill.map((span) => span.y + span.height)) / rowPixels - crest;
+          const entered = Math.max(...object.fill.map((span) => span.y + span.height)) / rowPixels
+            - substrateSurfaceY(state, fish.x);
           if (deepest === null || entered > deepest) deepest = entered;
           const glyphs = glyphsForObject(scene, object);
           const mouth = glyphs[spriteMouthOffset(spriteForFish(fish)).glyph];
           if (!mouth) continue;
+          // The mouth against the crest beneath the mouth. It leads the fish's
+          // centre by two to three columns on a grown fish, and the relief moves
+          // across that span, so the centre's ground would grade this against
+          // terrain the fish is not feeding from.
+          const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / (config.pixelWidth / config.cols);
           const reached = Math.max(...glyphPixelRects(mouth).map((rectangle) => rectangle.y + rectangle.height))
-            / rowPixels - crest;
+            / rowPixels - substrateSurfaceY(state, mouthX);
           if (shyest === null || reached < shyest) shyest = reached;
         }
         if (deepest !== null && step > 3000) break;

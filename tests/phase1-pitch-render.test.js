@@ -7,6 +7,7 @@ import { calculateDamage } from "../src/render/damage.js";
 import { individualSprites, poseSprite, render, renderSpriteScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { forageActivity, substrateGrazeY, substrateSafeY } from "../src/sim/fish-motion.js";
+import { ACTIVITIES, createActivityState, latchForageContact } from "../src/sim/fish-activities.js";
 import { createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
@@ -411,15 +412,21 @@ test("active forage pecks emit one deterministic debris object and approach emit
   const original = base.individuals[index];
   let activeFish = null;
   let quietFish = null;
+  // Silt belongs to a strike that landed, and only the tick knows which did, so
+  // it latches the contacting event on the activity. A fixture that never went
+  // through a tick has to keep the same latch or it has no debris to find.
+  let latch = createActivityState(ACTIVITIES.substrateSearch);
   for (let age = 0; age < 12; age += 0.025) {
     const candidate = {
       ...original,
       x: 25,
       // The peck cadence is an animation, so it advances on real seconds.
+      activity: { ...latch, ageRealSeconds: age },
       behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: age, ageRealSeconds: age },
     };
     candidate.y = substrateGrazeY(candidate, base, candidate.x);
     const activity = forageActivity(candidate, index, base);
+    latch = latchForageContact({ ...latch, ageRealSeconds: age }, activity);
     if (activity.peckPhase !== null && activity.debrisPhase !== null && !activeFish) activeFish = candidate;
     if (activity.searching && activity.peckPhase === null && activity.debrisPhase === null && !quietFish) quietFish = candidate;
     if (activeFish && quietFish) break;

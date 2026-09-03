@@ -380,9 +380,23 @@ plunge invalidated its own gate - the fish dips, the gate closes, the peck reads
 zero, the clamp lifts it back and the event resumes a frame later - which
 collapsed 18% of strike arcs mid-swing. That fragmentation is also why the peck
 counts above read 4 rather than 7: `peckStarts` counts transitions into a
-strike, so a broken arc was being counted twice. Over three tanks of ordinary
-ticks the gate now costs three contact marks in 1,156, while removing the ones
-thrown with the nose off the sand.
+strike, so a broken arc was being counted twice.
+
+How far off the crest a drawn mouth may be and still land is its own authored
+number, `strikeReachRows`, and it is tighter than the search band: being on the
+graze line in the feeding posture is what makes a fish a grazer, but putting a
+bright mark and a puff of silt on the sand is a claim that the nose is *there*.
+At a third of a row the worst strike across three tanks fires from 0.29 rows up
+rather than 0.47, and it costs three strikes in a hundred - the knee of the
+curve, since a fifth of a row buys another 0.05 for ten.
+
+Silt belongs to a strike that landed, so the tail is keyed to the event that
+landed it rather than to the contact of the moment. That is the whole of
+forage's animation state: the tick latches the last two contacting events on the
+activity - two, because close peck pairs overlap and the newer strike's own tail
+does not begin until a third of the way through the older one - and the renderer
+reads the same latch. Deciding it per frame instead drew a puff for ten strikes
+in six hundred that never made contact at all.
 
 `npm run measure:feeding` walks the whole roster and prints, per stage, how far
 the mouth sits above the crest at rest and at the deepest strike and how much of
@@ -575,7 +589,7 @@ representative signatures are:
 
 With the default seed at noon, the ordinary ten-minute diagnostic recorded six
 to eight bubble investigations, three playful chases, three companion cruises,
-eight individual follows, one substrate-search bout with 9-12 visible pecks,
+eight individual follows, one substrate-search bout with 9-11 visible pecks,
 four plant/rest-shelter visits, and six open-water rests in each orientation;
 portrait also reached two surface investigations. These are opportunity audits,
 not quotas: other personalities and world seeds retain their own mix.

@@ -150,6 +150,21 @@ export function createActivityState(current = ACTIVITIES.cruise, previous = curr
     targetId: null,
     targetX: null,
     targetY: null,
+    // The two strikes that last put a mouth in the sand, by their own event
+    // seeds. Silt is something a strike did, so the tail it leaves has to
+    // belong to one - and a tail outlives the peck that raised it by half a
+    // second, long enough for the fish to lift its nose. Deciding the tail from
+    // the contact of the moment instead drew puffs for strikes that never
+    // landed.
+    //
+    // Two rather than one because close peck pairs overlap: the previous
+    // strike's silt is still rising when the next one lands, and the next one's
+    // own tail does not begin until a third of the way through it. Remembering
+    // only the newest would blank the older tail for those two frames. This is
+    // the whole of forage's animation state - two integers, and the renderer
+    // reads the same ones the tick wrote.
+    contactSeed: null,
+    priorContactSeed: null,
   };
 }
 
@@ -169,6 +184,8 @@ function normalizedActivity(fish) {
       : null,
     targetX: Number.isFinite(source?.targetX) ? source.targetX : null,
     targetY: Number.isFinite(source?.targetY) ? source.targetY : null,
+    contactSeed: Number.isSafeInteger(source?.contactSeed) ? source.contactSeed : null,
+    priorContactSeed: Number.isSafeInteger(source?.priorContactSeed) ? source.priorContactSeed : null,
   };
 }
 
@@ -1136,7 +1153,32 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
     activity = createActivityState(defaultActivityForBehavior(fish.behavior?.current), activity.current);
     target = resolveActivityTarget(fish, index, state, activity, { ...context, traits, affinities });
   }
-  return { activity, target };
+  return {
+    activity: latchForageContact(activity, {
+      searching: target?.forageSearching,
+      peck: target?.peck,
+      eventSeed: target?.forageEventSeed,
+    }),
+    target,
+  };
+}
+
+// Latch the strike that landed. `resolveActivityTarget()` has already decided
+// whether this frame's peck reached the sand, from the pose the fish is drawn
+// in; the silt it lifts outlives that pose by half a second, so the tail is
+// keyed to the event rather than re-asking whether the nose is still down.
+// Cleared as soon as the fish is no longer working the substrate, so a puff
+// cannot outlive the bout that raised it.
+export function latchForageContact(activity, forage) {
+  if (!forage?.searching) {
+    return activity.contactSeed === null && activity.priorContactSeed === null
+      ? activity
+      : { ...activity, contactSeed: null, priorContactSeed: null };
+  }
+  if (!(forage.peck > 0)) return activity;
+  const seed = Number.isSafeInteger(forage.eventSeed) ? forage.eventSeed : null;
+  if (activity.contactSeed === seed) return activity;
+  return { ...activity, contactSeed: seed, priorContactSeed: activity.contactSeed };
 }
 
 // Company is only company when there are fish within reach of it. A school

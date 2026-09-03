@@ -37,6 +37,16 @@ export const SURFACE_PITCH_BIAS_DEGREES = -10;
 // A grazing fish is measured to sit within a hundredth of a row of its line, so
 // tightening this costs no feeding at all: it only stops the transients.
 export const FORAGE_SEARCH_DISTANCE_ROWS = 0.45;
+// How close the drawn mouth has to be to the crest for a strike to land.
+//
+// Tighter than the search band above, and deliberately a separate number:
+// being on the graze line in the feeding posture is what makes a fish a
+// grazer, but putting a bright contact mark and a puff of silt on the sand is
+// a claim that the nose is *there*. Reusing the search band let the worst
+// strike fire from 0.47 rows up; a third of a row brings that to 0.29 and
+// costs three strikes in a hundred, which is the knee of the curve - 0.2 rows
+// buys another 0.05 for ten.
+export const FORAGE_STRIKE_REACH_ROWS = 0.3;
 // How close the mouth is allowed to come to the substrate crest while grazing,
 // and how far the strike itself drives the fish down. Both are authored against
 // the drawn artwork rather than the swimming envelope: a feeding fish that keeps
@@ -426,7 +436,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   // the event resumes a frame later. That collapsed 18% of strike arcs mid-swing
   // and let the renderer draw a peck the simulation had already abandoned.
   const contacting = searching
-    && substrateSurfaceY(state, mouthX) - mouthY <= tuning.searchDistanceRows;
+    && substrateSurfaceY(state, mouthX) - mouthY <= tuning.strikeReachRows;
 
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);
@@ -440,6 +450,11 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   const cycleSeconds = positiveModulo(absoluteClock, period);
   const pattern = PECK_PATTERNS[Math.floor(sample01(fish.seed, 4602) * PECK_PATTERNS.length)
     % PECK_PATTERNS.length];
+  // Which strike actually landed, latched by the tick that drove it. The peck
+  // above answers the pose of this frame; the silt has to answer the strike
+  // that raised it, which may be half a second in the past.
+  const contacted = (candidate) => candidate === activity?.contactSeed
+    || candidate === activity?.priorContactSeed;
   let peckPhase = null;
   let peckEvent = null;
   let debrisPhase = null;
@@ -453,7 +468,11 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
       peckEvent = event;
     }
     const debrisAge = elapsed - duration * 0.34;
-    if (contacting && debrisAge >= 0 && debrisAge < DEBRIS_TAIL_SECONDS
+    // Both: the strike landed, and the fish is still working this patch. The
+    // latch alone would keep a tail alive after the fish had left the sand,
+    // for as long as the renderer drew from the activity the tick last wrote.
+    if (searching && contacted((cycleIndex * 7 + event) >>> 0)
+      && debrisAge >= 0 && debrisAge < DEBRIS_TAIL_SECONDS
       && (debrisPhase === null || debrisAge < debrisPhase * DEBRIS_TAIL_SECONDS)) {
       debrisPhase = debrisAge / DEBRIS_TAIL_SECONDS;
       debrisEvent = event;

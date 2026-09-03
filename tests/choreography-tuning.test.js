@@ -43,6 +43,7 @@ import {
   FORAGE_PITCH_BIAS_DEGREES,
   FORAGE_ROUTE_LEAD_COLUMNS,
   FORAGE_SEARCH_DISTANCE_ROWS,
+  FORAGE_STRIKE_REACH_ROWS,
   SURFACE_PITCH_BIAS_DEGREES,
   substrateGrazeY,
 } from "../src/sim/fish-motion.js";
@@ -70,6 +71,7 @@ test("scene tuning starts at the constants the simulation used to inline", () =>
   assert.equal(forage.peckRows, FORAGE_PECK_ROWS);
   assert.equal(forage.routeLeadColumns, FORAGE_ROUTE_LEAD_COLUMNS);
   assert.equal(forage.searchDistanceRows, FORAGE_SEARCH_DISTANCE_ROWS);
+  assert.equal(forage.strikeReachRows, FORAGE_STRIKE_REACH_ROWS);
   assert.equal(SCENE_TUNING[ACTIVITIES.surfaceInvestigate].pitchBiasDegrees, SURFACE_PITCH_BIAS_DEGREES);
   const chase = SCENE_TUNING[ACTIVITIES.playfulChase];
   assert.equal(chase.recognitionRadiusRows, CHASE_RECOGNITION_RADIUS);

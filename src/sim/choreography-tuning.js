@@ -413,6 +413,7 @@ export const SCENE_TUNING = Object.freeze({
     grazeBurialRows: 1.25,
     peckRows: 0.3,
     searchDistanceRows: 0.45,
+    strikeReachRows: 0.3,
     routeLeadColumns: 1.15,
     searchSpanColumns: 6.8,
     searchSpeed: 0.105,

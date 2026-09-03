@@ -204,6 +204,7 @@ export const SCENE_FIELDS = Object.freeze({
     field("grazeBurialRows", "Substrate bite", "rows the underside may graze through the crest to get the mouth down", 0, 2, 0.01),
     field("peckRows", "Peck depth", "rows the strike drives the fish down", 0, 1.5, 0.01),
     field("searchDistanceRows", "Search band", "rows off the graze line that still count as feeding", 0, 3, 0.01),
+    field("strikeReachRows", "Strike reach", "rows the drawn mouth may be off the crest and still land a strike", 0, 1.5, 0.01),
     field("routeLeadColumns", "Route lead", "columns ahead the grazer will chase its patch", 0, 5, 0.01),
     field("searchSpanColumns", "Search span", "columns the patch sweeps across", 0.5, 20, 0.1),
     field("searchSpeed", "Graze speed", "rows/s creeping along the sand", 0.005, 0.6, 0.005),
