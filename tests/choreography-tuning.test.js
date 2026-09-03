@@ -148,6 +148,34 @@ test("velocity matching is shown only for profiles whose targets carry velocity"
   assert.equal(hasVelocityMatch("companion-cruise:mutual"), true);
 });
 
+test("the two feeding rotations move each other rather than going inert", () => {
+  // They share one ceiling, and the simulation clamps their sum. Uncoupled, the
+  // editor exposed a slider whose top three quarters drew nothing: with the
+  // authored 26 degree lean, every peck rotation from 6 upwards produced the
+  // same strike. Moving the mate is how the panel says the ceiling is there.
+  const profile = { grazePitchDegrees: 26, peckPitchDegrees: 6 };
+  assert.deepEqual(constrainedSceneEdit(profile, "peckPitchDegrees", 4), { peckPitchDegrees: 4 });
+  assert.deepEqual(
+    constrainedSceneEdit(profile, "peckPitchDegrees", 20),
+    { peckPitchDegrees: 20, grazePitchDegrees: MAX_FISH_PITCH_DEGREES - 20 },
+  );
+  assert.deepEqual(
+    constrainedSceneEdit(profile, "grazePitchDegrees", 30),
+    { grazePitchDegrees: 30, peckPitchDegrees: MAX_FISH_PITCH_DEGREES - 30 },
+  );
+  // Whatever is asked for, what comes back fits.
+  for (const value of [0, 6, 15, 32, 60]) {
+    for (const key of ["grazePitchDegrees", "peckPitchDegrees"]) {
+      const edited = { ...profile, ...constrainedSceneEdit(profile, key, value) };
+      assert.ok(
+        edited.grazePitchDegrees + edited.peckPitchDegrees <= MAX_FISH_PITCH_DEGREES + 1e-9,
+        `${key} = ${value} left ${edited.grazePitchDegrees} + ${edited.peckPitchDegrees} over the ceiling`,
+      );
+      assert.ok(edited.grazePitchDegrees >= 0 && edited.peckPitchDegrees >= 0);
+    }
+  }
+});
+
 test("the authored feeding rotations fit the pitch ceiling between them", () => {
   // Nose-down rotation is bounded at MAX_FISH_PITCH_DEGREES for every fish, and
   // the graze lean and the strike's extra rotation share that one ceiling. When

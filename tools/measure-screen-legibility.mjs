@@ -59,15 +59,30 @@ const canvasCache = new Map();
 // puff of silt is drawn from. The lowest ink of the whole drawing answers a
 // different question - on a five-row adult the two are two rows apart, which is
 // how a fish could measure as touching the sand while its mouth hung over it.
-function mouthInk(scene, object, sprite) {
+// It is also sampled against the crest under the mouth rather than under the
+// fish. A grown fish's nose leads its centre by two to three columns and the
+// relief moves across that span, so measuring the mouth against the centre's
+// terrain grades the gap at the wrong ground - and it is the crest under the
+// mouth that the simulation places the fish against and the contact mark is
+// drawn on.
+function mouthContact(scene, object, sprite, metrics) {
   const glyph = glyphsForObject(scene, object)[spriteMouthOffset(sprite).glyph];
-  if (!glyph) return lowestInk(scene, object);
+  if (!glyph) return { ink: lowestInk(scene, object), worldX: null };
   let lowest = Number.NEGATIVE_INFINITY;
   for (const rectangle of glyphPixelRects(glyph)) lowest = Math.max(lowest, rectangle.y + rectangle.height);
-  return lowest;
+  return {
+    ink: lowest,
+    worldX: (glyph.x + CELL_WIDTH * glyph.scaleX / 2) / metrics.cellWidth,
+  };
 }
 
 // The lowest pixel an object paints: its opaque body and its rotated glyph ink.
+function mouthGapRows(state, scene, object, fish, metrics) {
+  const contact = mouthContact(scene, object, spriteForFish(fish), metrics);
+  const worldX = contact.worldX ?? fish.x;
+  return substrateSurfaceY(state, worldX) - contact.ink / metrics.cellHeight;
+}
+
 function lowestInk(scene, object) {
   let lowest = Number.NEGATIVE_INFINITY;
   for (const span of object.fill ?? []) lowest = Math.max(lowest, span.y + span.height);
@@ -199,6 +214,7 @@ for (const orientation of ["landscape", "portrait"]) {
   let state = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
   const config = orientationConfig(orientation);
   const cellHeight = config.pixelHeight / config.rows;
+  const cellWidth = config.pixelWidth / config.cols;
   let best = null;
   let rest = null;
   let window = null;
@@ -235,7 +251,7 @@ for (const orientation of ["landscape", "portrait"]) {
         // one reserved the lean as well - so this read as contact while the
         // fish was in fact hovering. Bounds are the tight raster now, but the
         // ink is what a person sees either way.
-        mouthGap: substrateSurfaceY(state, fish.x) - mouthInk(scene, object, spriteForFish(fish)) / cellHeight,
+        mouthGap: mouthGapRows(state, scene, object, fish, { cellWidth, cellHeight }),
         bellyGap: substrateSurfaceY(state, fish.x) - lowestInk(scene, object) / cellHeight,
         debris: debris ? scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount) : [],
         image: pixels(canvas, window.x, window.y, window.width, window.height),

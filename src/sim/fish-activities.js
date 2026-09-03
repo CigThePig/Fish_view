@@ -102,8 +102,10 @@ function positiveModulo(value, modulus) {
 
 // How much of an authored strike rotation the pitch ceiling actually leaves.
 // Nose-down rotation is bounded at MAX_FISH_PITCH_DEGREES for every fish, and
-// the feeding lean has already spent most of it.
-function peckRotationHeadroom(grazeDegrees, peckDegrees) {
+// the feeding lean has already spent most of it. Exported because anything that
+// wants to pose a strike - the feeding measurement tool, the choreography lab's
+// editor bounds - has to compose the pair the same way the tank does.
+export function peckRotationHeadroom(grazeDegrees, peckDegrees) {
   const graze = Math.max(0, Number.isFinite(grazeDegrees) ? grazeDegrees : 0);
   const peck = Math.max(0, Number.isFinite(peckDegrees) ? peckDegrees : 0);
   return Math.min(peck, Math.max(0, MAX_FISH_PITCH_DEGREES - graze));

@@ -7,6 +7,7 @@
 
 import { SCENE_TUNING, STEERING_PROFILES } from "../sim/choreography-tuning.js";
 import { ACTIVITIES, DWELL_SECONDS } from "../sim/fish-activities.js";
+import { MAX_FISH_PITCH_DEGREES } from "../sim/fish-motion.js";
 import { showcaseScenario } from "./behavior-showcase.js";
 
 function field(key, label, hint, min, max, step) {
@@ -64,9 +65,30 @@ const SCENE_INTERVAL_PAIRS = Object.freeze([
   Object.freeze(["panicNearRows", "panicFarRows"]),
 ]);
 
+// Two rotations sharing one ceiling. Nose-down pitch is bounded at
+// MAX_FISH_PITCH_DEGREES for every fish, and a feeding fish spends it twice:
+// once on the lean it holds while grazing and again on the extra rotation at
+// the top of a strike. Left uncoupled, the pair is a slider whose top three
+// quarters do nothing - the simulation clamps the sum, so with a 26 degree lean
+// every peck rotation from 6 upwards drew exactly the same strike. Moving the
+// mate is how the panel says so: raise the strike and the lean gives way.
+const SCENE_CEILING_PAIRS = Object.freeze([
+  Object.freeze(["grazePitchDegrees", "peckPitchDegrees", MAX_FISH_PITCH_DEGREES]),
+]);
+
 // Scene ranges are intervals too. Keep the edited endpoint and move its mate
 // when necessary, exactly as the steering speed interval does.
 export function constrainedSceneEdit(profile, key, value) {
+  const ceiling = SCENE_CEILING_PAIRS.find(([first, second]) => (
+    (key === first || key === second) && first in profile && second in profile
+  ));
+  if (ceiling) {
+    const [first, second, limit] = ceiling;
+    const mate = key === first ? second : first;
+    const bounded = Math.max(0, Math.min(limit, value));
+    if (bounded + profile[mate] <= limit) return { [key]: bounded };
+    return { [key]: bounded, [mate]: limit - bounded };
+  }
   const pair = SCENE_INTERVAL_PAIRS.find(([minimum, maximum]) => (
     (key === minimum || key === maximum) && minimum in profile && maximum in profile
   ));
@@ -176,8 +198,8 @@ export const SCENE_FIELDS = Object.freeze({
     field("panicFarRows", "Panic · far", "rows at which the evader stops caring", 0, 10, 0.05),
   ]),
   "substrate-search": Object.freeze([
-    field("grazePitchDegrees", "Graze rotation", "degrees nose-down while feeding", 0, 32, 0.5),
-    field("peckPitchDegrees", "Peck rotation", "extra degrees at the top of a strike", 0, 32, 0.5),
+    field("grazePitchDegrees", "Graze rotation", "degrees nose-down while feeding · shares a ceiling with the strike", 0, MAX_FISH_PITCH_DEGREES, 0.5),
+    field("peckPitchDegrees", "Peck rotation", "extra degrees at the top of a strike · takes them from the lean", 0, MAX_FISH_PITCH_DEGREES, 0.5),
     field("grazeContactRows", "Substrate distance", "rows the mouth is allowed to meet the crest", -0.5, 1.5, 0.01),
     field("grazeBurialRows", "Substrate bite", "rows the underside may graze through the crest to get the mouth down", 0, 2, 0.01),
     field("peckRows", "Peck depth", "rows the strike drives the fish down", 0, 1.5, 0.01),

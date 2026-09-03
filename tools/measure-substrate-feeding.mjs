@@ -29,7 +29,7 @@ import { glyphsForObject } from "../src/render/scene.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import { CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
-import { ACTIVITIES, createActivityState } from "../src/sim/fish-activities.js";
+import { ACTIVITIES, createActivityState, peckRotationHeadroom } from "../src/sim/fish-activities.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { createAquariumState } from "../src/sim/state.js";
 
@@ -117,6 +117,16 @@ function poseStage(state, stage, pitch) {
 // ages either side of it that the debris and the contact mark are drawn at. A
 // frame posed at age zero shows a fish over clean sand, which is exactly the
 // frame that cannot answer whether feeding reads.
+// The posture a strike is drawn at: the feeding lean plus as much of the
+// authored peck rotation as the pitch ceiling leaves, composed exactly as
+// resolveActivityTarget() does. Posing the strike at the grazing angle instead
+// made every peckPitchDegrees setting measure and photograph identically, which
+// is the one field this tool exists to let someone author.
+function strikePitch(tuning, peck) {
+  return tuning.grazePitchDegrees
+    + peck * peckRotationHeadroom(tuning.grazePitchDegrees, tuning.peckPitchDegrees);
+}
+
 function strikeCycle(state, fish) {
   const at = (age) => forageActivity(
     { ...fish, activity: { ...fish.activity, ageRealSeconds: age } },
@@ -136,8 +146,10 @@ function strikeCycle(state, fish) {
   return { peak, debris };
 }
 
-function agedAt(fish, age) {
-  return { ...fish, activity: { ...fish.activity, ageRealSeconds: age } };
+function agedAt(fish, age, pitch = null) {
+  const posed = { ...fish, activity: { ...fish.activity, ageRealSeconds: age } };
+  if (pitch === null) return posed;
+  return { ...posed, visual: { ...posed.visual, pitch, targetPitch: pitch } };
 }
 
 function sceneWith(state, fish) {
@@ -174,7 +186,7 @@ function contactRows(state, fish, metrics, sprite) {
   };
 }
 
-export function measureFeeding(tuning = null) {
+export function measureFeeding(override = null) {
   const results = [];
   for (const orientation of ORIENTATIONS) {
     const config = orientationConfig(orientation);
@@ -184,13 +196,16 @@ export function measureFeeding(tuning = null) {
     };
     const state = {
       ...createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }),
-      ...(tuning ? { choreographyTuning: tuning } : {}),
+      ...(override ? { choreographyTuning: override } : {}),
     };
-    const pitch = sceneTuning(state, "substrate-search").grazePitchDegrees;
+    const tuning = sceneTuning(state, "substrate-search");
     for (const stage of rosterStages()) {
-      const grazing = poseStage(state, stage, pitch);
+      const grazing = poseStage(state, stage, tuning.grazePitchDegrees);
       const { peak } = strikeCycle(state, grazing);
-      const striking = { ...agedAt(grazing, peak.age), y: grazing.y + peak.forage.peckDisplacement };
+      const striking = {
+        ...agedAt(grazing, peak.age, strikePitch(tuning, peak.forage.peck)),
+        y: grazing.y + peak.forage.peckDisplacement,
+      };
       const { width, height } = spriteDimensions(stage);
       const rest = contactRows(state, grazing, metrics, stage);
       const hit = contactRows(state, striking, metrics, stage);
@@ -235,7 +250,7 @@ function report(results) {
 // One magnified strip per stage: the fish over its own sand, at rest on the
 // graze line and at the bottom of its deepest strike, with the crest drawn
 // across both so contact is something to look at rather than infer.
-async function writeSheet(target, only = null, tuning = null) {
+async function writeSheet(target, only = null, override = null) {
   const { createCanvas } = await loadCanvasModule();
   const { CanvasSceneRenderer } = await import("../src/render/canvas-renderer.js");
   const orientation = "landscape";
@@ -244,9 +259,9 @@ async function writeSheet(target, only = null, tuning = null) {
   const columnPixels = config.pixelWidth / config.cols;
   const state = {
     ...createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }),
-    ...(tuning ? { choreographyTuning: tuning } : {}),
+    ...(override ? { choreographyTuning: override } : {}),
   };
-  const pitch = sceneTuning(state, "substrate-search").grazePitchDegrees;
+  const tuning = sceneTuning(state, "substrate-search");
   const stages = only
     ? rosterStages().filter((stage) => only.includes(stage.id))
     : rosterStages();
@@ -272,10 +287,16 @@ async function writeSheet(target, only = null, tuning = null) {
   const renderer = new CanvasSceneRenderer(frame);
 
   for (const [row, stage] of stages.entries()) {
-    const grazing = poseStage(state, stage, pitch);
+    const grazing = poseStage(state, stage, tuning.grazePitchDegrees);
     const { peak, debris } = strikeCycle(state, grazing);
-    const striking = { ...agedAt(grazing, peak.age), y: grazing.y + peak.forage.peckDisplacement };
-    const settling = { ...agedAt(grazing, debris.age), y: grazing.y + debris.forage.peckDisplacement };
+    const striking = {
+      ...agedAt(grazing, peak.age, strikePitch(tuning, peak.forage.peck)),
+      y: grazing.y + peak.forage.peckDisplacement,
+    };
+    const settling = {
+      ...agedAt(grazing, debris.age, strikePitch(tuning, debris.forage.peck)),
+      y: grazing.y + debris.forage.peckDisplacement,
+    };
     const top = gap + row * (cropHeight * zoom + gap);
     const crest = substrateSurfaceY(state, grazing.x);
     const cropTop = Math.round((crest - cropRows + 1.6) * rowPixels);
@@ -314,7 +335,7 @@ if (isEntry) {
   const argumentsList = process.argv.slice(2);
   const sheet = optionValue(argumentsList, "--sheet", null);
   const only = optionValue(argumentsList, "--stages", null);
-  const tuning = tuningOverride(optionValue(argumentsList, "--tune", null));
-  report(measureFeeding(tuning));
-  if (sheet) await writeSheet(path.resolve(sheet), only ? only.split(",") : null, tuning);
+  const override = tuningOverride(optionValue(argumentsList, "--tune", null));
+  report(measureFeeding(override));
+  if (sheet) await writeSheet(path.resolve(sheet), only ? only.split(",") : null, override);
 }

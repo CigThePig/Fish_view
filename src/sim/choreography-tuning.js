@@ -232,6 +232,12 @@ export const STEERING_PROFILES = Object.freeze({
     approachRadius: 0.65,
     arrivalSpeedScale: 0.42,
     pitchResponse: 5,
+    // A feeding fish holds its feeding posture. Inheriting the controller
+    // default let the climb angle answer at full strength, so the drift back up
+    // after each strike cancelled most of the authored lean and the fish spent
+    // a twentieth of its grazing drawn at eighteen degrees rather than
+    // twenty-six - nose off the sand its graze line had been computed for.
+    pitchScale: 0.2,
   }),
   "open-water-rest": Object.freeze({
     accelerationResponse: 0.46,

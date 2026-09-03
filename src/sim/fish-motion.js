@@ -189,6 +189,30 @@ function inkReachRows(point, drop, lean) {
   return point.dy * drop + point.dx * lean;
 }
 
+// The lowest any of a set of ink points reaches once the drawing leans.
+function maxReachRows(points, drop, lean) {
+  let lowest = 0;
+  for (const point of points) {
+    const reach = inkReachRows(point, drop, lean);
+    if (reach > lowest) lowest = reach;
+  }
+  return lowest;
+}
+
+// The lean the renderer actually turns a drawing through, in radians, and the
+// two factors every reach is projected with. A fish turning through the glass
+// is drawn compressed and its lean is foreshortened to match, so both the
+// downward drop and the forward reach shrink with the turn.
+function leanProjection(pitchDegrees, turnScale) {
+  const turn = clamp(Number.isFinite(turnScale) ? turnScale : 1, 0, 1);
+  const pitch = clamp(Math.abs(Number.isFinite(pitchDegrees) ? pitchDegrees : 0), 0, MAX_FISH_PITCH_DEGREES)
+    * turn * Math.PI / 180;
+  return {
+    drop: Math.cos(pitch),
+    lean: Math.sin(pitch) * PITCH_CLEARANCE_FRACTION * (CELL_WIDTH / CELL_HEIGHT) * turn,
+  };
+}
+
 // Grazing is measured against the artwork, not against the swimming envelope.
 // The envelope above reserves room for a full-pitch rotation that the authored
 // pitch pose only partly performs, and reserves it at the largest depth scale
@@ -218,6 +242,7 @@ export function fishGrazeClearanceRows(
   visualScale = INDIVIDUAL_VISUAL_SCALE_MAX,
   contactRows = FORAGE_GRAZE_CONTACT_ROWS,
   burialRows = FORAGE_GRAZE_BURIAL_ROWS,
+  turnScale = 1,
 ) {
   const sprite = spriteFor(fishOrSprite);
   // A nose-down fish is longer than it is tall in the vertical direction that
@@ -231,20 +256,14 @@ export function fishGrazeClearanceRows(
   // diverge by more the larger the fish gets, because the point a box puts
   // furthest down when it leans - the bottom corner on the nose side - is empty
   // on every species and covers more empty rows the bigger the box is.
-  const pitch = clamp(Math.abs(Number.isFinite(pitchDegrees) ? pitchDegrees : 0), 0, MAX_FISH_PITCH_DEGREES)
-    * Math.PI / 180;
-  const lean = Math.sin(pitch) * PITCH_CLEARANCE_FRACTION * (CELL_WIDTH / CELL_HEIGHT);
-  const drop = Math.cos(pitch);
-  let underside = 0;
-  for (const point of spriteUndersideProfile(sprite)) {
-    const reach = inkReachRows(point, drop, lean);
-    if (reach > underside) underside = reach;
-  }
-  let mouth = 0;
-  for (const point of spriteMouthOffset(sprite).reach) {
-    const reach = inkReachRows(point, drop, lean);
-    if (reach > mouth) mouth = reach;
-  }
+  // A fish turning through the glass is drawn compressed, and a body seen close
+  // to edge-on has little length left to tilt: the renderer foreshortens the
+  // lean by the same turn scale it narrows the drawing by. Reserving the full
+  // authored lean through that held the fish at a clearance its own compressed
+  // drawing could not reach.
+  const { drop, lean } = leanProjection(pitchDegrees, turnScale);
+  const underside = maxReachRows(spriteUndersideProfile(sprite), drop, lean);
+  const mouth = maxReachRows(spriteMouthOffset(sprite).reach, drop, lean);
   const scale = clamp(
     Number.isFinite(visualScale) ? visualScale : INDIVIDUAL_VISUAL_SCALE_MAX,
     0,
@@ -292,10 +311,22 @@ export function mouthLeadColumns(fish, pitchDegrees, visualScale = 1) {
   const pitch = clamp(Number.isFinite(pitchDegrees) ? pitchDegrees : 0, -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES)
     * Math.PI / 180;
   const pose = turnPose(fish);
-  // The same rotation the renderer applies, done in row units and converted
-  // back: a lean shortens the reach forward as it lengthens the reach down.
-  const forward = mouth.dx * Math.cos(pitch) - mouth.dy * Math.sin(pitch) * (CELL_HEIGHT / CELL_WIDTH);
+  // The same rotation the renderer applies, foreshortened by the same turn and
+  // done in row units and converted back: a lean shortens the reach forward as
+  // it lengthens the reach down, and a compressed body has less of both.
+  const angle = pitch * pose.widthScale;
+  const forward = mouth.dx * Math.cos(angle) - mouth.dy * Math.sin(angle) * (CELL_HEIGHT / CELL_WIDTH);
   return forward * pose.widthScale * (pose.facing < 0 ? -1 : 1) * visualScale;
+}
+
+// How far the fish's mouth reaches below its own centre once the drawing leans,
+// in rows before any depth scale. The turn is part of the answer: the renderer
+// compresses a body turning through the glass to a third of its width and
+// foreshortens its lean to match, so a fish caught mid-turn has a nose that no
+// longer reaches the sand however low its centre is.
+export function fishMouthReachRows(fishOrSprite, pitchDegrees, turnScale = 1) {
+  const { drop, lean } = leanProjection(pitchDegrees, turnScale);
+  return maxReachRows(spriteMouthOffset(spriteFor(fishOrSprite)).reach, drop, lean);
 }
 
 export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
@@ -311,6 +342,7 @@ export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
   // drawn against the terrain under the mouth. This is the same sample.
   const tuning = sceneTuning(state, "substrate-search");
   const scale = individualVisualScale(fish, index, state);
+  const turnScale = turnPose(fish).widthScale;
   const mouthX = worldX + mouthLeadColumns(fish, tuning.grazePitchDegrees, scale);
   return substrateSurfaceY(state, mouthX)
     - fishGrazeClearanceRows(
@@ -319,6 +351,7 @@ export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
       scale,
       tuning.grazeContactRows,
       tuning.grazeBurialRows,
+      turnScale,
     );
 }
 
@@ -342,9 +375,38 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   const surfaceY = substrateSurfaceY(state, fish.x);
   const targetY = substrateGrazeY(fish, state, fish.x, index);
   const distanceRows = Math.abs(fish.y - targetY);
+  // Working the substrate: the fish is on its graze line, in the feeding
+  // posture it holds there. This is measured against the authored lean rather
+  // than the fish's live pitch, because the fish only adopts that lean while it
+  // is searching - reading its instantaneous angle back here would mean it
+  // could never start.
   const searching = eligible
     && fish.behavior?.current === "forage"
     && distanceRows <= tuning.searchDistanceRows;
+
+  // Striking is a narrower claim, and it is about the nose the fish is actually
+  // drawn with rather than the posture it is heading for. Two things move that
+  // nose off the sand while the fish is otherwise perfectly placed: the pitch
+  // eases in over a fraction of a second and is pulled about by the fish's own
+  // trajectory, so a settled grazer is often drawn leaning eight degrees rather
+  // than twenty-six; and a fish turning through the glass is compressed to a
+  // third of its width with its lean foreshortened to match. Either way its
+  // mouth can sit half a row above the crest - and a strike from there threw a
+  // bright contact mark and a puff of silt at ground the fish was nowhere near.
+  //
+  // There is no feedback loop to worry about here: the lean answers `searching`
+  // above, and this only decides whether the nose has arrived yet. It gates the
+  // strike and the bright contact mark that goes with it, and deliberately not
+  // the debris: silt already lifted into the water does not vanish because the
+  // fish that raised it has since lifted its nose, and reconstructing the tail
+  // from the contact of the moment would blink it out mid-rise.
+  const scale = individualVisualScale(fish, index, state);
+  const pose = turnPose(fish);
+  const drawnPitch = Number.isFinite(fish.visual?.pitch) ? fish.visual.pitch : 0;
+  const mouthX = fish.x + mouthLeadColumns(fish, drawnPitch, scale);
+  const mouthY = fish.y + fishMouthReachRows(fish, drawnPitch, pose.widthScale) * scale;
+  const contacting = searching
+    && Math.abs(substrateSurfaceY(state, mouthX) - mouthY) <= tuning.searchDistanceRows;
 
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);
@@ -366,7 +428,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
     const start = pattern[event] * period;
     const duration = sampleRange(fish.seed, 4610 + event, 0.3, 0.46);
     const elapsed = cycleSeconds - start;
-    if (searching && elapsed >= 0 && elapsed < duration) {
+    if (contacting && elapsed >= 0 && elapsed < duration) {
       peckPhase = elapsed / duration;
       peckEvent = event;
     }
@@ -393,6 +455,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   return {
     eligible,
     searching,
+    contacting,
     peck,
     peckPhase,
     peckEvent,
