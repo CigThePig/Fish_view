@@ -326,10 +326,32 @@ async function writeSheet(target, only = null, override = null) {
         cropLeft, cropTop, cropWidth, cropHeight,
         left, top, cropWidth * zoom, cropHeight * zoom,
       );
-      // The crest the fish is supposed to be working, drawn where the
-      // simulation believes it is.
+      // The crest the fish is supposed to be working, drawn as the contour it
+      // actually is rather than as one height sampled under the fish's centre.
+      // The terrain is not flat, a grown mouth leads that centre by two to
+      // three columns, and the strike rotation moves it again - so a ruled line
+      // at the centre's height contradicts the measurement beside it by more
+      // than a tenth of a row on some stages, which is exactly the size of the
+      // thing being judged.
       ink.fillStyle = "rgba(255,96,96,0.75)";
-      ink.fillRect(left, top + (crest * rowPixels - cropTop) * zoom, cropWidth * zoom, 1);
+      for (let pixel = 0; pixel < cropWidth * zoom; pixel += 1) {
+        const worldX = (cropLeft + pixel / zoom) / columnPixels;
+        const y = substrateSurfaceY(state, worldX) * rowPixels - cropTop;
+        ink.fillRect(left + pixel, top + y * zoom, 1, 1);
+      }
+      // Where this panel's own mouth sits along it, which is the point the
+      // numbers in the table are measured at.
+      const posedScene = sceneWith(state, fish);
+      const posedObject = posedScene.objects
+        .find((candidate) => candidate.id.startsWith(`individual:${SUBJECT_INDEX}:`));
+      const posedMouth = glyphsForObject(posedScene, posedObject)[spriteMouthOffset(stage).glyph];
+      if (posedMouth) {
+        const mouthX = (posedMouth.x + CELL_WIDTH * posedMouth.scaleX / 2) / columnPixels;
+        const markX = (mouthX * columnPixels - cropLeft) * zoom;
+        const markY = (substrateSurfaceY(state, mouthX) * rowPixels - cropTop) * zoom;
+        ink.fillStyle = "rgba(255,214,96,0.95)";
+        ink.fillRect(left + markX - 1, top + markY - 4, 2, 9);
+      }
     }
   }
 

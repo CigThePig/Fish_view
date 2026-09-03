@@ -404,12 +404,25 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   const tuning = sceneTuning(state, "substrate-search");
   const surfaceY = substrateSurfaceY(state, fish.x);
   const targetY = substrateGrazeY(fish, state, fish.x, index);
-  const distanceRows = Math.abs(fish.y - targetY);
   // Working the substrate: the fish is on its graze line, in the feeding
   // posture it holds there. This is measured against the authored lean rather
   // than the fish's live pitch, because the fish only adopts that lean while it
   // is searching - reading its instantaneous angle back here would mean it
   // could never start.
+  //
+  // One-sided, for the same reason the strike gate below is: only a fish held
+  // *above* its graze line has stopped working the substrate. `fish.y` already
+  // carries the plunge the last tick applied, so measuring the distance either
+  // way let a deep enough strike push the fish out of its own search band -
+  // the band closes, the peck reads zero, the clamp lifts the fish back, and
+  // the strike stutters. The default peck is shallow enough to stay inside the
+  // band by three hundredths of a row, so this never showed in the tank; the
+  // choreography lab exposes peck depths up to 1.5 rows, where it broke 78% of
+  // strike arcs. A margin that thin is a latent bug, not a design.
+  //
+  // Nothing else stops a grazing fish being far below its line: the tick clamps
+  // it to the line before adding the plunge, and the plunge is bounded.
+  const distanceRows = targetY - fish.y;
   const searching = eligible
     && fish.behavior?.current === "forage"
     && distanceRows <= tuning.searchDistanceRows;
