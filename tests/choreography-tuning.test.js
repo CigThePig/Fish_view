@@ -36,11 +36,14 @@ import {
   choreographyFor,
 } from "../src/sim/fish-choreography.js";
 import {
+  MAX_FISH_PITCH_DEGREES,
+  FORAGE_GRAZE_BURIAL_ROWS,
   FORAGE_GRAZE_CONTACT_ROWS,
   FORAGE_PECK_ROWS,
   FORAGE_PITCH_BIAS_DEGREES,
   FORAGE_ROUTE_LEAD_COLUMNS,
   FORAGE_SEARCH_DISTANCE_ROWS,
+  FORAGE_STRIKE_REACH_ROWS,
   SURFACE_PITCH_BIAS_DEGREES,
   substrateGrazeY,
 } from "../src/sim/fish-motion.js";
@@ -64,9 +67,11 @@ test("scene tuning starts at the constants the simulation used to inline", () =>
   const forage = SCENE_TUNING[ACTIVITIES.substrateSearch];
   assert.equal(forage.grazePitchDegrees, FORAGE_PITCH_BIAS_DEGREES);
   assert.equal(forage.grazeContactRows, FORAGE_GRAZE_CONTACT_ROWS);
+  assert.equal(forage.grazeBurialRows, FORAGE_GRAZE_BURIAL_ROWS);
   assert.equal(forage.peckRows, FORAGE_PECK_ROWS);
   assert.equal(forage.routeLeadColumns, FORAGE_ROUTE_LEAD_COLUMNS);
   assert.equal(forage.searchDistanceRows, FORAGE_SEARCH_DISTANCE_ROWS);
+  assert.equal(forage.strikeReachRows, FORAGE_STRIKE_REACH_ROWS);
   assert.equal(SCENE_TUNING[ACTIVITIES.surfaceInvestigate].pitchBiasDegrees, SURFACE_PITCH_BIAS_DEGREES);
   const chase = SCENE_TUNING[ACTIVITIES.playfulChase];
   assert.equal(chase.recognitionRadiusRows, CHASE_RECOGNITION_RADIUS);
@@ -145,6 +150,83 @@ test("velocity matching is shown only for profiles whose targets carry velocity"
   assert.equal(hasVelocityMatch("companion-cruise:mutual"), true);
 });
 
+test("the two feeding rotations move each other rather than going inert", () => {
+  // They share one ceiling, and the simulation clamps their sum. Uncoupled, the
+  // editor exposed a slider whose top three quarters drew nothing: with the
+  // authored 26 degree lean, every peck rotation from 6 upwards produced the
+  // same strike. Moving the mate is how the panel says the ceiling is there.
+  const profile = { grazePitchDegrees: 26, peckPitchDegrees: 6 };
+  assert.deepEqual(constrainedSceneEdit(profile, "peckPitchDegrees", 4), { peckPitchDegrees: 4 });
+  assert.deepEqual(
+    constrainedSceneEdit(profile, "peckPitchDegrees", 20),
+    { peckPitchDegrees: 20, grazePitchDegrees: MAX_FISH_PITCH_DEGREES - 20 },
+  );
+  assert.deepEqual(
+    constrainedSceneEdit(profile, "grazePitchDegrees", 30),
+    { grazePitchDegrees: 30, peckPitchDegrees: MAX_FISH_PITCH_DEGREES - 30 },
+  );
+  // Whatever is asked for, what comes back fits.
+  for (const value of [0, 6, 15, 32, 60]) {
+    for (const key of ["grazePitchDegrees", "peckPitchDegrees"]) {
+      const edited = { ...profile, ...constrainedSceneEdit(profile, key, value) };
+      assert.ok(
+        edited.grazePitchDegrees + edited.peckPitchDegrees <= MAX_FISH_PITCH_DEGREES + 1e-9,
+        `${key} = ${value} left ${edited.grazePitchDegrees} + ${edited.peckPitchDegrees} over the ceiling`,
+      );
+      assert.ok(edited.grazePitchDegrees >= 0 && edited.peckPitchDegrees >= 0);
+    }
+  }
+});
+
+test("the authored feeding rotations fit the pitch ceiling between them", () => {
+  // Nose-down rotation is bounded at MAX_FISH_PITCH_DEGREES for every fish, and
+  // the graze lean and the strike's extra rotation share that one ceiling. When
+  // the pair over-ran it the excess was silently clipped in tickVisualPose():
+  // a 28-degree lean with an 11-degree peck drew a 4-degree strike, and every
+  // peckPitchDegrees from 4 to 32 produced exactly the same frame. The authored
+  // pair has to fit, so that the numbers in the tuning table are the rotations
+  // the panel receives.
+  const forage = SCENE_TUNING[ACTIVITIES.substrateSearch];
+  assert.ok(
+    forage.grazePitchDegrees + forage.peckPitchDegrees <= MAX_FISH_PITCH_DEGREES,
+    `graze ${forage.grazePitchDegrees} + peck ${forage.peckPitchDegrees} exceeds the `
+    + `${MAX_FISH_PITCH_DEGREES} degree ceiling, so most of the strike would be clipped`,
+  );
+
+  // And a setting that does over-run is bounded where it is composed rather
+  // than at the clamp, so the lab shows a capped strike instead of a silent one.
+  const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const grazing = {
+    ...base.individuals[4],
+    y: substrateGrazeY(base.individuals[4], base, base.individuals[4].x, 4),
+    behavior: { current: "forage", previous: "forage", blend: 1, ageSeconds: 9, ageRealSeconds: 9 },
+    activity: {
+      current: ACTIVITIES.substrateSearch,
+      previous: ACTIVITIES.substrateSearch,
+      ageRealSeconds: 6,
+      targetType: null,
+      targetId: null,
+      targetX: null,
+      targetY: null,
+    },
+  };
+  const state = { ...base, individuals: base.individuals.map((f, i) => (i === 4 ? grazing : f)) };
+  const withPeck = (peckPitchDegrees) => resolveActivityTarget(grazing, 4, {
+    ...state,
+    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { peckPitchDegrees } } },
+  }, grazing.activity).postureBias;
+  assert.ok(withPeck(0) <= withPeck(6), "a larger peck rotation has to lean the fish further");
+  assert.equal(
+    withPeck(40),
+    withPeck(MAX_FISH_PITCH_DEGREES - SCENE_TUNING[ACTIVITIES.substrateSearch].grazePitchDegrees),
+    "a peck rotation past the ceiling has to saturate at the headroom, not past it",
+  );
+  assert.ok(
+    withPeck(40) <= MAX_FISH_PITCH_DEGREES,
+    "the composed feeding posture has to stay inside the rotation ceiling",
+  );
+});
+
 test("bottom feeding answers its rotation and distance tuning", () => {
   const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
   const fish = base.individuals[4];
@@ -173,12 +255,16 @@ test("bottom feeding answers its rotation and distance tuning", () => {
   };
   const state = { ...base, individuals: base.individuals.map((f, i) => (i === 4 ? grazing : f)) };
   const level = resolveActivityTarget(grazing, 4, state, grazing.activity);
-  const steep = resolveActivityTarget(grazing, 4, {
+  // Authored against a shallower lean rather than a steeper one: the feeding
+  // posture is already four degrees short of the rotation ceiling, so there is
+  // no room above it to move a fish through and still be reading the tuning
+  // rather than the clamp.
+  const shallow = resolveActivityTarget(grazing, 4, {
     ...state,
-    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { grazePitchDegrees: 30 } } },
+    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { grazePitchDegrees: 12 } } },
   }, grazing.activity);
-  assert.ok(level.forageSearching && steep.forageSearching, "the fish has to be grazing for this to mean anything");
-  assert.ok(steep.postureBias > level.postureBias + 9, "graze rotation has to reach the posture the renderer draws");
+  assert.ok(level.forageSearching && shallow.forageSearching, "the fish has to be grazing for this to mean anything");
+  assert.ok(level.postureBias > shallow.postureBias + 9, "graze rotation has to reach the posture the renderer draws");
 });
 
 test("chase tuning moves both fish, not only the chaser", () => {

@@ -232,6 +232,12 @@ export const STEERING_PROFILES = Object.freeze({
     approachRadius: 0.65,
     arrivalSpeedScale: 0.42,
     pitchResponse: 5,
+    // A feeding fish holds its feeding posture. Inheriting the controller
+    // default let the climb angle answer at full strength, so the drift back up
+    // after each strike cancelled most of the authored lean and the fish spent
+    // a twentieth of its grazing drawn at eighteen degrees rather than
+    // twenty-six - nose off the sand its graze line had been computed for.
+    pitchScale: 0.2,
   }),
   "open-water-rest": Object.freeze({
     accelerationResponse: 0.46,
@@ -396,13 +402,18 @@ export const SCENE_TUNING = Object.freeze({
     panicFarRows: 3.6,
   }),
   // Rotation and distance are the whole read of bottom feeding: the nose has to
-  // point into the sand, and the belly has to be close enough to reach it.
+  // point into the sand, and the mouth has to be close enough to reach it. The
+  // bite is what that costs - how far the underside may pass through the crest
+  // to put the mouth there - and the search band is a contact band, not an
+  // approach one, because everything downstream of it claims the fish is eating.
   "substrate-search": Object.freeze({
-    grazePitchDegrees: 20,
-    peckPitchDegrees: 11,
+    grazePitchDegrees: 26,
+    peckPitchDegrees: 6,
     grazeContactRows: 0.06,
+    grazeBurialRows: 1.25,
     peckRows: 0.3,
-    searchDistanceRows: 0.82,
+    searchDistanceRows: 0.45,
+    strikeReachRows: 0.3,
     routeLeadColumns: 1.15,
     searchSpanColumns: 6.8,
     searchSpeed: 0.105,

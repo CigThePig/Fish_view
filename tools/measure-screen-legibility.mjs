@@ -42,7 +42,9 @@ const { render } = await import(url("src/render/render.js"));
 const { scenePalette } = await import(url("src/render/palette.js"));
 const { glyphsForObject } = await import(url("src/render/scene.js"));
 const { glyphPixelRects } = await import(url("src/render/glyph-raster.js"));
-const { forageActivity } = await import(url("src/sim/fish-motion.js"));
+const { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_PECK_ROWS, forageActivity } = await import(url("src/sim/fish-motion.js"));
+const { spriteForFish } = await import(url("src/sim/fish-growth.js"));
+const { spriteMouthOffset } = await import(url("src/art/sprites.js"));
 const { substrateSurfaceY } = await import(url("src/sim/environment.js"));
 const { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } = await import(url("src/sim/config.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
@@ -52,7 +54,35 @@ const STEP_SECONDS = 0.1;
 const failures = [];
 const canvasCache = new Map();
 
+// How far the fish's mouth sits above the crest under it, in pixels. Feeding is
+// a statement about the mouth: it is what the fish eats with, and where the
+// puff of silt is drawn from. The lowest ink of the whole drawing answers a
+// different question - on a five-row adult the two are two rows apart, which is
+// how a fish could measure as touching the sand while its mouth hung over it.
+// It is also sampled against the crest under the mouth rather than under the
+// fish. A grown fish's nose leads its centre by two to three columns and the
+// relief moves across that span, so measuring the mouth against the centre's
+// terrain grades the gap at the wrong ground - and it is the crest under the
+// mouth that the simulation places the fish against and the contact mark is
+// drawn on.
+function mouthContact(scene, object, sprite, metrics) {
+  const glyph = glyphsForObject(scene, object)[spriteMouthOffset(sprite).glyph];
+  if (!glyph) return { ink: lowestInk(scene, object), worldX: null };
+  let lowest = Number.NEGATIVE_INFINITY;
+  for (const rectangle of glyphPixelRects(glyph)) lowest = Math.max(lowest, rectangle.y + rectangle.height);
+  return {
+    ink: lowest,
+    worldX: (glyph.x + CELL_WIDTH * glyph.scaleX / 2) / metrics.cellWidth,
+  };
+}
+
 // The lowest pixel an object paints: its opaque body and its rotated glyph ink.
+function mouthGapRows(state, scene, object, fish, metrics) {
+  const contact = mouthContact(scene, object, spriteForFish(fish), metrics);
+  const worldX = contact.worldX ?? fish.x;
+  return substrateSurfaceY(state, worldX) - contact.ink / metrics.cellHeight;
+}
+
 function lowestInk(scene, object) {
   let lowest = Number.NEGATIVE_INFINITY;
   for (const span of object.fill ?? []) lowest = Math.max(lowest, span.y + span.height);
@@ -179,11 +209,12 @@ for (const [key, value] of motion) {
 // --- B. The feeding strike ---------------------------------------------------
 
 report("Feeding strike (production tank)");
-console.log("orientation  plunge px  ink gap rows  debris glyphs  debris contrast  strike repaint");
+console.log("orientation  plunge px  mouth gap  belly gap  debris glyphs  debris contrast  strike repaint");
 for (const orientation of ["landscape", "portrait"]) {
   let state = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
   const config = orientationConfig(orientation);
   const cellHeight = config.pixelHeight / config.rows;
+  const cellWidth = config.pixelWidth / config.cols;
   let best = null;
   let rest = null;
   let window = null;
@@ -220,6 +251,7 @@ for (const orientation of ["landscape", "portrait"]) {
         // one reserved the lean as well - so this read as contact while the
         // fish was in fact hovering. Bounds are the tight raster now, but the
         // ink is what a person sees either way.
+        mouthGap: mouthGapRows(state, scene, object, fish, { cellWidth, cellHeight }),
         bellyGap: substrateSurfaceY(state, fish.x) - lowestInk(scene, object) / cellHeight,
         debris: debris ? scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount) : [],
         image: pixels(canvas, window.x, window.y, window.width, window.height),
@@ -265,7 +297,7 @@ for (const orientation of ["landscape", "portrait"]) {
   const silhouette = best.peak.bounds.width * best.peak.bounds.height;
   const repaintShare = changed / Math.max(1, silhouette);
   console.log(
-    `${orientation.padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.bellyGap.toFixed(2).padStart(15)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${`${changed} (${(repaintShare * 100).toFixed(0)}%)`.padStart(14)}`,
+    `${orientation.padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.mouthGap.toFixed(2).padStart(10)} ${best.peak.bellyGap.toFixed(2).padStart(10)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${`${changed} (${(repaintShare * 100).toFixed(0)}%)`.padStart(14)}`,
   );
   if (plunge < 6) failures.push(`${orientation}: a feeding strike moves the fish ${plunge.toFixed(1)}px down the panel`);
   // Graded against the ink, so the number is calibrated to where the fish is
@@ -273,7 +305,10 @@ for (const orientation of ["landscape", "portrait"]) {
   // 0.90 rows of clear water under a threshold of 0.45 while the box-based
   // figure read 0.17: the check was passing on a fish that never touched the
   // sand. The contact mark and the debris puff close the last of the gap.
-  if (best.peak.bellyGap > 1.15) failures.push(`${orientation}: a feeding fish hovers ${best.peak.bellyGap.toFixed(2)} rows above the substrate`);
+  if (best.peak.mouthGap > 0.35) failures.push(`${orientation}: a feeding fish strikes with its mouth ${best.peak.mouthGap.toFixed(2)} rows above the substrate`);
+  if (best.peak.bellyGap < -(FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35)) {
+    failures.push(`${orientation}: a feeding fish buries ${(-best.peak.bellyGap).toFixed(2)} rows of itself in the substrate`);
+  }
   if (best.peak.debris.length < 4) failures.push(`${orientation}: a feeding strike raised ${best.peak.debris.length} debris glyphs`);
   if (debrisContrast < 0.3) failures.push(`${orientation}: debris sits ${(debrisContrast * 100).toFixed(0)}% off the substrate it lands on`);
   if (repaintShare < 0.1) {

@@ -17,12 +17,16 @@ import {
   resolveActivityTarget,
 } from "../src/sim/fish-activities.js";
 import {
+  FORAGE_GRAZE_BURIAL_ROWS,
+  FORAGE_PECK_ROWS,
   FORAGE_PITCH_BIAS_DEGREES,
   forageActivity,
   substrateGrazeY,
   substrateSafeY,
   surfaceSafeY,
 } from "../src/sim/fish-motion.js";
+import { spriteMouthOffset } from "../src/art/sprites.js";
+import { spriteForFish } from "../src/sim/fish-growth.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
 import { createAquariumState, withSettings } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
@@ -369,28 +373,38 @@ test("the peck meets the substrate crest without burying the fish", () => {
     const scene = render(state);
     const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
     assert.ok(object);
-    const glyphBottom = Math.max(...glyphsForObject(scene, object).map((glyph) => {
+    const glyphs = glyphsForObject(scene, object);
+    const bottomOf = (list) => Math.max(...list.map((glyph) => {
       const bounds = glyphBounds(glyph);
       return bounds.y + bounds.height;
     }));
-    const fillBottom = Math.max(...object.fill.map((span) => span.y + span.height));
-    const visibleBottom = Math.max(glyphBottom, fillBottom);
     const rowPixels = scene.height / state.rows;
     const terrainPixels = substrateSurfaceY(state, x) * rowPixels;
-    // A feeding fish is meant to reach into the crest - that contact is the
-    // whole cue - but no further than the shallow relief it is nosing through.
+    // What has to meet the sand is the mouth. It is what the fish eats with and
+    // where the puff of silt is drawn from, and on anything past a fry it is
+    // nowhere near the lowest part of the drawing - so grading the lowest ink
+    // graded the belly fin and let the mouth drift a body's depth into open
+    // water as a fish grew.
+    const mouth = glyphs[spriteMouthOffset(spriteForFish(fish)).glyph];
+    assert.ok(mouth, "the fish was drawn without the glyph its artwork calls its mouth");
+    const mouthEntered = (bottomOf([mouth]) - terrainPixels) / rowPixels;
+    assert.ok(
+      mouthEntered >= -0.4,
+      `${orientation} peck left the mouth ${(-mouthEntered).toFixed(2)} rows clear of the substrate it feeds from`,
+    );
+    assert.ok(
+      mouthEntered <= 0.6,
+      `${orientation} peck drove the mouth ${mouthEntered.toFixed(2)} rows under the crest`,
+    );
+    // Getting the mouth down there costs body: the underside passes through the
+    // crest, which is what a fish nosing into sand looks like. It may not go so
+    // far that the drawing is sitting in the floor, and the whole shallow relief
+    // it works is about two rows deep.
+    const visibleBottom = Math.max(bottomOf(glyphs), ...object.fill.map((span) => span.y + span.height));
     const entered = (visibleBottom - terrainPixels) / rowPixels;
     assert.ok(
-      entered <= 0.6,
+      entered <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
       `${orientation} peck buried the fish ${entered.toFixed(2)} rows into the substrate`,
-    );
-    // This poses one fish at one angle; the seed sweep in review-regressions
-    // grades real ticks across four tanks and both orientations and is the
-    // tighter guard. What this one still catches is a clearance that has
-    // drifted far enough to leave a feeding fish in open water.
-    assert.ok(
-      entered >= -0.45,
-      `${orientation} peck stayed ${(-entered).toFixed(2)} rows clear of the substrate it feeds from`,
     );
   }
 });

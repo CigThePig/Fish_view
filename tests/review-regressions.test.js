@@ -9,10 +9,14 @@ import {
 import { scenePalette } from "../src/render/palette.js";
 import { individualSprites, render, renderSpriteScene } from "../src/render/render.js";
 import { applyBodyProfileToSpriteScene, bodyProfileForSprite } from "../src/render/body-profile-lab.js";
-import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { isSupportedGlyph } from "../src/art/bitmap-font.js";
 import { SPIN_STEP_DEGREES, glyphPixelRects, spinDegrees } from "../src/render/glyph-raster.js";
 import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
 import { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
+import { growthStagesFor, spriteDimensions, spriteMouthOffset } from "../src/art/sprites.js";
+import { spriteForFish } from "../src/sim/fish-growth.js";
+import { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_GRAZE_CONTACT_ROWS, FORAGE_PECK_ROWS } from "../src/sim/fish-motion.js";
+import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import {
   ACTIVITIES,
   DWELL_SECONDS,
@@ -21,6 +25,7 @@ import {
   schoolSummary,
   socialEngagement,
 } from "../src/sim/fish-activities.js";
+import { latchForageContact } from "../src/sim/fish-activities.js";
 import { CHASE_BREAK_SECONDS, steerActivityVelocity } from "../src/sim/fish-choreography.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
@@ -172,16 +177,23 @@ test("debris keeps the seed of the peck that raised it when the next peck overla
     y: substrateGrazeY(resting, state, resting.x),
     behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
   };
-  const phaseAt = (ageRealSeconds) => forageActivity(fish, index, state, {
-    ...createActivityState(ACTIVITIES.substrateSearch),
-    ageRealSeconds,
-  });
+  // Silt belongs to a strike that landed, and only the tick knows which did, so
+  // it latches the contacting event on the activity. A fixture that never went
+  // through a tick has to keep the same latch or it has no debris at all.
+  let activity = createActivityState(ACTIVITIES.substrateSearch);
+  const phaseAt = (ageRealSeconds) => forageActivity(fish, index, state, { ...activity, ageRealSeconds });
+  const advanceTo = (ageRealSeconds) => {
+    const phase = phaseAt(ageRealSeconds);
+    activity = latchForageContact({ ...activity, ageRealSeconds }, phase);
+    return phase;
+  };
 
   let overlaps = 0;
+  let previousSeed = null;
   for (let age = 0; age < 40; age += 0.05) {
-    const phase = phaseAt(age);
+    const phase = advanceTo(age);
     assert.ok(phase.searching, "the fish is parked on the substrate and should be foraging");
-    if (phase.debrisPhase === null) continue;
+    if (phase.debrisPhase === null) { previousSeed = null; continue; }
     // The salt the renderer draws from must name the event whose tail is on
     // screen, not whichever peck the fish happens to be performing over it.
     assert.ok(Number.isInteger(phase.debrisSeed), "debris has no salt of its own to draw from");
@@ -192,7 +204,8 @@ test("debris keeps the seed of the peck that raised it when the next peck overla
       phase.eventSeed,
       "an overlapping peck reused its own salt for the previous peck's debris",
     );
-    assert.equal(phase.debrisSeed, phaseAt(age - 0.05).debrisSeed);
+    if (previousSeed === null) { previousSeed = phase.debrisSeed; continue; }
+    assert.equal(phase.debrisSeed, previousSeed);
   }
   assert.ok(overlaps > 0, "seed 9 no longer pecks closely enough to overlap a debris tail");
 });
@@ -285,20 +298,22 @@ test("a feeding puff stands off the sand it is lifted from", () => {
   assert.ok(sampled > 0, "seed 9 never raised any debris to measure");
 });
 
-test("a strike reaches into the substrate crest without burying the fish, on every seed", () => {
-  // The clearance model works from the sprite's authored box; the renderer draws
-  // the opaque body from a box of its own, with the tail excluded, a swell
-  // added, and a per-sprite scale. The two do not agree to better than about a
-  // third of a row, and the simulation deliberately cannot see the second one -
-  // so the guard has to be the rendered frame, over enough tanks to catch the
-  // sprite that sits furthest from the model. Seed 192's juvenile box-fin was
-  // burying a whole row before the pitched width entered the clearance.
+test("a strike puts the mouth in the sand without burying the fish, on every seed", () => {
+  // The clearance model works from the sprite's authored cells; the renderer
+  // draws the opaque body from a box of its own, with the tail excluded, a
+  // swell added, and a per-sprite scale. The simulation deliberately cannot see
+  // the second one - so the guard has to be the rendered frame, over enough
+  // tanks to catch the sprite that sits furthest from the model. Both halves
+  // matter and they pull against each other: a strike that does not put the
+  // mouth in the sand is a fish miming a meal, and one that puts the whole
+  // drawing there is a fish in the floor.
   for (const seed of [192, 444, 9, DEFAULT_SEED]) {
     for (const orientation of ["landscape", "portrait"]) {
       const config = orientationConfig(orientation);
       const rowPixels = config.pixelHeight / config.rows;
       let state = createAquariumState({ orientation, seed, wallClockHours: 12 });
       let deepest = null;
+      let shyest = null;
       for (let step = 0; step < 4000; step += 1) {
         state = tick(state, 0.1);
         for (const [index, fish] of state.individuals.entries()) {
@@ -309,14 +324,29 @@ test("a strike reaches into the substrate crest without burying the fish, on eve
           if (!object?.fill?.length) continue;
           const entered = Math.max(...object.fill.map((span) => span.y + span.height)) / rowPixels
             - substrateSurfaceY(state, fish.x);
-          if (!deepest || entered > deepest) deepest = entered;
+          if (deepest === null || entered > deepest) deepest = entered;
+          const glyphs = glyphsForObject(scene, object);
+          const mouth = glyphs[spriteMouthOffset(spriteForFish(fish)).glyph];
+          if (!mouth) continue;
+          // The mouth against the crest beneath the mouth. It leads the fish's
+          // centre by two to three columns on a grown fish, and the relief moves
+          // across that span, so the centre's ground would grade this against
+          // terrain the fish is not feeding from.
+          const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / (config.pixelWidth / config.cols);
+          const reached = Math.max(...glyphPixelRects(mouth).map((rectangle) => rectangle.y + rectangle.height))
+            / rowPixels - substrateSurfaceY(state, mouthX);
+          if (shyest === null || reached < shyest) shyest = reached;
         }
         if (deepest !== null && step > 3000) break;
       }
       if (deepest === null) continue;
       assert.ok(
-        deepest <= 0.6,
+        deepest <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
         `${orientation} seed ${seed} buried a feeding fish ${deepest.toFixed(2)} rows into the substrate`,
+      );
+      assert.ok(
+        shyest >= -0.4,
+        `${orientation} seed ${seed} struck with its mouth ${(-shyest).toFixed(2)} rows clear of the sand`,
       );
     }
   }
@@ -329,6 +359,7 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   const orientation = "landscape";
   const config = orientationConfig(orientation);
   const rowPixels = config.pixelHeight / config.rows;
+  const cellWidth = config.pixelWidth / config.cols;
   const base = createAquariumState({ orientation, seed: 2, wallClockHours: 12 });
   const index = 3;
   const resting = base.individuals[index];
@@ -364,13 +395,26 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   };
   const scene = render(state);
   const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
-  const lowestInk = Math.max(
-    ...glyphsForObject(scene, object)
-      .flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
+  const glyphs = glyphsForObject(scene, object);
+  const bottomOf = (list) => Math.max(
+    ...list.flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
   ) / rowPixels;
-  const gap = substrateSurfaceY(state, feeding.x) - lowestInk;
-  assert.ok(gap <= 0.55, `far feeding ink hovered ${gap.toFixed(2)} rows above its contact mark`);
-  assert.ok(gap >= -0.6, `far feeding ink buried ${(-gap).toFixed(2)} rows into the substrate`);
+  // The mouth against the crest under the mouth. Both halves of that matter at
+  // this distance: the fish is drawn near 0.72x, so a reserve taken at the
+  // global maximum scale left it a row of clear water, and its nose leads its
+  // centre by more than two columns, so a crest sampled at the centre is not
+  // the crest its own contact mark is drawn against.
+  const mouth = glyphs[spriteMouthOffset(spriteForFish(feeding)).glyph];
+  const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / cellWidth;
+  const gap = substrateSurfaceY(state, mouthX) - bottomOf([mouth]);
+  assert.ok(gap <= 0.35, `far feeding mouth hovered ${gap.toFixed(2)} rows above its contact mark`);
+  assert.ok(gap >= -0.6, `far feeding mouth drove ${(-gap).toFixed(2)} rows under the crest`);
+  // Reaching it costs body, and the authored bite is the ceiling on that cost.
+  const buried = bottomOf(glyphs) - substrateSurfaceY(state, feeding.x);
+  assert.ok(
+    buried <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
+    `far feeding fish buried ${buried.toFixed(2)} rows of itself`,
+  );
 });
 
 test("the puff is thrown from the mouth the fish is drawn with, not the one it is turning away from", () => {
@@ -415,7 +459,13 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
           : (visual.turnProgress < 0.5 ? visual.facing : visual.targetFacing);
         if (visual.turnProgress < 1 && visual.facing !== visual.targetFacing) midTurn += 1;
         checked += 1;
-        const centroid = glyphs.reduce((sum, glyph) => sum + glyph.x, 0) / glyphs.length / cellWidth;
+        // Glyph centres, not left edges. A cloud measured by its glyphs' left
+        // edges sits most of a glyph to the left of where it is drawn, which is
+        // a bias the size of the whole offset being tested on a small fish.
+        const centroid = glyphs.reduce(
+          (sum, glyph) => sum + glyph.x + CELL_WIDTH * glyph.scaleX / 2,
+          0,
+        ) / glyphs.length / cellWidth;
         const offset = centroid - fish.x;
         if (Math.abs(offset) <= 0.15) continue;
         assert.equal(
@@ -622,4 +672,113 @@ test("every glyph a feeding strike draws exists in the font", () => {
   assert.ok(marks > 20, `only ${marks} contact-mark frames were sampled`);
   assert.ok(seen.has("*"), "the strong contact mark never appeared");
   assert.ok(seen.has(":"), "the soft contact mark never appeared");
+});
+
+test("a feeding fish gets its mouth to the sand at every size it can grow to", () => {
+  // Bottom feeding is a statement about the mouth: it is what the fish eats
+  // with, and what the puff of silt a strike lifts is drawn from. It used to be
+  // a statement about the lowest ink, which is the same thing on a fry and two
+  // rows away from it on an adult - so the bigger a fish grew, the further its
+  // mouth hovered above the sand it was working while its own debris rose
+  // beneath its belly. Every stage of every species is walked here because the
+  // defect was a law about size, not one bad sprite.
+  for (const orientation of ["landscape", "portrait"]) {
+    const config = orientationConfig(orientation);
+    const rowPixels = config.pixelHeight / config.rows;
+    const cellWidth = config.pixelWidth / config.cols;
+    const base = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
+    const index = 3;
+    const pitch = sceneTuning(base, "substrate-search").grazePitchDegrees;
+    const crest = substrateSurfaceY(base, base.cols * 0.5);
+    const measured = [];
+
+    for (const stage of new Set(individualSprites.flatMap((species) => growthStagesFor(species.id)))) {
+      // spriteForFish() hands back anything already carrying artwork, so a fish
+      // wearing a stage is measured and drawn as that stage by both sides
+      // without having to search for a seed and an age that produce it.
+      const grazing = {
+        ...base.individuals[index],
+        ...stage,
+        x: base.cols * 0.5,
+        behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
+        activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: 0 },
+        visual: {
+          ...base.individuals[index].visual,
+          pitch,
+          targetPitch: pitch,
+          facing: 1,
+          targetFacing: 1,
+          turnProgress: 1,
+        },
+      };
+      grazing.y = substrateGrazeY(grazing, base, grazing.x, index);
+
+      let strongest = 0;
+      for (let age = 0; age < 30; age += 0.01) {
+        const forage = forageActivity(
+          { ...grazing, activity: { ...grazing.activity, ageRealSeconds: age } },
+          index,
+          base,
+        );
+        if (forage.peck > 0.99) strongest = Math.max(strongest, forage.peckDisplacement);
+      }
+      assert.ok(strongest > 0, `${stage.id} never reached a full strike`);
+
+      const drawn = (fish) => {
+        const scene = render({
+          ...base,
+          individuals: base.individuals.map((value, i) => (i === index ? fish : value)),
+        });
+        const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
+        const glyphs = glyphsForObject(scene, object);
+        const bottomOf = (list) => Math.max(
+          ...list.flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
+        ) / rowPixels;
+        const mouth = glyphs[spriteMouthOffset(stage).glyph];
+        assert.ok(mouth, `${stage.id} was drawn without the glyph its artwork calls its mouth`);
+        // Each part against the crest under itself. A grown fish's mouth leads
+        // its centre by two to three columns and the relief changes across that
+        // span, so one sample for the whole animal is a third of a row of noise.
+        const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / cellWidth;
+        return {
+          mouth: substrateSurfaceY(base, mouthX) - bottomOf([mouth]),
+          buried: bottomOf(glyphs) - crest,
+        };
+      };
+
+      const { height } = spriteDimensions(stage);
+      const rest = drawn(grazing);
+      const strike = drawn({ ...grazing, y: grazing.y + strongest });
+      measured.push({ id: stage.id, height, rest: rest.mouth, strike: strike.mouth, buried: strike.buried });
+    }
+
+    for (const stage of measured) {
+      assert.ok(
+        stage.rest >= -(FORAGE_GRAZE_CONTACT_ROWS + 0.1) && stage.rest <= 0.35,
+        `${orientation} ${stage.id} grazed with its mouth ${stage.rest.toFixed(2)} rows off the crest`,
+      );
+      assert.ok(
+        stage.strike < 0,
+        `${orientation} ${stage.id} struck without putting its mouth in the sand (${stage.strike.toFixed(2)})`,
+      );
+      // Getting the mouth down there costs body, and that cost is the authored
+      // bite: without a ceiling on it the cure is a fish sitting in the floor.
+      assert.ok(
+        stage.buried <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
+        `${orientation} ${stage.id} buried ${stage.buried.toFixed(2)} rows of itself`,
+      );
+    }
+
+    // The law itself: a fish that has grown does not feed further off the sand
+    // than one that has not. Measured against the drawn frame, the whole roster
+    // now sits inside a fifth of a row of itself; before this it ran from a
+    // fry's 0.15 to an adult's 1.8 and the biggest fish could not reach at all.
+    const worst = (fits) => Math.max(...measured.filter(fits).map((stage) => stage.rest));
+    const grown = worst((stage) => stage.height >= 5);
+    const young = worst((stage) => stage.height <= 2);
+    assert.ok(
+      grown <= young + 0.12,
+      `${orientation} grown fish grazed ${grown.toFixed(2)} rows off the crest against a fry's ${young.toFixed(2)}`,
+    );
+  }
 });

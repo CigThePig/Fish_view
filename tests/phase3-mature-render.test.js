@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PLANT_SPECIES_BY_ID, RARE_PLANT_IDS } from "../src/art/plants.js";
-import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { isSupportedGlyph } from "../src/art/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { MAX_RENDERED_PLANT_GLYPHS, MAX_SAMPLES_PER_SEGMENT } from "../src/render/plants.js";
 import { LAYERS, render } from "../src/render/render.js";

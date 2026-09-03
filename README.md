@@ -282,6 +282,129 @@ conservative logical envelope for the strongest permitted pitch; it never import
 render/depth.js. Forage and surface targets then come from substrateSurfaceY()
 and waterSurfaceY() respectively.
 
+Swimming clearance and grazing clearance are deliberately different shapes, and
+they are measured to different parts of the fish. A fish crossing open water
+reserves the box that bounds its artwork, which is the right answer for "how
+much room does this need". A fish working the substrate is measured to its
+**mouth**, because that is what it eats with and what the puff of silt a strike
+lifts is drawn from.
+
+That distinction is the whole of bottom feeding. On a one-row fry the mouth *is*
+the lowest ink, so a fry always fed correctly. On a five-row adult the belly fin
+hangs better than a row below the nose, so parking the fish by its lowest ink
+left its mouth in open water with its own debris rising a body's depth beneath
+it - and it did so in proportion to the fish. The taller the artwork, the
+further the mouth from the sand: measured against the drawn frame, a fry's mouth
+struck 0.14 rows into the crest while a grown round-fin's stopped 0.61 rows
+above it and never reached at all. Bottom feeding got worse the more fish there
+was doing it.
+
+The graze line now brings the mouth down to the crest and lets the underside
+follow it in, as far as the authored `grazeBurialRows` bite and no further; the
+fish stops at whichever of the two comes first. The feeding lean does the rest
+of the work - rotating the drawing moves the mouth down and the tail up at once
+- which is why the authored graze rotation is steep rather than the gentle tilt
+it used to be. It stops six degrees short of the pitch ceiling because the
+strike's own rotation is added on top and the two share that ceiling: authored
+to reach it exactly, so the lean is as steep as it can be and every degree of
+the peck rotation is still drawn rather than clipped away in `tickVisualPose()`.
+
+Over every growth stage of all seven species in both orientations, the mouth
+grazes between 0.05 rows under the crest and 0.04 rows over it, and strikes
+0.14 to 0.43 rows in; the whole roster sits inside a twelfth of a row of itself.
+Across four tanks of ordinary ticks, every full strike now lands its mouth at or
+under the crest, where the worst used to hover 0.61 rows above it.
+
+Three pieces of geometry make that measurable, all of them properties of the
+artwork and all cached per sprite:
+
+- **`glyphInkReach`** - the lit pixels of a character that can be its lowest
+  when the drawing leans. A cell is not the mark drawn in it: an apostrophe inks
+  the top third of its cell, and the `·` a first-stage fry is made of is one dot
+  in the middle of an empty one. Nor is the mark the box around it: a `>` reaches
+  furthest right halfway down and furthest down at its back, and bounding those
+  together invents ink at a corner the rasteriser never paints. What is kept is
+  the staircase - the pixels no other pixel of the same glyph is both lower and
+  further forward than - taken from the rasteriser's own rectangles in the same
+  12x24 cell `positionedGlyph` places them in. That is why
+  `src/art/bitmap-font.js` sits in the art layer: the character artwork is
+  artwork, and the simulation is entitled to ask how big the marks it is placing
+  actually are. Over the roster the model predicts the rendered ink to within
+  three hundredths of a row, so the authored allowances mean what they say.
+- **`spriteUndersideProfile`** - the points whose ink can be the lowest thing
+  the drawing has when it leans. Within a column the cells rotate as a stack, so
+  the prune is by dominance: a cell is dropped only when another in the same
+  column reaches at least as far down *and* as far forward. Every roster sprite
+  comes out at one point per column, so the projection is at most seven points.
+- **`spriteMouthOffset`** - where the mouth is. The artwork already says: mask
+  slot `5` is the nose glyph the way slot `4` is the eye. The renderer uses the
+  same offset to throw the contact mark and the silt from the mouth it actually
+  drew, instead of from a fixed fraction of the sprite's width.
+
+The crest is sampled under the mouth rather than under the fish. Terrain is not
+flat, a grown fish's nose leads its centre by two to three columns, and the
+relief changes by more than a tenth of a row across that span - so a graze line
+taken at the centre floated or buried the fish depending on which way it faced,
+while the contact mark it threw was already being drawn against the terrain
+under the mouth. Both now ask `turnPose()`, which moved to the simulation side
+for the purpose: `visual.turnProgress` is simulation state, and the fish, the
+sand it is measured against and the puff it throws must not come apart mid-turn.
+
+### Working the substrate, and striking it
+
+These are two different claims and the simulation makes them separately.
+
+**Working it** is `searching`: the fish is on its graze line, in the feeding
+posture it holds there. It is measured against the *authored* lean rather than
+the fish's live pitch, because the fish only adopts that lean while it is
+searching - reading its instantaneous angle back would mean it could never
+start. This is what drives the lean, the hunger relief and the debris already in
+the water.
+
+**Striking it** is `contacting`, and it is about the nose the fish is actually
+drawn with. Three things lift that nose off the sand while the fish is otherwise
+perfectly placed. A fish turning through the glass is compressed to a third of
+its width with its lean foreshortened to match; the drawn pitch answers the
+fish's own trajectory as well as its posture, so the drift back up after each
+strike used to cancel most of the authored lean; and a fish that arrives at the
+line on the way up is drawn pointing away from the sand entirely. Gating the
+strike, its contact mark and the silt it lifts on the drawn mouth actually
+reaching takes the worst mid-turn strike from 0.55 rows of clear water to 0.16,
+and `pitchScale` on the graze phase profile drops to 0.2 so a feeding fish holds
+its feeding posture rather than unleaning itself - the fifth percentile of its
+drawn lean rises from 18 to 24 degrees.
+
+The test is deliberately one-sided: only a mouth held *above* the sand withholds
+a strike, never one driven into it. Testing the distance either way meant the
+plunge invalidated its own gate - the fish dips, the gate closes, the peck reads
+zero, the clamp lifts it back and the event resumes a frame later - which
+collapsed 18% of strike arcs mid-swing. That fragmentation is also why the peck
+counts above read 4 rather than 7: `peckStarts` counts transitions into a
+strike, so a broken arc was being counted twice.
+
+How far off the crest a drawn mouth may be and still land is its own authored
+number, `strikeReachRows`, and it is tighter than the search band: being on the
+graze line in the feeding posture is what makes a fish a grazer, but putting a
+bright mark and a puff of silt on the sand is a claim that the nose is *there*.
+At a third of a row the worst strike across three tanks fires from 0.29 rows up
+rather than 0.47, and it costs three strikes in a hundred - the knee of the
+curve, since a fifth of a row buys another 0.05 for ten.
+
+Silt belongs to a strike that landed, so the tail is keyed to the event that
+landed it rather than to the contact of the moment. That is the whole of
+forage's animation state: the tick latches the last two contacting events on the
+activity - two, because close peck pairs overlap and the newer strike's own tail
+does not begin until a third of the way through the older one - and the renderer
+reads the same latch. Deciding it per frame instead drew a puff for ten strikes
+in six hundred that never made contact at all.
+
+`npm run measure:feeding` walks the whole roster and prints, per stage, how far
+the mouth sits above the crest at rest and at the deepest strike and how much of
+the fish went into the sand to get there; `--sheet` writes a magnified contact
+sheet of the same poses beside a drawn crest, and `--tune key=value` runs the
+sweep against a scene-tuning override, because authoring a feeding posture is a
+matter of looking at candidates.
+
 ## Phase 2 personality and activity architecture
 
 The original five broad behaviors remain the biological explanation for motion:
@@ -446,7 +569,10 @@ npm run measure:readability
 
 It records average/peak speed, average/peak absolute pitch, vertical travel, a
 turn-rate proxy, social spacing, bubble intercept distance, peck starts, chase
-evasion frames, damage, full redraws, and `tick + render` time. It also runs an
+evasion frames, damage, full redraws, and `tick + render` time. The
+substrate-search loop runs twenty seconds rather than fifteen: the graze line is
+measured to the mouth now and sits the better part of two rows lower, so a
+shorter loop was almost entirely descent. It also runs an
 ordinary deterministic ten-minute watch rather than only forced poses. Current
 representative signatures are:
 
@@ -457,13 +583,13 @@ representative signatures are:
 | Plant weave | 0.43, 25.7°, four alternating stages | 0.44, 30.2°, four alternating stages |
 | Companion cruise | 0.49, 3.6°, 3.69-row mean spacing | 0.49, 3.6°, 3.69-row mean spacing |
 | Playful chase | 0.84, 50 evasion frames | 0.84, 50 evasion frames |
-| Substrate search | 0.59, 32.0°, 3 pecks | 0.57, 32.0°, 5 pecks |
+| Substrate search | 0.57, 32.0°, 4 pecks | 0.58, 32.0°, 4 pecks |
 | Surface investigation | 0.68, 32.0°, 6.36 rows vertical travel | 0.68, 32.0°, 7.46 rows |
 | Open-water rest | 0.04 peak / 0.02 average speed | 0.04 / 0.02 |
 
 With the default seed at noon, the ordinary ten-minute diagnostic recorded six
 to eight bubble investigations, three playful chases, three companion cruises,
-eight individual follows, one substrate-search bout with 11-14 visible pecks,
+eight individual follows, one substrate-search bout with 9-11 visible pecks,
 four plant/rest-shelter visits, and six open-water rests in each orientation;
 portrait also reached two surface investigations. These are opportunity audits,
 not quotas: other personalities and world seeds retain their own mix.
@@ -1040,6 +1166,11 @@ envelope, the tank-edge margin in `tick`, exhale placement, activity geometry,
 and the renderer. A fry legitimately fits closer to the substrate and the
 surface than the adult it becomes, and an arrival is placed at the glass with a
 fry's half-width instead of hovering three columns off it.
+
+Growing is the one thing that must not change how a fish feeds, and the graze
+line above is measured over every stage of every species for exactly that
+reason: a fish that has grown up works the sand the way it did as a fry rather
+than reading as increasingly unable to reach it.
 
 Nothing else changes. Behaviour, activity selection, foraging eligibility, the
 protected mid-water trio, relationship learning, and the eight-fish ceiling are

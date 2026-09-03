@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { glyphFlip } from "../src/art/mirror.js";
 import { individualSprites } from "../src/art/sprites.js";
-import { glyphPixels, isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { glyphPixels, isSupportedGlyph } from "../src/art/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { DEPTH_LANES, laneForDepth, spreadDepth } from "../src/render/depth.js";
 import { PALETTE_STEPS, scenePalette } from "../src/render/palette.js";

@@ -4,6 +4,7 @@ import {
   individualSprites,
   schoolGlyphs,
   spriteDimensions,
+  spriteMouthOffset,
   substrateArt,
 } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
@@ -18,12 +19,12 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
-import { forageActivity } from "../sim/fish-motion.js";
+import { forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
 import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
-import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=true-rotation-20260902";
+import { glyphWidthScale, poseCoordinate, poseSprite, spritePoints } from "./fish-pose.js?v=true-rotation-20260902";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
 import {
   depthScale,
@@ -220,25 +221,6 @@ function maskColor(symbol, seed, masks) {
     return masks[MASK_SYMBOLS[choice]];
   }
   return masks[symbol] ?? masks.C;
-}
-
-function turnPose(fish) {
-  const visual = fish.visual ?? {
-    facing: fish.vx < 0 ? -1 : 1,
-    targetFacing: fish.vx < 0 ? -1 : 1,
-    turnProgress: 1,
-  };
-  if (visual.turnProgress >= 1) return { facing: visual.targetFacing, widthScale: 1 };
-  if (visual.turnProgress < 0.5) {
-    return {
-      facing: visual.facing,
-      widthScale: 1 - smoothstep(visual.turnProgress * 2) * 0.68,
-    };
-  }
-  return {
-    facing: visual.targetFacing,
-    widthScale: 0.32 + smoothstep((visual.turnProgress - 0.5) * 2) * 0.68,
-  };
 }
 
 // How far a given horizontal position is dimmed by the tank's side falloff.
@@ -783,6 +765,28 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
   });
 }
 
+// Where a fish's mouth is drawn, as an offset from its centre in world columns
+// and rows. The contact mark and the silt a strike lifts are the mouth's doing,
+// so they are placed from the artwork's own mouth cell through the same pose
+// the body is drawn with - the same facing, the same turn compression, the same
+// rotation. It used to be a fixed fraction of the sprite's width, which put the
+// mark most of a column behind the nose of a leaning fish and had no way to
+// know that a mouth is on the body row rather than in the middle of the box.
+//
+// The swimming wobble is deliberately left out. It is a fifth of a row of
+// flutter, and a contact mark that shivered with the tail beat would read as
+// noise on the sand rather than as one event.
+function mouthOffset(sprite, { facing, turnScale, pitch, cellAspect }) {
+  const source = spritePoints(sprite);
+  const mouth = spriteMouthOffset(sprite);
+  return poseCoordinate(
+    source,
+    mouth.dx + (source.width - 1) / 2,
+    mouth.dy + (source.height - 1) / 2,
+    { facing, phase: 0, deformationStrength: 0, turnScale, pitch, cellAspect },
+  );
+}
+
 function drawForageDebris(builder, state, palette, metrics) {
   state.individuals.forEach((fish, index) => {
     const activity = forageActivity(fish, index, state);
@@ -814,9 +818,13 @@ function drawForageDebris(builder, state, palette, metrics) {
       state.individuals.length,
       state.elapsedRealSeconds,
     ));
-    const mouthX = fish.x
-      + turning.facing * spriteDimensions(spriteForFish(fish)).width * 0.5 * 0.62
-      * turning.widthScale * drawScale;
+    const posedMouth = mouthOffset(spriteForFish(fish), {
+      facing: turning.facing,
+      turnScale: turning.widthScale,
+      pitch: Number.isFinite(fish.visual?.pitch) ? fish.visual.pitch : 0,
+      cellAspect: metrics.cellHeight / metrics.cellWidth,
+    });
+    const mouthX = fish.x + posedMouth.x * drawScale;
     // The terrain is not flat. Once the cue moved from the fish's centre to its
     // visible mouth, keeping the centre's surface height could float or bury the
     // mark by more than a quarter row on a slope. Sample the crest at the same

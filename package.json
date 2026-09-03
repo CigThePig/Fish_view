@@ -9,6 +9,7 @@
     "test": "node --test",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
     "measure:screen": "node tools/measure-screen-legibility.mjs",
+    "measure:feeding": "node tools/measure-substrate-feeding.mjs",
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs"
   },
   "devDependencies": {

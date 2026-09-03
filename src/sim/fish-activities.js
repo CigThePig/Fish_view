@@ -5,6 +5,7 @@ import { sceneTuning } from "./choreography-tuning.js";
 import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import {
+  MAX_FISH_PITCH_DEGREES,
   forageActivity,
   forageEligible,
   substrateGrazeY,
@@ -99,6 +100,17 @@ function positiveModulo(value, modulus) {
   return ((value % modulus) + modulus) % modulus;
 }
 
+// How much of an authored strike rotation the pitch ceiling actually leaves.
+// Nose-down rotation is bounded at MAX_FISH_PITCH_DEGREES for every fish, and
+// the feeding lean has already spent most of it. Exported because anything that
+// wants to pose a strike - the feeding measurement tool, the choreography lab's
+// editor bounds - has to compose the pair the same way the tank does.
+export function peckRotationHeadroom(grazeDegrees, peckDegrees) {
+  const graze = Math.max(0, Number.isFinite(grazeDegrees) ? grazeDegrees : 0);
+  const peck = Math.max(0, Number.isFinite(peckDegrees) ? peckDegrees : 0);
+  return Math.min(peck, Math.max(0, MAX_FISH_PITCH_DEGREES - graze));
+}
+
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
   const length = Math.hypot(x, y);
   if (length < 0.00001) return { x: fallbackX, y: fallbackY };
@@ -138,6 +150,21 @@ export function createActivityState(current = ACTIVITIES.cruise, previous = curr
     targetId: null,
     targetX: null,
     targetY: null,
+    // The two strikes that last put a mouth in the sand, by their own event
+    // seeds. Silt is something a strike did, so the tail it leaves has to
+    // belong to one - and a tail outlives the peck that raised it by half a
+    // second, long enough for the fish to lift its nose. Deciding the tail from
+    // the contact of the moment instead drew puffs for strikes that never
+    // landed.
+    //
+    // Two rather than one because close peck pairs overlap: the previous
+    // strike's silt is still rising when the next one lands, and the next one's
+    // own tail does not begin until a third of the way through it. Remembering
+    // only the newest would blank the older tail for those two frames. This is
+    // the whole of forage's animation state - two integers, and the renderer
+    // reads the same ones the tick wrote.
+    contactSeed: null,
+    priorContactSeed: null,
   };
 }
 
@@ -157,6 +184,8 @@ function normalizedActivity(fish) {
       : null,
     targetX: Number.isFinite(source?.targetX) ? source.targetX : null,
     targetY: Number.isFinite(source?.targetY) ? source.targetY : null,
+    contactSeed: Number.isSafeInteger(source?.contactSeed) ? source.contactSeed : null,
+    priorContactSeed: Number.isSafeInteger(source?.priorContactSeed) ? source.priorContactSeed : null,
   };
 }
 
@@ -1017,8 +1046,17 @@ export function resolveActivityTarget(fish, index, state, activity, {
         : tuning.descendSpeed + traits.activity * 0.18,
       // The strike snaps the nose down as well as the body: posture is the cue
       // that survives when the fish is small on the panel.
+      //
+      // The two rotations share one ceiling, and the sum is bounded here rather
+      // than left to the clamp in tickVisualPose(). Silently clipping it makes
+      // the authored peck rotation a lie - with a graze lean four degrees short
+      // of the ceiling, every setting from four degrees upwards drew the same
+      // strike - and a knob whose top three quarters do nothing is worse than
+      // one with a smaller range. The authored pair is graded against this
+      // ceiling in tests/choreography-tuning.test.js.
       postureBias: forage.searching
-        ? tuning.grazePitchDegrees + forage.peck * tuning.peckPitchDegrees
+        ? tuning.grazePitchDegrees
+          + forage.peck * peckRotationHeadroom(tuning.grazePitchDegrees, tuning.peckPitchDegrees)
         : 0,
       forageGrazing: true,
       forageSearching: forage.searching,
@@ -1115,7 +1153,32 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
     activity = createActivityState(defaultActivityForBehavior(fish.behavior?.current), activity.current);
     target = resolveActivityTarget(fish, index, state, activity, { ...context, traits, affinities });
   }
-  return { activity, target };
+  return {
+    activity: latchForageContact(activity, {
+      searching: target?.forageSearching,
+      peck: target?.peck,
+      eventSeed: target?.forageEventSeed,
+    }),
+    target,
+  };
+}
+
+// Latch the strike that landed. `resolveActivityTarget()` has already decided
+// whether this frame's peck reached the sand, from the pose the fish is drawn
+// in; the silt it lifts outlives that pose by half a second, so the tail is
+// keyed to the event rather than re-asking whether the nose is still down.
+// Cleared as soon as the fish is no longer working the substrate, so a puff
+// cannot outlive the bout that raised it.
+export function latchForageContact(activity, forage) {
+  if (!forage?.searching) {
+    return activity.contactSeed === null && activity.priorContactSeed === null
+      ? activity
+      : { ...activity, contactSeed: null, priorContactSeed: null };
+  }
+  if (!(forage.peck > 0)) return activity;
+  const seed = Number.isSafeInteger(forage.eventSeed) ? forage.eventSeed : null;
+  if (activity.contactSeed === seed) return activity;
+  return { ...activity, contactSeed: seed, priorContactSeed: activity.contactSeed };
 }
 
 // Company is only company when there are fish within reach of it. A school

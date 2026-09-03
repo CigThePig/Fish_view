@@ -1,5 +1,5 @@
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
-import { glyphPixels } from "./bitmap-font.js";
+import { glyphPixels } from "../art/bitmap-font.js";
 
 // Rotated ASCII, not sheared ASCII.
 //
