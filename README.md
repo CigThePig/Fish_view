@@ -361,21 +361,28 @@ searching - reading its instantaneous angle back would mean it could never
 start. This is what drives the lean, the hunger relief and the debris already in
 the water.
 
-**Striking it** is narrower, and it is about the nose the fish is actually drawn
-with. Two things lift that nose off the sand while the fish is otherwise
+**Striking it** is `contacting`, and it is about the nose the fish is actually
+drawn with. Three things lift that nose off the sand while the fish is otherwise
 perfectly placed. A fish turning through the glass is compressed to a third of
-its width with its lean foreshortened to match, so its mouth can sit half a row
-up whatever its centre is doing; and the drawn pitch answers the fish's own
-trajectory as well as its posture, so the drift back up after each strike used
-to cancel most of the authored lean. The first is bounded by gating the strike
-and its bright contact mark on the drawn mouth actually reaching - measured
-mid-turn, that takes the worst strike from 0.55 rows of clear water to 0.28. The
-second is fixed at the source: `pitchScale` on the graze phase profile drops to
-0.2, so a feeding fish holds its feeding posture instead of unleaning itself,
-and the fifth percentile of its drawn lean rises from 18 to 24 degrees. The two
-together *raise* how often feeding reads - seven strikes per showcase loop where
-there were four - because the fish now spends its grazing in the pose the graze
-line was computed for.
+its width with its lean foreshortened to match; the drawn pitch answers the
+fish's own trajectory as well as its posture, so the drift back up after each
+strike used to cancel most of the authored lean; and a fish that arrives at the
+line on the way up is drawn pointing away from the sand entirely. Gating the
+strike, its contact mark and the silt it lifts on the drawn mouth actually
+reaching takes the worst mid-turn strike from 0.55 rows of clear water to 0.16,
+and `pitchScale` on the graze phase profile drops to 0.2 so a feeding fish holds
+its feeding posture rather than unleaning itself - the fifth percentile of its
+drawn lean rises from 18 to 24 degrees.
+
+The test is deliberately one-sided: only a mouth held *above* the sand withholds
+a strike, never one driven into it. Testing the distance either way meant the
+plunge invalidated its own gate - the fish dips, the gate closes, the peck reads
+zero, the clamp lifts it back and the event resumes a frame later - which
+collapsed 18% of strike arcs mid-swing. That fragmentation is also why the peck
+counts above read 4 rather than 7: `peckStarts` counts transitions into a
+strike, so a broken arc was being counted twice. Over three tanks of ordinary
+ticks the gate now costs three contact marks in 1,156, while removing the ones
+thrown with the nose off the sand.
 
 `npm run measure:feeding` walks the whole roster and prints, per stage, how far
 the mouth sits above the crest at rest and at the deepest strike and how much of
@@ -562,13 +569,13 @@ representative signatures are:
 | Plant weave | 0.43, 25.7°, four alternating stages | 0.44, 30.2°, four alternating stages |
 | Companion cruise | 0.49, 3.6°, 3.69-row mean spacing | 0.49, 3.6°, 3.69-row mean spacing |
 | Playful chase | 0.84, 50 evasion frames | 0.84, 50 evasion frames |
-| Substrate search | 0.57, 32.0°, 7 pecks | 0.58, 32.0°, 7 pecks |
+| Substrate search | 0.57, 32.0°, 4 pecks | 0.58, 32.0°, 4 pecks |
 | Surface investigation | 0.68, 32.0°, 6.36 rows vertical travel | 0.68, 32.0°, 7.46 rows |
 | Open-water rest | 0.04 peak / 0.02 average speed | 0.04 / 0.02 |
 
 With the default seed at noon, the ordinary ten-minute diagnostic recorded six
 to eight bubble investigations, three playful chases, three companion cruises,
-eight individual follows, one substrate-search bout with 10-13 visible pecks,
+eight individual follows, one substrate-search bout with 9-12 visible pecks,
 four plant/rest-shelter visits, and six open-water rests in each orientation;
 portrait also reached two surface investigations. These are opportunity audits,
 not quotas: other personalities and world seeds retain their own mix.

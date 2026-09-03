@@ -203,10 +203,22 @@ function maxReachRows(points, drop, lean) {
 // two factors every reach is projected with. A fish turning through the glass
 // is drawn compressed and its lean is foreshortened to match, so both the
 // downward drop and the forward reach shrink with the turn.
+//
+// The sign is kept. Nose-up is a real pose - a fish arriving at the graze line
+// on the way up is drawn pointing away from the sand - and folding it onto the
+// equivalent nose-down angle would report a mouth reaching into terrain it is
+// in fact a row above. A negative lean subtracts the nose's forward offset
+// instead of adding it, which is the honest answer for the mouth; the ink
+// staircase behind it is the nose-down support, so for a nose-up pose the
+// result is an under-estimate of the reach, and under-estimating is the safe
+// direction for anything deciding whether a fish may strike.
 function leanProjection(pitchDegrees, turnScale) {
   const turn = clamp(Number.isFinite(turnScale) ? turnScale : 1, 0, 1);
-  const pitch = clamp(Math.abs(Number.isFinite(pitchDegrees) ? pitchDegrees : 0), 0, MAX_FISH_PITCH_DEGREES)
-    * turn * Math.PI / 180;
+  const pitch = clamp(
+    Number.isFinite(pitchDegrees) ? pitchDegrees : 0,
+    -MAX_FISH_PITCH_DEGREES,
+    MAX_FISH_PITCH_DEGREES,
+  ) * turn * Math.PI / 180;
   return {
     drop: Math.cos(pitch),
     lean: Math.sin(pitch) * PITCH_CLEARANCE_FRACTION * (CELL_WIDTH / CELL_HEIGHT) * turn,
@@ -261,7 +273,10 @@ export function fishGrazeClearanceRows(
   // lean by the same turn scale it narrows the drawing by. Reserving the full
   // authored lean through that held the fish at a clearance its own compressed
   // drawing could not reach.
-  const { drop, lean } = leanProjection(pitchDegrees, turnScale);
+  const { drop, lean } = leanProjection(
+    Math.abs(Number.isFinite(pitchDegrees) ? pitchDegrees : 0),
+    turnScale,
+  );
   const underside = maxReachRows(spriteUndersideProfile(sprite), drop, lean);
   const mouth = maxReachRows(spriteMouthOffset(sprite).reach, drop, lean);
   const scale = clamp(
@@ -396,17 +411,22 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   //
   // There is no feedback loop to worry about here: the lean answers `searching`
   // above, and this only decides whether the nose has arrived yet. It gates the
-  // strike and the bright contact mark that goes with it, and deliberately not
-  // the debris: silt already lifted into the water does not vanish because the
-  // fish that raised it has since lifted its nose, and reconstructing the tail
-  // from the contact of the moment would blink it out mid-rise.
+  // strike, the bright contact mark that goes with it, and the silt the strike
+  // lifts - a puff is a thing a strike did, and leaving the tail on `searching`
+  // alone drew one for events that never made contact at all.
   const scale = individualVisualScale(fish, index, state);
   const pose = turnPose(fish);
   const drawnPitch = Number.isFinite(fish.visual?.pitch) ? fish.visual.pitch : 0;
   const mouthX = fish.x + mouthLeadColumns(fish, drawnPitch, scale);
   const mouthY = fish.y + fishMouthReachRows(fish, drawnPitch, pose.widthScale) * scale;
+  // One-sided on purpose. Only a mouth held *above* the sand is a reason to
+  // withhold a strike; one driven into it is the strike working. Testing the
+  // distance either way meant the plunge invalidated its own gate - the fish
+  // dips, the gate closes, the peck reads zero, the clamp lifts it back, and
+  // the event resumes a frame later. That collapsed 18% of strike arcs mid-swing
+  // and let the renderer draw a peck the simulation had already abandoned.
   const contacting = searching
-    && Math.abs(substrateSurfaceY(state, mouthX) - mouthY) <= tuning.searchDistanceRows;
+    && substrateSurfaceY(state, mouthX) - mouthY <= tuning.searchDistanceRows;
 
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);
@@ -433,7 +453,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
       peckEvent = event;
     }
     const debrisAge = elapsed - duration * 0.34;
-    if (searching && debrisAge >= 0 && debrisAge < DEBRIS_TAIL_SECONDS
+    if (contacting && debrisAge >= 0 && debrisAge < DEBRIS_TAIL_SECONDS
       && (debrisPhase === null || debrisAge < debrisPhase * DEBRIS_TAIL_SECONDS)) {
       debrisPhase = debrisAge / DEBRIS_TAIL_SECONDS;
       debrisEvent = event;
