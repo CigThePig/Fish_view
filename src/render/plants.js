@@ -2,7 +2,7 @@ import { MAX_PLANT_JOINTS } from "../art/plants.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { sample01 } from "../sim/prng.js";
 import { createPlantFrameContext, plantLifecycle, posePlant } from "../sim/plants.js";
-import { glyphInkExtent } from "./bitmap-font.js";
+import { glyphInkExtent } from "../art/bitmap-font.js";
 import { addGlyphObject, positionedGlyph } from "./scene.js";
 
 // Simulation joints deliberately stay sparse, but a bone is a length, not a

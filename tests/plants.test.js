@@ -7,7 +7,7 @@ import {
   PLANT_SPECIES_BY_ID,
   RARE_PLANT_IDS,
 } from "../src/art/plants.js";
-import { isSupportedGlyph } from "../src/render/bitmap-font.js";
+import { isSupportedGlyph } from "../src/art/bitmap-font.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { scenePalette } from "../src/render/palette.js";
 import {

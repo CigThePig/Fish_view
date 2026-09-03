@@ -1,5 +1,5 @@
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
-import { glyphPixels } from "./bitmap-font.js";
+import { glyphPixels } from "../art/bitmap-font.js";
 import { bodyProfileForId } from "./body-profiles.js";
 import { pitchAngleDegrees } from "./fish-pitch.js";
 import { glyphWidthScale, poseCoordinate, spritePoints } from "./fish-pose.js";

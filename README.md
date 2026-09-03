@@ -282,20 +282,59 @@ conservative logical envelope for the strongest permitted pitch; it never import
 render/depth.js. Forage and surface targets then come from substrateSurfaceY()
 and waterSurfaceY() respectively.
 
-Swimming clearance and grazing clearance are deliberately different shapes. A
-fish crossing open water reserves the box that bounds its artwork, which is the
-right answer for "how much room does this need". A fish working the substrate
-projects the cells its artwork actually occupies, because the point a box puts
-furthest down when the fish leans - the bottom corner on the nose side - is
-empty on every species in the roster, and covers more empty rows the larger the
-sprite is. Reserving that corner made the graze line a function of size: a fry
-fed with its chin in the sand while the adult it grows into hovered better than
-half a row clear of the crest and could not reach it even at full strike, so
-substrate feeding read worse the bigger the fish doing it. Projected over the
-silhouette instead, every stage of every species grazes within a fifth of a row
-of the crest and strikes into it. Only the lowest cell of each column can be the
-lowest ink of a leaning fish, so the projection is at most seven points and is
-cached per sprite.
+Swimming clearance and grazing clearance are deliberately different shapes, and
+they are measured to different parts of the fish. A fish crossing open water
+reserves the box that bounds its artwork, which is the right answer for "how
+much room does this need". A fish working the substrate is measured to its
+**mouth**, because that is what it eats with and what the puff of silt a strike
+lifts is drawn from.
+
+That distinction is the whole of bottom feeding. On a one-row fry the mouth *is*
+the lowest ink, so a fry always fed correctly. On a five-row adult the belly fin
+hangs better than a row below the nose, so parking the fish by its lowest ink
+left its mouth in open water with its own debris rising a body's depth beneath
+it - and it did so in proportion to the fish. The taller the artwork, the
+further the mouth from the sand: measured against the drawn frame, a fry's mouth
+struck 0.14 rows into the crest while a grown round-fin's stopped 0.61 rows
+above it and never reached at all. Bottom feeding got worse the more fish there
+was doing it.
+
+The graze line now brings the mouth down to the crest and lets the underside
+follow it in, as far as the authored `grazeBurialRows` bite and no further; the
+fish stops at whichever of the two comes first. The feeding lean does the rest
+of the work - rotating the drawing moves the mouth down and the tail up at once
+- which is why the authored graze rotation is four degrees short of the pitch
+ceiling rather than the gentle tilt it used to be. Over every growth stage of
+all seven species in both orientations, the mouth grazes within a quarter row of
+the crest and strikes into it, and the whole roster sits inside a twelfth of a
+row of itself.
+
+Three pieces of geometry make that measurable, all of them properties of the
+artwork and all cached per sprite:
+
+- **`glyphInkReach`** - how far a character's ink reaches inside its own cell.
+  A cell is not the mark drawn in it: an apostrophe inks the top third of its
+  cell, and the `·` a first-stage fry is made of is one dot in the middle of an
+  empty one. Read from the same bitmaps the renderer rasterises, so the two
+  cannot drift. This is why `src/art/bitmap-font.js` sits in the art layer: the
+  character artwork is artwork, and the simulation is entitled to ask how big
+  the marks it is placing actually are.
+- **`spriteUndersideProfile`** - the points whose ink can be the lowest thing
+  the drawing has when it leans. Within a column the cells rotate as a stack, so
+  the prune is by dominance: a cell is dropped only when another in the same
+  column reaches at least as far down *and* as far forward. Every roster sprite
+  comes out at one point per column, so the projection is at most seven points.
+- **`spriteMouthOffset`** - where the mouth is. The artwork already says: mask
+  slot `5` is the nose glyph the way slot `4` is the eye. The renderer uses the
+  same offset to throw the contact mark and the silt from the mouth it actually
+  drew, instead of from a fixed fraction of the sprite's width.
+
+`npm run measure:feeding` walks the whole roster and prints, per stage, how far
+the mouth sits above the crest at rest and at the deepest strike and how much of
+the fish went into the sand to get there; `--sheet` writes a magnified contact
+sheet of the same poses beside a drawn crest, and `--tune key=value` runs the
+sweep against a scene-tuning override, because authoring a feeding posture is a
+matter of looking at candidates.
 
 ## Phase 2 personality and activity architecture
 
@@ -461,7 +500,10 @@ npm run measure:readability
 
 It records average/peak speed, average/peak absolute pitch, vertical travel, a
 turn-rate proxy, social spacing, bubble intercept distance, peck starts, chase
-evasion frames, damage, full redraws, and `tick + render` time. It also runs an
+evasion frames, damage, full redraws, and `tick + render` time. The
+substrate-search loop runs twenty seconds rather than fifteen: the graze line is
+measured to the mouth now and sits the better part of two rows lower, so a
+shorter loop was almost entirely descent. It also runs an
 ordinary deterministic ten-minute watch rather than only forced poses. Current
 representative signatures are:
 
@@ -472,13 +514,13 @@ representative signatures are:
 | Plant weave | 0.43, 25.7°, four alternating stages | 0.44, 30.2°, four alternating stages |
 | Companion cruise | 0.49, 3.6°, 3.69-row mean spacing | 0.49, 3.6°, 3.69-row mean spacing |
 | Playful chase | 0.84, 50 evasion frames | 0.84, 50 evasion frames |
-| Substrate search | 0.59, 32.0°, 3 pecks | 0.57, 32.0°, 5 pecks |
+| Substrate search | 0.57, 32.0°, 4 pecks | 0.58, 32.0°, 5 pecks |
 | Surface investigation | 0.68, 32.0°, 6.36 rows vertical travel | 0.68, 32.0°, 7.46 rows |
 | Open-water rest | 0.04 peak / 0.02 average speed | 0.04 / 0.02 |
 
 With the default seed at noon, the ordinary ten-minute diagnostic recorded six
 to eight bubble investigations, three playful chases, three companion cruises,
-eight individual follows, one substrate-search bout with 11-14 visible pecks,
+eight individual follows, one substrate-search bout with 10-12 visible pecks,
 four plant/rest-shelter visits, and six open-water rests in each orientation;
 portrait also reached two surface investigations. These are opportunity audits,
 not quotas: other personalities and world seeds retain their own mix.
@@ -1058,8 +1100,8 @@ fry's half-width instead of hovering three columns off it.
 
 Growing is the one thing that must not change how a fish feeds, and the graze
 line above is measured over every stage of every species for exactly that
-reason: a fish that has grown up should work the sand the way it did as a fry,
-not read as increasingly unable to reach it.
+reason: a fish that has grown up works the sand the way it did as a fry rather
+than reading as increasingly unable to reach it.
 
 Nothing else changes. Behaviour, activity selection, foraging eligibility, the
 protected mid-water trio, relationship learning, and the eight-fish ceiling are

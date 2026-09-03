@@ -35,7 +35,11 @@ export const SHOWCASE_SCENARIOS = Object.freeze([
   // Long enough to show the whole arc: the closing run, the break when the
   // chaser arrives, and the two fish drifting apart again.
   Object.freeze({ id: "playful-chase", label: "Playful chase", subjects: [SUBJECT_INDEX, COMPANION_INDEX], loopSeconds: 9.5 }),
-  Object.freeze({ id: "substrate-search", label: "Substrate search", subjects: [SUBJECT_INDEX], loopSeconds: 15 }),
+  // Long enough to show the whole arc now that the graze line is measured to
+  // the mouth and sits the better part of two rows lower: the descent, the
+  // arrival, and enough of the creep along the sand for several strikes. At
+  // fifteen seconds the loop was almost entirely descent.
+  Object.freeze({ id: "substrate-search", label: "Substrate search", subjects: [SUBJECT_INDEX], loopSeconds: 20 }),
   Object.freeze({ id: "surface-investigate", label: "Surface investigation", subjects: [SUBJECT_INDEX], loopSeconds: 13 }),
   Object.freeze({ id: "open-water-rest", label: "Open-water rest", subjects: [SUBJECT_INDEX], loopSeconds: 9 }),
   Object.freeze({ id: "plant-shelter", label: "Plant shelter", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),

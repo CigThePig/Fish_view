@@ -1,4 +1,4 @@
-import { spriteDimensions, spriteUndersideProfile } from "../art/sprites.js";
+import { spriteDimensions, spriteMouthOffset, spriteUndersideProfile } from "../art/sprites.js";
 import { sceneTuning } from "./choreography-tuning.js";
 import {
   CELL_HEIGHT,
@@ -17,14 +17,43 @@ export const MAX_FISH_PITCH_DEGREES = 32;
 // in the "substrate-search" / "surface-investigate" scene tuning, which is what
 // the simulation actually reads and what the behaviour choreography lab edits;
 // these exports remain the values that tuning starts from.
-export const FORAGE_PITCH_BIAS_DEGREES = 20;
+// Steep enough that the nose is unmistakably the leading edge of the fish. The
+// lean is not decoration: it is what lets a tall fish get its mouth to the sand
+// without putting its whole underside in it, because rotating the drawing moves
+// the mouth down and the tail up at the same time. Four degrees short of the
+// ceiling, so the extra rotation at the top of a strike still has somewhere to
+// go.
+export const FORAGE_PITCH_BIAS_DEGREES = 28;
 export const SURFACE_PITCH_BIAS_DEGREES = -10;
-export const FORAGE_SEARCH_DISTANCE_ROWS = 0.82;
-// How far the belly is allowed to meet the substrate crest while grazing, and
-// how far the strike itself drives the fish down. Both are authored against the
-// drawn artwork rather than the swimming envelope: a feeding fish that keeps
+// How far off the graze line still counts as working the substrate. This is a
+// contact band, not an approach band: everything downstream of it - the feeding
+// lean, the strike, the puff of silt the strike lifts - is a claim that the
+// fish's mouth is in the sand, and a fish that claims it from most of a row up
+// is miming. It used to be nearly a row wide, from when the line was measured
+// to the belly and a fish inside the band was at least near the floor with it.
+// A grazing fish is measured to sit within a hundredth of a row of its line, so
+// tightening this costs no feeding at all: it only stops the transients.
+export const FORAGE_SEARCH_DISTANCE_ROWS = 0.45;
+// How close the mouth is allowed to come to the substrate crest while grazing,
+// and how far the strike itself drives the fish down. Both are authored against
+// the drawn artwork rather than the swimming envelope: a feeding fish that keeps
 // its swimming clearance hovers a row above the sand and never reads as eating.
 export const FORAGE_GRAZE_CONTACT_ROWS = 0.06;
+// How far the drawing may sink past the crest to get its mouth down there.
+//
+// Feeding is a statement about the mouth, and on anything but a fry the mouth
+// is not the lowest part of the fish: a five-row adult's belly fin hangs more
+// than a row below its nose, so a fish parked by its lowest ink keeps its mouth
+// in open water with the puff of silt it raised drawn a body's depth beneath
+// it. The bigger the fish, the wider that gap - which is the whole of why
+// bottom feeding used to read worse the more fish there was doing it.
+//
+// So the mouth comes down to the sand and the body follows it in. This is how
+// far in it is allowed to go: enough that a grown fish gets its nose to the
+// crest and its underside grazes through it, not so far that the drawing sits
+// in the floor. A fry never reaches it - its mouth is its lowest ink, so it
+// parks exactly where it always did.
+export const FORAGE_GRAZE_BURIAL_ROWS = 1.25;
 export const FORAGE_PECK_ROWS = 0.30;
 // The logical sprite box and the renderer's opaque-body box intentionally do
 // not share font/profile internals, and this is the measured reserve for that
@@ -38,15 +67,16 @@ export const FORAGE_PECK_ROWS = 0.30;
 // measure:screen` reports the gap the panel receives, and the seed sweep in
 // tests/review-regressions.test.js grades the other side of it.
 //
-// What remains of the disagreement is a fifth of a row, and it is a constant
-// rather than something that grows with the fish: the simulation models the
-// cell an authored character occupies and not where the font puts the ink
-// inside it. Three stages in the roster - the "·" first-stage fry, and the
-// "'" ventral fin `tiny-dart` and `comma-tail:juvenile` stand on - are drawn
-// with their lowest ink in the top of its cell and so still graze about a
-// third of a row higher than the rest. Closing that would mean teaching the
-// simulation the font's per-glyph ink offsets, which is the internals split
-// this constant exists to hold instead.
+// What remains of the disagreement is about a fifth of a row, and it is now a
+// constant of the rasteriser rather than of the fish: the simulation projects
+// upright ink boxes, and the renderer paints a rotated raster whose quantised
+// spans sit fractionally inside them. It was not always constant. While the
+// model reserved whole cells rather than the ink in them, the overshoot ran
+// from a sixth of a row to well over half depending on which character a
+// sprite happened to stand on, which put three stages of the roster a third
+// of a row higher than the rest. `glyphInkReach` closed that; the remainder is
+// uniform across the roster, and the authored contact and bite allowances are
+// calibrated with it in, which is why this stays zero.
 const FORAGE_GRAZE_MODEL_MARGIN_ROWS = 0;
 // The furthest ahead a grazing fish will chase its route point. The forage
 // route drifts across the tank faster than a fish creeping along at a tenth of
@@ -109,6 +139,17 @@ export function substrateSafeY(fish, state, worldX = fish.x) {
   return substrateSurfaceY(state, worldX) - fishVerticalClearanceRows(fish);
 }
 
+// How far below the fish's centre one point of the artwork reaches once the
+// drawing leans, in rows. The offsets already carry how far the ink extends
+// past its own anchor, so what is left is the rotation: a column is
+// CELL_WIDTH / CELL_HEIGHT of a row, and the lowest corner of an upright box
+// under a nose-down turn is the one on the nose side. Mirroring moves the nose
+// to the other side of the centre and takes the artwork with it, so the
+// authored right-facing offsets answer for both facings.
+function inkReachRows(point, drop, lean) {
+  return point.dy * drop + point.dx * lean;
+}
+
 // Grazing is measured against the artwork, not against the swimming envelope.
 // The envelope above reserves room for a full-pitch rotation that the authored
 // pitch pose only partly performs, and reserves it at the largest depth scale
@@ -121,11 +162,23 @@ export function substrateSafeY(fish, state, worldX = fish.x) {
 // and the two cancel almost perfectly. Reserving for the steady feeding posture
 // instead leaves the strike free to reach past it, which is the whole point of
 // a strike: the nose goes into the sand and comes back out.
+//
+// What the reserve is measured to is the mouth. A fish feeds with its mouth,
+// the puff of silt a strike lifts is drawn from its mouth, and on anything past
+// a fry the mouth is nowhere near the lowest part of the drawing - a five-row
+// adult's belly fin hangs better than a row below its nose. Parking such a fish
+// by its lowest ink is what left its mouth in open water with its own debris a
+// body's depth beneath it, and it did so in proportion to the fish: the taller
+// the artwork, the further the mouth from the sand it was supposed to be
+// working. The underside is still what stops it, but as a limit rather than as
+// the target: the fish comes down until its mouth meets the crest or its
+// underside has grazed `burialRows` through it, whichever happens first.
 export function fishGrazeClearanceRows(
   fishOrSprite,
   pitchDegrees = FORAGE_PITCH_BIAS_DEGREES,
   visualScale = INDIVIDUAL_VISUAL_SCALE_MAX,
   contactRows = FORAGE_GRAZE_CONTACT_ROWS,
+  burialRows = FORAGE_GRAZE_BURIAL_ROWS,
 ) {
   const sprite = spriteFor(fishOrSprite);
   // A nose-down fish is longer than it is tall in the vertical direction that
@@ -134,38 +187,34 @@ export function fishGrazeClearanceRows(
   // height-only clearance was right while the pose was a gentle shear and buries
   // a wide fish by a whole row now that it leans for real.
   //
-  // The lean is taken over the cells the artwork occupies, not over the box
+  // The underside is taken over the cells the artwork occupies, not over the box
   // that bounds them. The two agree for a fry, whose every cell is inked, and
   // diverge by more the larger the fish gets, because the point a box puts
   // furthest down when it leans - the bottom corner on the nose side - is empty
-  // on every species and covers more empty rows the bigger the box is. Measured
-  // against the rendered frame, a box reserve overshot the ink by a sixth of a
-  // row for a fry and by better than half a row for an adult: the graze line
-  // held the biggest fish clear of the sand while a fry fed against it, so
-  // substrate feeding read worse the more fish there was to watch. Over the
-  // silhouette the overshoot is a fifth of a row at every size.
+  // on every species and covers more empty rows the bigger the box is.
   const pitch = clamp(Math.abs(Number.isFinite(pitchDegrees) ? pitchDegrees : 0), 0, MAX_FISH_PITCH_DEGREES)
     * Math.PI / 180;
-  // Each cell reaches its lowest at its own bottom corner on the nose side, half
-  // a cell out and half a cell down from its anchor; a column is CELL_WIDTH /
-  // CELL_HEIGHT of a row. Mirroring moves the nose to the other side of the
-  // centre and the artwork with it, so the authored facing answers for both.
   const lean = Math.sin(pitch) * PITCH_CLEARANCE_FRACTION * (CELL_WIDTH / CELL_HEIGHT);
   const drop = Math.cos(pitch);
-  let projected = 0;
-  for (const cell of spriteUndersideProfile(sprite)) {
-    const reach = (cell.dy + 0.5) * drop + (cell.dx + 0.5) * lean;
-    if (reach > projected) projected = reach;
+  let underside = 0;
+  for (const point of spriteUndersideProfile(sprite)) {
+    const reach = inkReachRows(point, drop, lean);
+    if (reach > underside) underside = reach;
   }
+  const mouth = inkReachRows(spriteMouthOffset(sprite), drop, lean);
   const scale = clamp(
     Number.isFinite(visualScale) ? visualScale : INDIVIDUAL_VISUAL_SCALE_MAX,
     0,
     INDIVIDUAL_VISUAL_SCALE_MAX,
   );
-  return Math.max(
-    0.2,
-    projected * scale + FORAGE_GRAZE_MODEL_MARGIN_ROWS - contactRows,
+  // Both allowances are screen rows rather than fractions of a fish: how close
+  // the mouth comes to the sand, and how far the underside may pass through it,
+  // are things the eye judges against the crest and not against the animal.
+  const reserve = Math.max(
+    mouth * scale - contactRows,
+    underside * scale - Math.max(0, burialRows),
   );
+  return Math.max(0.2, reserve + FORAGE_GRAZE_MODEL_MARGIN_ROWS);
 }
 
 export function individualVisualScale(fish, index, state) {
@@ -195,6 +244,7 @@ export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
       tuning.grazePitchDegrees,
       individualVisualScale(fish, index, state),
       tuning.grazeContactRows,
+      tuning.grazeBurialRows,
     );
 }
 

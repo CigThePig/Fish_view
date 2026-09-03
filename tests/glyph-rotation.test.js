@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BITMAP_FONT, glyphPixels } from "../src/render/bitmap-font.js";
+import { BITMAP_FONT, glyphPixels } from "../src/art/bitmap-font.js";
 import {
   MAX_SPIN_DEGREES,
   SPIN_STEP_DEGREES,

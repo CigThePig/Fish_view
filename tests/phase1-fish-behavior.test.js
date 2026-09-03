@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WATERLINE_ROWS } from "../src/sim/config.js";
-import { MAX_FISH_PITCH_DEGREES, forageActivity, forageEligible, substrateSafeY, surfaceSafeY } from "../src/sim/fish-motion.js";
+import { MAX_FISH_PITCH_DEGREES, forageActivity, forageEligible, substrateGrazeY, substrateSafeY, surfaceSafeY } from "../src/sim/fish-motion.js";
 import { substrateSurfaceY, waterSurfaceY } from "../src/sim/environment.js";
 import {
   createAquariumState,
@@ -157,7 +157,10 @@ test("hunger relief begins only after a forage fish reaches the real substrate s
     drives: { ...source.drives, hunger: 0.7 },
     behavior: { current: "forage", previous: "cruise", blend: 0, ageSeconds: 2 },
   };
-  onFloor.y = substrateSafeY(onFloor, base, onFloor.x);
+  // The search zone is the graze line, not the swimming envelope: a fish is
+  // working the substrate when its mouth is at the sand, and the envelope that
+  // keeps a fish crossing open water clear of terrain sits well above that.
+  onFloor.y = substrateGrazeY(onFloor, base, onFloor.x, index);
   const above = { ...onFloor, y: onFloor.y - 2 };
   const nearState = { ...base, individuals: base.individuals.map((fish, i) => i === index ? onFloor : fish) };
   const farState = { ...base, individuals: base.individuals.map((fish, i) => i === index ? above : fish) };

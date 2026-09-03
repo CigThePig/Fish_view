@@ -178,7 +178,8 @@ export const SCENE_FIELDS = Object.freeze({
   "substrate-search": Object.freeze([
     field("grazePitchDegrees", "Graze rotation", "degrees nose-down while feeding", 0, 32, 0.5),
     field("peckPitchDegrees", "Peck rotation", "extra degrees at the top of a strike", 0, 32, 0.5),
-    field("grazeContactRows", "Substrate distance", "rows the belly is allowed to meet the crest", -0.5, 1.5, 0.01),
+    field("grazeContactRows", "Substrate distance", "rows the mouth is allowed to meet the crest", -0.5, 1.5, 0.01),
+    field("grazeBurialRows", "Substrate bite", "rows the underside may graze through the crest to get the mouth down", 0, 2, 0.01),
     field("peckRows", "Peck depth", "rows the strike drives the fish down", 0, 1.5, 0.01),
     field("searchDistanceRows", "Search band", "rows off the graze line that still count as feeding", 0, 3, 0.01),
     field("routeLeadColumns", "Route lead", "columns ahead the grazer will chase its patch", 0, 5, 0.01),

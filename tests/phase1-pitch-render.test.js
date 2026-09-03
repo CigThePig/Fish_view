@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { glyphPixels } from "../src/render/bitmap-font.js";
+import { glyphPixels } from "../src/art/bitmap-font.js";
 import { glyphPixelRects } from "../src/render/glyph-raster.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { individualSprites, poseSprite, render, renderSpriteScene } from "../src/render/render.js";

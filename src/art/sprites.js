@@ -15,6 +15,8 @@
  * before growth existed.
  */
 
+import { BITMAP_FONT, GLYPH_PIXEL_HEIGHT, GLYPH_PIXEL_WIDTH } from "./bitmap-font.js";
+
 export const artAttribution = Object.freeze({
   source: "asciiquarium 1.1",
   author: "Kirk Baucom",
@@ -226,8 +228,47 @@ export function spriteDimensions(sprite) {
   };
 }
 
-// The underside of a sprite: for every column the artwork occupies, the offset
-// of the lowest cell in it from the centre of the anchor grid, in cells.
+// How far a character's ink reaches down and forward inside its own cell, in
+// cell units from the cell's centre. Half a cell is the cell edge.
+//
+// A cell is not the same thing as the mark drawn in it. An apostrophe inks the
+// top third of its cell and nothing below; the "·" a first-stage fry is made of
+// is one dot in the middle of an otherwise empty cell. Anything that asks how
+// close the artwork can come to something - the substrate, most of all - and
+// answers with the cell has a fish hovering a third of a row above the sand it
+// is supposed to be eating from, and no way to know it.
+//
+// This is the font's own answer, read from the same bitmaps the renderer
+// rasterises, so the two cannot drift apart. Clamped to the cell because the
+// pixel grid overhangs its nominal box by a unit at the far edge.
+const glyphInkCache = new Map();
+
+export function glyphInkReach(char) {
+  const cached = glyphInkCache.get(char);
+  if (cached) return cached;
+  const bitmap = BITMAP_FONT[char] ?? BITMAP_FONT["?"];
+  let bottom = Number.NEGATIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  for (let row = 0; row < bitmap.length; row += 1) {
+    for (let column = 0; column < 5; column += 1) {
+      if (!(bitmap[row] & (1 << (4 - column)))) continue;
+      right = Math.max(right, 1 + column * 2 + 2);
+      bottom = Math.max(bottom, 1 + row * 3 + 3);
+    }
+  }
+  const reach = Number.isFinite(bottom)
+    ? Object.freeze({
+      bottom: Math.min(0.5, bottom / GLYPH_PIXEL_HEIGHT - 0.5),
+      right: Math.min(0.5, right / GLYPH_PIXEL_WIDTH - 0.5),
+    })
+    : Object.freeze({ bottom: 0.5, right: 0.5 });
+  glyphInkCache.set(char, reach);
+  return reach;
+}
+
+// The underside of a sprite: the cells whose ink can be the lowest thing the
+// drawing has when it leans, each with the offset of its anchor from the centre
+// of the grid and how far its own ink reaches past that anchor.
 //
 // A fish is not a rectangle. The box `spriteDimensions` reports is the right
 // answer for "how much room does this need", and the wrong one for "how close
@@ -236,9 +277,13 @@ export function spriteDimensions(sprite) {
 // species in the roster. That corner is a bigger lie about a bigger fish,
 // which is why anything measured from the box alone gets worse as a fish grows.
 //
-// Only the lowest cell of each column can ever be the lowest ink of the pitched
-// drawing: within one column the cells only rotate as a stack, so the one below
-// the others stays below them. Seven-odd points is also what makes this cheap
+// Within one column the cells rotate as a stack, so the usual case is that only
+// the lowest of them can ever be lowest. The exception is a column whose lowest
+// cell carries less ink than one above it - an apostrophe under a slash - so
+// the prune is by dominance rather than by row: a cell is dropped only when
+// another in the same column reaches at least as far down and at least as far
+// forward, and therefore reaches at least as far at every angle. Every roster
+// sprite comes out at one point per column, which is what makes this cheap
 // enough to evaluate per fish per frame on the panel.
 const undersideCache = new Map();
 
@@ -246,18 +291,98 @@ export function spriteUndersideProfile(sprite) {
   const cached = sprite?.id ? undersideCache.get(sprite.id) : null;
   if (cached) return cached;
   const { width, height } = spriteDimensions(sprite);
-  const lowestRow = new Map();
+  const byColumn = new Map();
   for (let row = 0; row < sprite.shape.length; row += 1) {
     const cells = [...sprite.shape[row]];
     for (let column = 0; column < cells.length; column += 1) {
-      if (!cells[column] || cells[column] === " ") continue;
-      lowestRow.set(column, row);
+      const character = cells[column];
+      if (!character || character === " ") continue;
+      const ink = glyphInkReach(character);
+      const candidate = {
+        dx: column - (width - 1) / 2 + ink.right,
+        dy: row - (height - 1) / 2 + ink.bottom,
+      };
+      const kept = (byColumn.get(column) ?? []).filter(
+        (other) => !(candidate.dy >= other.dy && candidate.dx >= other.dx),
+      );
+      if (!kept.some((other) => other.dy >= candidate.dy && other.dx >= candidate.dx)) {
+        kept.push(candidate);
+      }
+      byColumn.set(column, kept);
     }
   }
-  const profile = Object.freeze([...lowestRow.entries()].map(([column, row]) => Object.freeze({
-    dx: column - (width - 1) / 2,
-    dy: row - (height - 1) / 2,
-  })));
+  const profile = Object.freeze(
+    [...byColumn.values()].flat().map((cell) => Object.freeze(cell)),
+  );
   if (sprite?.id) undersideCache.set(sprite.id, profile);
   return profile;
+}
+
+// Where a sprite's mouth is, as the offset of its ink's lower nose corner from
+// the centre of the anchor grid, in cells. Feeding is a statement about the
+// mouth: a fish grazes when its mouth is at the sand, and the puff of silt a
+// strike lifts is drawn from the mouth. The body's lowest ink answers a
+// different question, and on a five-row adult the two are two rows apart.
+//
+// The artwork already says which cell it is. Mask slot "5" is the nose glyph on
+// every species that has one, the way slot "4" is the eye; the four stages
+// without one - a fry that is a single "·", and the box-fin pair whose nose is
+// a fin - fall back to the outermost ink of the row the eye is on, and then to
+// the outermost ink of the middle row. Authored right-facing, so the mouth is
+// always at the greatest column; mirroring moves it with the rest of the fish.
+const mouthCache = new Map();
+
+export function spriteMouthOffset(sprite) {
+  const cached = sprite?.id ? mouthCache.get(sprite.id) : null;
+  if (cached) return cached;
+  const { width, height } = spriteDimensions(sprite);
+  const rowAt = (index) => [...(sprite.shape[index] ?? "")];
+  const maskAt = (index) => [...(sprite.mask?.[index] ?? "")];
+  const outermost = (index) => {
+    const cells = rowAt(index);
+    for (let column = cells.length - 1; column >= 0; column -= 1) {
+      if (cells[column] && cells[column] !== " ") return column;
+    }
+    return null;
+  };
+
+  let mouth = null;
+  for (let row = 0; row < sprite.shape.length && !mouth; row += 1) {
+    const mask = maskAt(row);
+    const column = mask.indexOf("5");
+    if (column >= 0 && rowAt(row)[column]?.trim()) mouth = { column, row };
+  }
+  if (!mouth) {
+    for (let row = 0; row < sprite.shape.length && !mouth; row += 1) {
+      if (!maskAt(row).includes("4")) continue;
+      const column = outermost(row);
+      if (column !== null) mouth = { column, row };
+    }
+  }
+  if (!mouth) {
+    const row = Math.floor((height - 1) / 2);
+    mouth = { column: outermost(row) ?? Math.floor((width - 1) / 2), row };
+  }
+
+  // Where the mouth lands in the row-major order the occupied cells are walked
+  // in. That is the order the renderer emits one fish's glyphs in, so anything
+  // holding a drawn fish - the feeding measurement tool, the regression tests -
+  // can find the mouth on the panel without re-deriving the pose.
+  let glyph = 0;
+  for (let row = 0; row < mouth.row; row += 1) {
+    for (const cell of rowAt(row)) if (cell && cell !== " ") glyph += 1;
+  }
+  for (const [column, cell] of rowAt(mouth.row).entries()) {
+    if (column >= mouth.column) break;
+    if (cell && cell !== " ") glyph += 1;
+  }
+
+  const ink = glyphInkReach(rowAt(mouth.row)[mouth.column]);
+  const offset = Object.freeze({
+    dx: mouth.column - (width - 1) / 2 + ink.right,
+    dy: mouth.row - (height - 1) / 2 + ink.bottom,
+    glyph,
+  });
+  if (sprite?.id) mouthCache.set(sprite.id, offset);
+  return offset;
 }

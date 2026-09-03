@@ -36,6 +36,7 @@ import {
   choreographyFor,
 } from "../src/sim/fish-choreography.js";
 import {
+  FORAGE_GRAZE_BURIAL_ROWS,
   FORAGE_GRAZE_CONTACT_ROWS,
   FORAGE_PECK_ROWS,
   FORAGE_PITCH_BIAS_DEGREES,
@@ -64,6 +65,7 @@ test("scene tuning starts at the constants the simulation used to inline", () =>
   const forage = SCENE_TUNING[ACTIVITIES.substrateSearch];
   assert.equal(forage.grazePitchDegrees, FORAGE_PITCH_BIAS_DEGREES);
   assert.equal(forage.grazeContactRows, FORAGE_GRAZE_CONTACT_ROWS);
+  assert.equal(forage.grazeBurialRows, FORAGE_GRAZE_BURIAL_ROWS);
   assert.equal(forage.peckRows, FORAGE_PECK_ROWS);
   assert.equal(forage.routeLeadColumns, FORAGE_ROUTE_LEAD_COLUMNS);
   assert.equal(forage.searchDistanceRows, FORAGE_SEARCH_DISTANCE_ROWS);
@@ -173,12 +175,16 @@ test("bottom feeding answers its rotation and distance tuning", () => {
   };
   const state = { ...base, individuals: base.individuals.map((f, i) => (i === 4 ? grazing : f)) };
   const level = resolveActivityTarget(grazing, 4, state, grazing.activity);
-  const steep = resolveActivityTarget(grazing, 4, {
+  // Authored against a shallower lean rather than a steeper one: the feeding
+  // posture is already four degrees short of the rotation ceiling, so there is
+  // no room above it to move a fish through and still be reading the tuning
+  // rather than the clamp.
+  const shallow = resolveActivityTarget(grazing, 4, {
     ...state,
-    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { grazePitchDegrees: 30 } } },
+    choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { grazePitchDegrees: 12 } } },
   }, grazing.activity);
-  assert.ok(level.forageSearching && steep.forageSearching, "the fish has to be grazing for this to mean anything");
-  assert.ok(steep.postureBias > level.postureBias + 9, "graze rotation has to reach the posture the renderer draws");
+  assert.ok(level.forageSearching && shallow.forageSearching, "the fish has to be grazing for this to mean anything");
+  assert.ok(level.postureBias > shallow.postureBias + 9, "graze rotation has to reach the posture the renderer draws");
 });
 
 test("chase tuning moves both fish, not only the chaser", () => {

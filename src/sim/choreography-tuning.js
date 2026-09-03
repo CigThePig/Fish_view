@@ -396,13 +396,17 @@ export const SCENE_TUNING = Object.freeze({
     panicFarRows: 3.6,
   }),
   // Rotation and distance are the whole read of bottom feeding: the nose has to
-  // point into the sand, and the belly has to be close enough to reach it.
+  // point into the sand, and the mouth has to be close enough to reach it. The
+  // bite is what that costs - how far the underside may pass through the crest
+  // to put the mouth there - and the search band is a contact band, not an
+  // approach one, because everything downstream of it claims the fish is eating.
   "substrate-search": Object.freeze({
-    grazePitchDegrees: 20,
+    grazePitchDegrees: 28,
     peckPitchDegrees: 11,
     grazeContactRows: 0.06,
+    grazeBurialRows: 1.25,
     peckRows: 0.3,
-    searchDistanceRows: 0.82,
+    searchDistanceRows: 0.45,
     routeLeadColumns: 1.15,
     searchSpanColumns: 6.8,
     searchSpeed: 0.105,
