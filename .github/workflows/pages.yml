@@ -24,16 +24,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
       - name: Verify deterministic simulation and renderer
         run: node --test
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Stage the static site
+        run: |
+          mkdir _site
+          cp *.html *.css LICENSE THIRD_PARTY_NOTICES.md _site/
+          cp -R src _site/src
+
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

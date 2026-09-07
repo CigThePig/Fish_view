@@ -187,6 +187,7 @@ export function createPlantSpecimen({
 }) {
   const numericSeed = seed >>> 0;
   const species = PLANT_SPECIES_BY_ID[speciesId];
+  if (!species) throw new Error(`Unknown plant species: ${speciesId}`);
   const waterHeight = rows - WATERLINE_ROWS - SUBSTRATE_ROWS;
   return createPlantRecord({
     seed: numericSeed,

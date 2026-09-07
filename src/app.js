@@ -1,11 +1,12 @@
 import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=true-rotation-20260902";
 import { render } from "./render/render.js?v=true-rotation-20260902";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
+import { VisibilityClock } from "./platform/visibility-clock.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
 import { DEFAULT_SEED } from "./sim/config.js";
 import { topAffinities } from "./sim/fish-personality.js";
 import { hashSeed } from "./sim/prng.js";
-import { applyTouch, createAquariumState, withSettings } from "./sim/state.js";
+import { advanceOffline, applyTouch, createAquariumState, withSettings } from "./sim/state.js";
 import { tick } from "./sim/tick.js";
 
 const TICK_INTERVAL = 1 / 10;
@@ -14,6 +15,8 @@ const requestedSeed = query.get("seed");
 const seed = requestedSeed ? hashSeed(requestedSeed) : DEFAULT_SEED;
 const now = new Date();
 const wallClockHours = now.getHours() + now.getMinutes() / 60;
+const visibilityClock = new VisibilityClock();
+if (document.visibilityState === "hidden") visibilityClock.pause(now.getTime());
 
 let states = {
   portrait: loadPersistedState(createAquariumState({ orientation: "portrait", seed, wallClockHours })),
@@ -172,6 +175,11 @@ function updateMetrics(timestamp) {
 }
 
 function frame(timestamp) {
+  if (document.visibilityState === "hidden") {
+    lastFrameTime = timestamp;
+    requestAnimationFrame(frame);
+    return;
+  }
   const elapsed = Math.min((timestamp - lastFrameTime) / 1000, 0.25);
   lastFrameTime = timestamp;
   accumulator += elapsed;
@@ -195,7 +203,20 @@ function setMode(mode) {
     button.classList.toggle("is-active", button.dataset.modeButton === mode);
     button.setAttribute("aria-pressed", String(button.dataset.modeButton === mode));
   });
+  syncControls();
   drawVisible();
+}
+
+function syncControls() {
+  const state = states[currentMode === "portrait" ? "portrait" : "landscape"];
+  document.querySelectorAll("[data-setting]").forEach((input) => {
+    const value = String(state.settings[input.dataset.setting]);
+    input.value = value;
+    document.querySelector(`[data-output="${input.dataset.setting}"]`).textContent = value;
+  });
+  document.querySelector("#time-scale").value = String(state.settings.timeScale);
+  document.querySelector("#clock-control").value = String(state.timeOfDayHours);
+  document.querySelector("#clock-output").textContent = formatClock(state.timeOfDayHours);
 }
 
 document.querySelectorAll("[data-mode-button]").forEach((button) => {
@@ -262,9 +283,6 @@ clockControl.addEventListener("input", () => {
   };
   clockOutput.textContent = formatClock(value);
 });
-clockControl.value = String(states.landscape.timeOfDayHours);
-clockOutput.textContent = formatClock(states.landscape.timeOfDayHours);
-timeScale.value = String(states.landscape.settings.timeScale);
 
 document.querySelector("#fullscreen-toggle").addEventListener("click", async () => {
   if (!document.fullscreenElement) {
@@ -275,13 +293,26 @@ document.querySelector("#fullscreen-toggle").addEventListener("click", async () 
 });
 
 function saveAll() {
-  savePersistedState(states.portrait);
-  savePersistedState(states.landscape);
+  const savedAtMs = visibilityClock.saveTimestamp(Date.now());
+  savePersistedState(states.portrait, savedAtMs);
+  savePersistedState(states.landscape, savedAtMs);
 }
 
 setInterval(saveAll, 12_000);
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") saveAll();
+  if (document.visibilityState === "hidden") {
+    visibilityClock.pause(Date.now());
+    saveAll();
+  } else {
+    const elapsed = visibilityClock.resume(Date.now());
+    states = {
+      portrait: advanceOffline(states.portrait, elapsed),
+      landscape: advanceOffline(states.landscape, elapsed),
+    };
+    lastFrameTime = performance.now();
+    accumulator = 0;
+    drawVisible();
+  }
 });
 globalThis.addEventListener("pagehide", saveAll);
 
@@ -292,9 +323,7 @@ document.querySelector("#reset-simulation").addEventListener("click", () => {
     portrait: createAquariumState({ orientation: "portrait", seed, wallClockHours }),
     landscape: createAquariumState({ orientation: "landscape", seed, wallClockHours }),
   };
-  timeScale.value = "1";
-  clockControl.value = String(wallClockHours);
-  clockOutput.textContent = formatClock(wallClockHours);
+  syncControls();
   Object.values(renderers).forEach((renderer) => renderer.reset());
   drawVisible();
 });

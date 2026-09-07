@@ -259,27 +259,16 @@ function colorLuminance(color) {
 }
 
 test("a feeding puff stands off the sand it is lifted from", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  let state = createShowcaseState({ orientation: "landscape", seed: 9, scenario: "substrate-search" });
   const index = 3;
-  const resting = state.individuals[index];
-  const fish = {
-    ...resting,
-    y: substrateGrazeY(resting, state, resting.x),
-    behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
-  };
+  const fish = state.individuals[index];
   const palette = scenePalette(state);
   const sand = colorLuminance(palette.substrateFg);
 
   let sampled = 0;
   for (let age = 0; age < 24; age += 0.05) {
-    const posed = {
-      ...fish,
-      activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: age },
-    };
-    const scene = render({
-      ...state,
-      individuals: state.individuals.map((value, i) => (i === index ? posed : value)),
-    });
+    state = tickShowcase(state, 0.05, "substrate-search");
+    const scene = render(state);
     const debris = scene.objects.find((object) => object.id === `forage-debris:${index}:${fish.seed}`);
     if (!debris) continue;
     sampled += 1;
@@ -417,7 +406,7 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   );
 });
 
-test("the puff is thrown from the mouth the fish is drawn with, not the one it is turning away from", () => {
+test("contact marks follow the posed mouth and silt stays at the released strike", () => {
   // turnPose() swings the drawing to targetFacing halfway through a turn while
   // visual.facing still holds the old direction, so a peck in that window used
   // to land its debris off the tail.
@@ -439,7 +428,9 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
         if (!debris) continue;
         const glyphs = scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount);
         if (!glyphs.length) continue;
-        if (forage.peck > 0.35) {
+        const striking = forage.peck > 0.35
+          && [fish.activity.contactSeed, fish.activity.priorContactSeed].includes(forage.eventSeed);
+        if (striking) {
           // The contact mark is appended after every debris grain. It moved to
           // the mouth horizontally, so its vertical origin must use the terrain
           // under that same point rather than the crest under the fish centre.
@@ -454,25 +445,17 @@ test("the puff is thrown from the mouth the fish is drawn with, not the one it i
           if (Math.abs(localSurface - forage.surfaceY) > 0.1) slopedContacts += 1;
         }
         const visual = fish.visual ?? {};
-        const drawnFacing = visual.turnProgress >= 1
-          ? visual.targetFacing
-          : (visual.turnProgress < 0.5 ? visual.facing : visual.targetFacing);
         if (visual.turnProgress < 1 && visual.facing !== visual.targetFacing) midTurn += 1;
         checked += 1;
-        // Glyph centres, not left edges. A cloud measured by its glyphs' left
-        // edges sits most of a glyph to the left of where it is drawn, which is
-        // a bias the size of the whole offset being tested on a small fish.
-        const centroid = glyphs.reduce(
-          (sum, glyph) => sum + glyph.x + CELL_WIDTH * glyph.scaleX / 2,
-          0,
-        ) / glyphs.length / cellWidth;
-        const offset = centroid - fish.x;
-        if (Math.abs(offset) <= 0.15) continue;
-        assert.equal(
-          Math.sign(offset),
-          drawnFacing,
-          `debris landed on the wrong side of a fish drawn facing ${drawnFacing}`,
-        );
+        const grains = striking ? glyphs.slice(0, -1) : glyphs;
+        if (!grains.length) continue;
+        const releasedX = forage.debrisSeed === fish.activity.contactSeed
+          ? fish.activity.contactX : fish.activity.priorContactX;
+        assert.ok(Number.isFinite(releasedX), "silt has no recorded strike origin");
+        for (const grain of grains) {
+          const grainX = (grain.x + CELL_WIDTH * grain.scaleX / 2) / cellWidth;
+          assert.ok(Math.abs(grainX - releasedX) <= 1, "silt moved away from its own strike");
+        }
       }
     }
   }
@@ -636,26 +619,16 @@ test("every glyph a feeding strike draws exists in the font", () => {
   // question mark on the sand. The scene-wide contract test never caught it
   // because a contact mark lives for about a sixth of a second and its sampled
   // frames never landed inside one. This walks the peck instead of sampling it.
-  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  let state = createShowcaseState({ orientation: "landscape", seed: 9, scenario: "substrate-search" });
   const index = 3;
-  const resting = state.individuals[index];
-  const fish = {
-    ...resting,
-    y: substrateGrazeY(resting, state, resting.x),
-    behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
-  };
+  const fish = state.individuals[index];
 
   const seen = new Set();
   let marks = 0;
   for (let age = 0; age < 24; age += 0.02) {
-    const posed = {
-      ...fish,
-      activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: age },
-    };
-    const scene = render({
-      ...state,
-      individuals: state.individuals.map((value, i) => (i === index ? posed : value)),
-    });
+    state = tickShowcase(state, 0.02, "substrate-search");
+    const posed = state.individuals[index];
+    const scene = render(state);
     const debris = scene.objects.find((object) => object.id === `forage-debris:${index}:${fish.seed}`);
     if (!debris) continue;
     if (forageActivity(posed, index, state).peck > 0.35) marks += 1;

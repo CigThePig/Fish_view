@@ -395,9 +395,9 @@ export const PLANT_SPECIES = Object.freeze([
   }),
 ]);
 
-export const PLANT_SPECIES_BY_ID = Object.freeze(Object.fromEntries(
+export const PLANT_SPECIES_BY_ID = Object.freeze(Object.assign(Object.create(null), Object.fromEntries(
   PLANT_SPECIES.map((item) => [item.id, item]),
-));
+)));
 
 export const PLANT_FAMILIES = Object.freeze({
   grass: Object.freeze(["needle-grass", "split-grass", "ground-tuft", "fork-tuft", "fan-grass"]),

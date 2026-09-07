@@ -16,6 +16,8 @@ export function loadPersistedState(baseState, nowMs = Date.now()) {
     if (!raw) return baseState;
     const envelope = JSON.parse(raw);
     const restored = restorePersistentState(baseState, envelope.state);
+    // An incompatible/corrupt envelope must not age a brand-new aquarium.
+    if (restored === baseState) return baseState;
     const elapsed = Math.max(0, (nowMs - Number(envelope.savedAtMs ?? nowMs)) / 1000);
     return advanceOffline(restored, elapsed);
   } catch {
@@ -29,7 +31,8 @@ export function savePersistedState(state, nowMs = Date.now()) {
       savedAtMs: nowMs,
       state: serializePersistentState(state),
     };
-    globalThis.localStorage?.setItem(keyFor(state), JSON.stringify(envelope));
+    if (!globalThis.localStorage) return false;
+    globalThis.localStorage.setItem(keyFor(state), JSON.stringify(envelope));
     return true;
   } catch {
     return false;
@@ -38,10 +41,10 @@ export function savePersistedState(state, nowMs = Date.now()) {
 
 export function clearPersistedState(state) {
   try {
-    globalThis.localStorage?.removeItem(keyFor(state));
+    if (!globalThis.localStorage) return false;
+    globalThis.localStorage.removeItem(keyFor(state));
     return true;
   } catch {
     return false;
   }
 }
-

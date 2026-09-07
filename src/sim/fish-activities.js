@@ -161,10 +161,14 @@ export function createActivityState(current = ACTIVITIES.cruise, previous = curr
     // strike's silt is still rising when the next one lands, and the next one's
     // own tail does not begin until a third of the way through it. Remembering
     // only the newest would blank the older tail for those two frames. This is
-    // the whole of forage's animation state - two integers, and the renderer
-    // reads the same ones the tick wrote.
+    // contact history: two event seeds and their world-space release points.
+    // The renderer reads the same ones the tick wrote.
     contactSeed: null,
     priorContactSeed: null,
+    contactX: null,
+    contactY: null,
+    priorContactX: null,
+    priorContactY: null,
   };
 }
 
@@ -186,6 +190,10 @@ function normalizedActivity(fish) {
     targetY: Number.isFinite(source?.targetY) ? source.targetY : null,
     contactSeed: Number.isSafeInteger(source?.contactSeed) ? source.contactSeed : null,
     priorContactSeed: Number.isSafeInteger(source?.priorContactSeed) ? source.priorContactSeed : null,
+    contactX: Number.isFinite(source?.contactX) ? source.contactX : null,
+    contactY: Number.isFinite(source?.contactY) ? source.contactY : null,
+    priorContactX: Number.isFinite(source?.priorContactX) ? source.priorContactX : null,
+    priorContactY: Number.isFinite(source?.priorContactY) ? source.priorContactY : null,
   };
 }
 
@@ -1173,12 +1181,15 @@ export function latchForageContact(activity, forage) {
   if (!forage?.searching) {
     return activity.contactSeed === null && activity.priorContactSeed === null
       ? activity
-      : { ...activity, contactSeed: null, priorContactSeed: null };
+      : { ...activity, contactSeed: null, priorContactSeed: null,
+        contactX: null, contactY: null, priorContactX: null, priorContactY: null };
   }
   if (!(forage.peck > 0)) return activity;
   const seed = Number.isSafeInteger(forage.eventSeed) ? forage.eventSeed : null;
   if (activity.contactSeed === seed) return activity;
-  return { ...activity, contactSeed: seed, priorContactSeed: activity.contactSeed };
+  return { ...activity, contactSeed: seed, priorContactSeed: activity.contactSeed,
+    contactX: null, contactY: null,
+    priorContactX: activity.contactX ?? null, priorContactY: activity.contactY ?? null };
 }
 
 // Company is only company when there are fish within reach of it. A school

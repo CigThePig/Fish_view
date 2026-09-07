@@ -50,7 +50,7 @@ test("the visible water surface is a real boundary with air above it", () => {
   const expectedSurface = SURFACE_Y_ROWS * (scene.height / scene.logicalHeight);
   assert.equal(scene.background.baseColor, palette.airBg);
   assert.ok(expectedSurface > 0 && expectedSurface < 24);
-  assert.ok(Math.abs(scene.background.bands[0].y - expectedSurface) < 1e-9);
+  assert.equal(scene.background.bands[0].y, Math.round(expectedSurface));
   assert.ok(scene.background.substrateSegments.length <= state.cols * 2 + 1);
   assert.ok(Math.min(...scene.background.substrateSegments.map((segment) => segment.y)) > scene.height * 0.85);
 });

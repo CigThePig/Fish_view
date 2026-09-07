@@ -4,7 +4,6 @@ import {
   individualSprites,
   schoolGlyphs,
   spriteDimensions,
-  spriteMouthOffset,
   substrateArt,
 } from "../art/sprites.js";
 import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
@@ -19,12 +18,12 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
-import { forageActivity, turnPose } from "../sim/fish-motion.js";
+import { fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
 import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
-import { glyphWidthScale, poseCoordinate, poseSprite, spritePoints } from "./fish-pose.js?v=true-rotation-20260902";
+import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=true-rotation-20260902";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
 import {
   depthScale,
@@ -257,10 +256,9 @@ function createBackground(dimensions, palette, seed, {
   const waterHeight = Math.max(1, waterBottom - surfaceTop);
   const bandHeight = waterHeight / palette.waterBands.length;
   const bands = palette.waterBands.map((color, index) => ({
-    y: surfaceTop + index * bandHeight,
-    height: index === palette.waterBands.length - 1
-      ? waterBottom - (surfaceTop + index * bandHeight)
-      : bandHeight,
+    y: Math.round(surfaceTop + index * bandHeight),
+    height: Math.round(surfaceTop + (index + 1) * bandHeight)
+      - Math.round(surfaceTop + index * bandHeight),
     color,
   }));
   const transitions = bands.slice(1).map((band, index) => ({
@@ -284,15 +282,17 @@ function createBackground(dimensions, palette, seed, {
     const sampleCount = Math.ceil(dimensions.logicalWidth * samplesPerCell);
     for (let sample = 0; sample < sampleCount; sample += 1) {
       const worldX = (sample + 0.5) / samplesPerCell;
-      const top = clamp(
+      const top = Math.round(clamp(
         substrateSurfaceY(terrainState, worldX) * metrics.cellHeight,
         0,
         dimensions.height,
-      );
+      ));
+      const left = Math.round(sample * sampleWidth);
+      const right = Math.round((sample + 1) * sampleWidth);
       substrateSegments.push({
-        x: sample * sampleWidth,
+        x: left,
         y: top,
-        width: sampleWidth + 1,
+        width: right - left,
         height: dimensions.height - top,
         // The terrain crest is the far edge of the floor, and the side falloff
         // is folded straight into its colour because the segments are already
@@ -735,10 +735,10 @@ function individualParts(fish, state, palette, metrics, deformationStrength = 1,
 // The visible water bands begin at the physical surface instead of y = 0.
 // Normalise body shading against that same interval so opaque fish still pick
 // the water companion behind the depth where they actually swim.
-function waterBandDepth(state, worldY) {
-  const waterTop = SURFACE_Y_ROWS;
-  const waterBottom = state.rows - SUBSTRATE_ROWS + SUBSTRATE_RELIEF_ROWS;
-  return clamp((worldY - waterTop) / Math.max(1, waterBottom - waterTop), 0, 0.999);
+function waterBandDepth(background, pixelY) {
+  const bands = background.bands;
+  const index = bands.findIndex((band) => pixelY < band.y + band.height);
+  return ((index < 0 ? bands.length - 1 : index) + 0.5) / bands.length;
 }
 
 function drawIndividuals(builder, state, palette, metrics, deformationStrength) {
@@ -747,7 +747,7 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
     const distance = spreadDepth(state.seed, fish.seed, index, count, state.elapsedRealSeconds);
     const lane = laneForDepth(distance);
     const parts = individualParts(fish, state, palette, metrics, deformationStrength, {
-      verticalDepth: waterBandDepth(state, fish.y),
+      verticalDepth: waterBandDepth(builder.background, fish.y * metrics.cellHeight),
       lane,
       scale: depthScale(distance),
     });
@@ -765,32 +765,11 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
   });
 }
 
-// Where a fish's mouth is drawn, as an offset from its centre in world columns
-// and rows. The contact mark and the silt a strike lifts are the mouth's doing,
-// so they are placed from the artwork's own mouth cell through the same pose
-// the body is drawn with - the same facing, the same turn compression, the same
-// rotation. It used to be a fixed fraction of the sprite's width, which put the
-// mark most of a column behind the nose of a leaning fish and had no way to
-// know that a mouth is on the body row rather than in the middle of the box.
-//
-// The swimming wobble is deliberately left out. It is a fifth of a row of
-// flutter, and a contact mark that shivered with the tail beat would read as
-// noise on the sand rather than as one event.
-function mouthOffset(sprite, { facing, turnScale, pitch, cellAspect }) {
-  const source = spritePoints(sprite);
-  const mouth = spriteMouthOffset(sprite);
-  return poseCoordinate(
-    source,
-    mouth.dx + (source.width - 1) / 2,
-    mouth.dy + (source.height - 1) / 2,
-    { facing, phase: 0, deformationStrength: 0, turnScale, pitch, cellAspect },
-  );
-}
-
 function drawForageDebris(builder, state, palette, metrics) {
   state.individuals.forEach((fish, index) => {
     const activity = forageActivity(fish, index, state);
-    const striking = activity.peck > 0.35;
+    const striking = activity.peck > 0.35
+      && (activity.eventSeed === fish.activity?.contactSeed || activity.eventSeed === fish.activity?.priorContactSeed);
     // The contact mark leads the puff: debris only begins a third of the way
     // into a strike, and the mouth reaches the sand before that.
     if (activity.debrisPhase === null && !striking) return;
@@ -810,26 +789,19 @@ function drawForageDebris(builder, state, palette, metrics) {
     // to targetFacing. The same pose carries the turn compression and the depth
     // scale the body is drawn at, so the offset tracks the size on the panel
     // rather than the sprite's authored width.
-    const turning = turnPose(fish);
-    const drawScale = depthScale(spreadDepth(
-      state.seed,
-      fish.seed,
-      index,
-      state.individuals.length,
-      state.elapsedRealSeconds,
-    ));
-    const posedMouth = mouthOffset(spriteForFish(fish), {
-      facing: turning.facing,
-      turnScale: turning.widthScale,
-      pitch: Number.isFinite(fish.visual?.pitch) ? fish.visual.pitch : 0,
-      cellAspect: metrics.cellHeight / metrics.cellWidth,
-    });
-    const mouthX = fish.x + posedMouth.x * drawScale;
+    const mouthX = fishMouthPosition(fish, state, index).x;
     // The terrain is not flat. Once the cue moved from the fish's centre to its
     // visible mouth, keeping the centre's surface height could float or bury the
     // mark by more than a quarter row on a slope. Sample the crest at the same
     // horizontal origin the cue is actually drawn from.
     const contactSurfaceY = substrateSurfaceY(state, mouthX);
+    const currentCloud = activity.debrisSeed === fish.activity?.contactSeed;
+    const releasedX = currentCloud ? fish.activity?.contactX : fish.activity?.priorContactX;
+    const releasedY = currentCloud ? fish.activity?.contactY : fish.activity?.priorContactY;
+    // The grains stay at the strike that released them when the fish turns or
+    // swims away. Pure pose fixtures can omit history and use the live anchor.
+    const cloudX = Number.isFinite(releasedX) ? releasedX : mouthX;
+    const cloudY = Number.isFinite(releasedY) ? releasedY : contactSurfaceY;
     const count = activity.debrisPhase === null
       ? 0
       : 5 + Math.floor(sample01(fish.seed, 4700 + salt) * 4);
@@ -841,8 +813,8 @@ function drawForageDebris(builder, state, palette, metrics) {
       const char = charChoice < 0.42 ? "." : charChoice < 0.72 ? "," : charChoice < 0.88 ? "'" : ":";
       glyphs.push(positionedGlyph(metrics, {
         char,
-        worldX: mouthX + spread,
-        worldY: contactSurfaceY - 0.04 - rise,
+        worldX: cloudX + spread,
+        worldY: cloudY - 0.04 - rise,
         // The cloud fades back towards the floor as it settles, so the puff
         // reads as one event with a beginning and an end.
         fg: mixColor(silt, settled, progress),

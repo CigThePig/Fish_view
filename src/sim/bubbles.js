@@ -1,7 +1,7 @@
 import { scatteredDepth, spreadDepth } from "./depth.js";
 import { SURFACE_Y_ROWS, substrateSurfaceY } from "./environment.js";
-import { fishSpriteWidth } from "./fish-growth.js";
-import { environmentalCurrent } from "./plants.js";
+import { fishMouthPosition } from "./fish-motion.js";
+import { environmentalCurrent, initialPlantSeeds } from "./plants.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 const TAU = Math.PI * 2;
@@ -53,12 +53,10 @@ function waterBottom(state, worldX) {
 
 function emitterX(state, emitterSeed, index) {
   if (index % 2 === 0 && state.plants?.length) {
-    const plantIndex = Math.floor(sample01(emitterSeed, 7) * state.plants.length) % state.plants.length;
-    return clamp(
-      state.plants[plantIndex].x + sampleSigned(emitterSeed, 8) * 0.62,
-      1,
-      state.cols - 1,
-    );
+    const originalSeeds = initialPlantSeeds(state.seed, state.orientation);
+    const plantIndex = Math.floor(sample01(emitterSeed, 7) * originalSeeds.length);
+    const host = state.plants.find((plant) => plant.seed === originalSeeds[plantIndex]);
+    if (host) return clamp(host.x + sampleSigned(emitterSeed, 8) * 0.62, 1, state.cols - 1);
   }
   return sampleRange(emitterSeed, 9, 1.5, state.cols - 1.5);
 }
@@ -227,33 +225,46 @@ function isolatedBubbleRecords(state) {
   return records;
 }
 
+// One short-lived release per fish. After release a bubble belongs to the
+// water, not to the fish's current position, size or facing.
+export function tickFishExhale(fish, index, state, realDelta) {
+  const seed = mix32(fish.seed ^ 0xa511e9b3);
+  const interval = sampleRange(seed, 50, 32, 118);
+  const clock = positiveModulo(state.elapsedRealSeconds + sampleRange(seed, 51, 0, interval), interval);
+  if (clock < realDelta) {
+    const mouth = fishMouthPosition(fish, state, index);
+    return { ...fish, exhale: {
+      x: mouth.x, y: mouth.y, startedAt: state.elapsedRealSeconds,
+      distance: spreadDepth(state.seed, fish.seed, index, state.individuals.length, state.elapsedRealSeconds),
+    } };
+  }
+  if (fish.exhale && state.elapsedRealSeconds - fish.exhale.startedAt > 4.8) {
+    const { exhale, ...rest } = fish;
+    return rest;
+  }
+  return fish;
+}
+
 function fishExhaleRecords(state) {
   const records = [];
   const count = state.individuals?.length ?? 0;
   for (let index = 0; index < count; index += 1) {
     const fish = state.individuals[index];
-    const distance = spreadDepth(state.seed, fish.seed, index, count, state.elapsedRealSeconds);
+    if (!fish.exhale) continue;
+    const { x, y, distance, startedAt } = fish.exhale;
     const seed = mix32(fish.seed ^ 0xa511e9b3);
-    const interval = sampleRange(seed, 50, 32, 118);
-    const clock = positiveModulo(
-      state.elapsedRealSeconds + sampleRange(seed, 51, 0, interval),
-      interval,
-    );
-    if (clock > 4.8) continue;
-    const facing = fish.visual?.targetFacing === -1 || fish.visual?.targetFacing === 1
-      ? fish.visual.targetFacing
-      : fish.vx < 0 ? -1 : 1;
-    const mouthOffset = clamp(fishSpriteWidth(fish) * 0.36, 1.2, 3.4);
+    const clock = state.elapsedRealSeconds - startedAt;
+    if (clock < 0 || clock > 4.8) continue;
     const current = environmentalCurrent(state.seed, state.elapsedRealSeconds);
+    const phase = sampleRange(seed, 52, 0, TAU);
     const worldX = clamp(
-      fish.x + facing * mouthOffset
-        + current.primary * 0.06
-        + Math.sin(clock * 1.8 + sampleRange(seed, 52, 0, TAU)) * 0.12,
+      x + current.primary * 0.06 * clock
+        + (Math.sin(clock * 1.8 + phase) - Math.sin(phase)) * 0.12,
       0.4,
       state.cols - 0.4,
     );
     const speed = sampleRange(seed, 53, 0.3, 0.46);
-    const worldY = fish.y - 0.25 - clock * speed;
+    const worldY = y - clock * speed;
     if (worldY <= bubbleWaterTop()) continue;
     records.push({
       id: `bubble:fish:${fish.seed}`,

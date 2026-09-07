@@ -52,6 +52,8 @@ export const PITCH_ROTATION_FRACTION = 1;
 // receives.
 export const PITCH_CLEARANCE_FRACTION = 1;
 export const DEFAULT_SEED = 0xa51c0a7e;
+export const INITIAL_INDIVIDUAL_COUNT = 6;
+export const MAX_INDIVIDUALS = 8;
 
 // Drives never reach 0 or 1: a fish is never perfectly satisfied and never
 // starves to death. Behaviour selection has to account for the ceiling, because
@@ -87,6 +89,28 @@ export const DEFAULT_SETTINGS = Object.freeze({
   depthPreference: 0.24,
   schoolSpeed: 1.45,
 });
+
+// The supported controls, shared by initialization, tuning and save restore.
+// Validate before allocating the school or handing values to the simulation.
+export const SETTING_LIMITS = Object.freeze({
+  timeScale: Object.freeze([1, 604800]),
+  schoolCount: Object.freeze([25, 40]),
+  separation: Object.freeze([0, 2.5]),
+  alignment: Object.freeze([0, 1.5]),
+  cohesion: Object.freeze([0, 1.2]),
+  boundary: Object.freeze([0.2, 2.2]),
+  depthPreference: Object.freeze([0, 0.8]),
+  schoolSpeed: Object.freeze([0.5, 2.4]),
+});
+
+export function sanitizeSettings(settings, fallback = DEFAULT_SETTINGS) {
+  return Object.fromEntries(Object.entries(SETTING_LIMITS).map(([key, [minimum, maximum]]) => {
+    const value = Number.isFinite(settings?.[key]) ? settings[key]
+      : Number.isFinite(fallback?.[key]) ? fallback[key] : DEFAULT_SETTINGS[key];
+    const bounded = Math.max(minimum, Math.min(maximum, value));
+    return [key, key === "schoolCount" ? Math.round(bounded) : bounded];
+  }));
+}
 
 export function orientationConfig(orientation) {
   const config = ORIENTATIONS[orientation];
