@@ -1,2 +1,4 @@
 .behavior-captures/
 node_modules/
+.audit-output/
+_site/

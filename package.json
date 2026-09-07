@@ -7,6 +7,9 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test",
+    "audit:simulation": "node tools/audit-simulation.mjs",
+    "audit:render": "node tools/audit-render.mjs",
+    "audit:persistence": "node tools/audit-persistence.mjs",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
     "measure:screen": "node tools/measure-screen-legibility.mjs",
     "measure:feeding": "node tools/measure-substrate-feeding.mjs",
