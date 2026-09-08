@@ -11,10 +11,45 @@ import { createAquariumState, serializePersistentState } from "../src/sim/state.
 import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
+function forageDiagnostics() {
+  return {
+    searchingFrames: 0,
+    contactingFrames: 0,
+    minDistanceRows: Number.POSITIVE_INFINITY,
+    minMouthGapRows: Number.POSITIVE_INFINITY,
+    maxPitch: 0,
+    final: null,
+  };
+}
+
+function sampleForageDiagnostics(diagnostics, fish, state) {
+  const forage = forageActivity(fish, 3, state);
+  const mouth = fishMouthPosition(fish, state, 3);
+  const mouthGap = forage.surfaceY - mouth.y;
+  if (forage.searching) diagnostics.searchingFrames += 1;
+  if (forage.contacting) diagnostics.contactingFrames += 1;
+  diagnostics.minDistanceRows = Math.min(diagnostics.minDistanceRows, forage.distanceRows);
+  diagnostics.minMouthGapRows = Math.min(diagnostics.minMouthGapRows, mouthGap);
+  diagnostics.maxPitch = Math.max(diagnostics.maxPitch, Math.abs(fish.visual?.pitch ?? 0));
+  diagnostics.final = {
+    activity: fish.activity?.current,
+    behavior: fish.behavior?.current,
+    age: fish.activity?.ageRealSeconds,
+    y: fish.y,
+    targetY: forage.targetY,
+    distanceRows: forage.distanceRows,
+    mouthGapRows: mouthGap,
+    pitch: fish.visual?.pitch,
+    turnProgress: fish.visual?.turnProgress,
+    searching: forage.searching,
+    contacting: forage.contacting,
+    peck: forage.peck,
+  };
+  return forage;
+}
+
 test("plant propagation and storage order cannot move an existing bubble emitter", () => {
   for (const orientation of ["landscape", "portrait"]) for (const seed of [5, 29, 83, 147]) {
-    // Deliberately a new aquarium: this is about the garden filling in, and a
-    // stocked one has already reached the plant cap with nothing left to grow.
     const initial = createAquariumState({ seed, orientation });
     const grown = advanceAquariumHistory(initial, 420);
     assert.ok(grown.plants.length > initial.plants.length);
@@ -41,7 +76,6 @@ test("shared mouth origins match drawn mouth anchors through growth, pitch and t
         const y = (glyph.y + 12 * glyph.scaleY) / (scene.height / state.rows);
         const mouth = fishMouthPosition(fish, state, 3);
         assert.ok(Math.abs(mouth.x - x) < 0.01, `${sprite.id} mouth x`);
-        // Body bob remains visible even with swimming deformation disabled.
         assert.ok(Math.abs(mouth.y - y) < 0.09, `${sprite.id} mouth y`);
       }
     }
@@ -75,12 +109,13 @@ test("an exhaled bubble leaves the posed mouth and then moves independently", ()
 test("released silt stays at its strike when the feeding fish turns and moves", () => {
   let state = createShowcaseState({ scenario: "substrate-search" });
   let found = false;
+  const diagnostics = forageDiagnostics();
   for (let frame = 0; frame < 300; frame++) {
     state = tickShowcase(state, 0.1, "substrate-search");
-    const forage = forageActivity(state.individuals[3], 3, state);
+    const forage = sampleForageDiagnostics(diagnostics, state.individuals[3], state);
     if (forage.debrisPhase !== null && forage.debrisPhase > 0.5 && forage.peck === 0) { found = true; break; }
   }
-  assert.ok(found);
+  assert.ok(found, `adult forage never released measurable silt: ${JSON.stringify(diagnostics)}`);
   const before = render(state);
   const fish = state.individuals[3];
   const moved = { ...fish, x: fish.x + 2, visual: { ...fish.visual, facing: -1, targetFacing: -1, turnProgress: 1 } };
@@ -96,12 +131,15 @@ test("released silt stays at its strike when the feeding fish turns and moves", 
 
 test("a scheduled peck cannot draw a contact mark without a recorded strike", () => {
   let state = createShowcaseState({ scenario: "substrate-search" });
+  const diagnostics = forageDiagnostics();
+  let forage = null;
   for (let frame = 0; frame < 300; frame++) {
     state = tickShowcase(state, 0.1, "substrate-search");
-    if (forageActivity(state.individuals[3], 3, state).peck > 0.5) break;
+    forage = sampleForageDiagnostics(diagnostics, state.individuals[3], state);
+    if (forage.peck > 0.5) break;
   }
   const fish = state.individuals[3];
-  assert.ok(forageActivity(fish, 3, state).peck > 0.5);
+  assert.ok(forage?.peck > 0.5, `adult forage never reached a scheduled contact: ${JSON.stringify(diagnostics)}`);
   const unlatched = { ...fish, activity: { ...fish.activity, contactSeed: null, priorContactSeed: null } };
   const scene = render({ ...state, individuals: state.individuals.map((other, i) => i === 3 ? unlatched : other) });
   assert.equal(scene.objects.some((object) => object.id.startsWith("forage-debris:3:")), false);
