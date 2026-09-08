@@ -156,7 +156,17 @@ export function scenePalette(state) {
     growthTip: mixColor(DAY_PLANTS.growthTip, NIGHT_PLANTS.growthTip, night),
     glowTip: mixColor(DAY_PLANTS.glowTip, NIGHT_PLANTS.glowTip, night),
   };
+  const plantDepthLanes = Array.from({ length: DEPTH_LANES }, (_, lane) => {
+    const haze = LANE_HAZE[lane];
+    return {
+      ...Object.fromEntries(["background", "midground", "foreground"].map(group => [group,
+        hazeList(mixList(DAY_PLANTS[group], NIGHT_PLANTS[group], night), fog, haze)])),
+      growthTip: mixColor(plants.growthTip, fog, haze),
+      glowTip: mixColor(plants.glowTip, fog, haze),
+    };
+  });
   return {
+    plantDepthLanes,
     daylight: 1 - night,
     night,
     paletteStage,

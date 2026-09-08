@@ -1,7 +1,7 @@
 import { livingWorldRecords } from './living-world.js';
 import { WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
-import { plantRootY } from "./environment.js";
+import { plantGroundY, plantDepthScale } from "./habitat-depth.js";
 import { sceneTuning } from "./choreography-tuning.js";
 import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
@@ -288,7 +288,7 @@ export function plantTargetPosition(fish, plant, state, {
   const x = clamp(plant.x + side * sideDistance, halfWidth, state.cols - halfWidth);
   const top = surfaceSafeY(fish, state, x);
   const bottom = substrateSafeY(fish, state, x);
-  const rawY = plantRootY(state, plant.x) - height * fraction;
+  const rawY = plantGroundY(state, plant) - height * plantDepthScale(plant) * fraction;
   return {
     x,
     y: clamp(rawY, Math.min(top, bottom), Math.max(top, bottom)),

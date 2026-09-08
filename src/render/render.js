@@ -19,7 +19,7 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
-import { fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
+import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
 import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
@@ -27,6 +27,7 @@ import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
 import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=true-rotation-20260902";
 import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
 import {
+  worldLayer,
   depthScale,
   laneForDepth,
   schoolDepthScale,
@@ -89,28 +90,14 @@ export function bodyMotionForFish(fish) {
   };
 }
 
+// Fixed surfaces and overlays bracket the shared world distance axis (20..56).
+// The group names remain authoring-lab anchors; production inhabitants use
+// worldLayer(distance), never a species or object-kind priority.
 export const LAYERS = Object.freeze({
-  // Sunlight is behind everything, the water surface included: a shaft is the
-  // water being lit, not something floating in front of it.
-  shafts: 5,
-  waterline: 10,
-  backgroundPlants: 20,
-  // The far end of the school swims behind the midground weed rather than in
-  // front of it. Something passing behind a plant is the one depth cue no
-  // amount of colour work can fake.
-  deepSchool: 22,
-  midgroundPlants: 24,
-  ambient: 25,
-  // The nearer four school lanes stack on 30..33 and the five individual lanes
-  // on 40..44. The six named individuals stay between the midground and
-  // foreground vegetation at every distance: they are the characters, and an
-  // opaque fish disappearing behind a weed reads as a bug rather than as depth.
-  school: 30,
-  forageDebris: 39,
-  individuals: 40,
-  reaction: 45,
-  foregroundPlants: 50,
-  substrate: 60,
+  shafts: 5, waterline: 10, substrate: 60,
+  backgroundPlants: 24, midgroundPlants: 38, foregroundPlants: 52,
+  deepSchool: 22, school: 38, individuals: 38, ambient: 38,
+  forageDebris: 38, reaction: 58,
 });
 
 // Sunlight entering a tank is cheap volume: a handful of tilted, widening,
@@ -665,9 +652,7 @@ function drawSchool(builder, state, palette, metrics) {
     });
     addGlyphObject(builder, {
       id: `school:${index}`,
-      // The farthest lane goes behind the midground weed. Everything nearer
-      // stacks above it in distance order.
-      layer: lane === 0 ? LAYERS.deepSchool : LAYERS.school + lane - 1,
+      layer: worldLayer(distance),
       glyphs,
     });
   });
@@ -755,11 +740,7 @@ function drawIndividuals(builder, state, palette, metrics, deformationStrength) 
     });
     addGlyphObject(builder, {
       id: `individual:${index}:${fish.seed}`,
-      // Individuals stay between the midground and foreground vegetation at
-      // every distance and only sort against each other. They are the
-      // characters of the tank, and one vanishing behind a weed reads as a bug
-      // rather than as depth.
-      layer: LAYERS.individuals + lane,
+      layer: worldLayer(distance),
       glyphs: parts.glyphs,
       fill: parts.fill,
       padding: 2,
@@ -796,7 +777,7 @@ function drawForageDebris(builder, state, palette, metrics) {
     // visible mouth, keeping the centre's surface height could float or bury the
     // mark by more than a quarter row on a slope. Sample the crest at the same
     // horizontal origin the cue is actually drawn from.
-    const contactSurfaceY = substrateSurfaceY(state, mouthX);
+    const contactSurfaceY = fishSubstrateY(fish, state, mouthX, index);
     const currentCloud = activity.debrisSeed === fish.activity?.contactSeed;
     const releasedX = currentCloud ? fish.activity?.contactX : fish.activity?.priorContactX;
     const releasedY = currentCloud ? fish.activity?.contactY : fish.activity?.priorContactY;
@@ -842,7 +823,7 @@ function drawForageDebris(builder, state, palette, metrics) {
     }
     addGlyphObject(builder, {
       id: `forage-debris:${index}:${fish.seed}`,
-      layer: LAYERS.forageDebris,
+      layer: worldLayer(individualVisualDepth(fish, index, state)) - 0.001,
       glyphs,
       padding: 1,
     });
@@ -910,7 +891,7 @@ function drawSubstrate(builder, state, palette, metrics) {
     }
   }
   for (const [chunk, glyphs] of chunks) {
-    addGlyphObject(builder, { id: `substrate:${chunk}`, layer: LAYERS.substrate, glyphs });
+    addGlyphObject(builder, { id: `substrate:${chunk}`, layer: 19, glyphs });
   }
 }
 
@@ -926,17 +907,13 @@ export function render(state, { deformationStrength = 1 } = {}) {
   drawSurface(builder, state, palette, metrics);
   drawSurfaceRipples(builder, state, palette, metrics);
   for (const record of plantFrame.records) {
-    if (record.layerName === "background") addPlantRecord(builder, record, LAYERS.backgroundPlants);
-    if (record.layerName === "midground") addPlantRecord(builder, record, LAYERS.midgroundPlants);
+    addPlantRecord(builder, record);
   }
   drawBubbles(builder, state, palette, metrics, LAYERS.ambient);
   drawSchool(builder, state, palette, metrics);
   drawForageDebris(builder, state, palette, metrics);
   drawIndividuals(builder, state, palette, metrics, deformationStrength);
   drawReaction(builder, state.reaction, palette, metrics);
-  for (const record of plantFrame.records) {
-    if (record.layerName === "foreground") addPlantRecord(builder, record, LAYERS.foregroundPlants);
-  }
   drawSubstrate(builder, state, palette, metrics);
   return finalizeScene(builder);
 }
@@ -1117,12 +1094,7 @@ export function renderPlantLabScene(speciesId, {
     metrics,
     { frameContext, quality, id: `plant-lab:${speciesId}:${index}` },
   ));
-  const layerByName = {
-    background: LAYERS.backgroundPlants,
-    midground: LAYERS.midgroundPlants,
-    foreground: LAYERS.foregroundPlants,
-  };
-  for (const record of records) addPlantRecord(builder, record, layerByName[record.layerName]);
+  for (const record of records) addPlantRecord(builder, record);
   builder.metadata.plants = {
     instances: records.length,
     activeJoints: records.reduce((sum, record) => sum + record.pose.activeJointCount, 0),

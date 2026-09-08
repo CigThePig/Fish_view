@@ -14,6 +14,7 @@
     "measure:screen": "node tools/measure-screen-legibility.mjs",
     "measure:feeding": "node tools/measure-substrate-feeding.mjs",
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs",
+    "capture:depth": "node tools/capture-habitat-depth.mjs",
     "capture:living": "node tools/capture-living-aquarium.mjs",
     "measure:living": "node tools/measure-living-aquarium.mjs"
   },

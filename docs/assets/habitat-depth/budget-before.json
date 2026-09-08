@@ -1,0 +1,58 @@
+{
+  "options": {
+    "root": "/tmp/fish-depth-baseline",
+    "seeds": [
+      5,
+      83,
+      147
+    ],
+    "frames": 50,
+    "output": "/tmp/fish-budget-before"
+  },
+  "results": [
+    {
+      "orientation": "landscape",
+      "days": 0,
+      "frames": 150,
+      "averageDamagePercent": 21.943428819444435,
+      "maxDamagePercent": 31.005208333333336,
+      "fullRedraws": 0,
+      "averageGlyphs": 408.34,
+      "averageObjects": 156.9,
+      "desktopFrameMilliseconds": 8.67239302666668
+    },
+    {
+      "orientation": "landscape",
+      "days": 730,
+      "frames": 150,
+      "averageDamagePercent": 44.26988368055558,
+      "maxDamagePercent": 75.80572916666667,
+      "fullRedraws": 0,
+      "averageGlyphs": 1093,
+      "averageObjects": 208.12,
+      "desktopFrameMilliseconds": 14.5765421333333
+    },
+    {
+      "orientation": "portrait",
+      "days": 0,
+      "frames": 150,
+      "averageDamagePercent": 20.16331423611112,
+      "maxDamagePercent": 30.959895833333334,
+      "fullRedraws": 0,
+      "averageGlyphs": 409.75333333333333,
+      "averageObjects": 135.92666666666668,
+      "desktopFrameMilliseconds": 5.84439323333337
+    },
+    {
+      "orientation": "portrait",
+      "days": 730,
+      "frames": 150,
+      "averageDamagePercent": 61.216215277777785,
+      "maxDamagePercent": 95.125,
+      "fullRedraws": 0,
+      "averageGlyphs": 1202,
+      "averageObjects": 185.14666666666668,
+      "desktopFrameMilliseconds": 11.382690659999996
+    }
+  ]
+}

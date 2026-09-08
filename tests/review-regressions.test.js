@@ -1,3 +1,4 @@
+import { fishSubstrateY } from "../src/sim/fish-motion.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -98,13 +99,13 @@ test("implicit terminal stems stay structural instead of becoming detached tip d
 
 test("school engagement comes from nearby school fish, not an empty centroid", () => {
   const base = withSettings(createAquariumState({ orientation: "landscape", seed: 2 }), { timeScale: 3600 });
+  base.school = base.school.map((fish, i) => ({ ...fish, x: base.cols / 2 + (i % 2 ? 10 : -10), y: 8 }));
   const center = schoolSummary(base.school, base);
   const nearestToCenter = Math.min(
     ...base.school.map((fish) => Math.hypot(fish.x - center.x, fish.y - center.y)),
   );
-  // Seed 2 starts with a school scattered around an empty middle: the centroid
-  // is the shape of the shoal, never a fish that another fish can swim beside.
-  assert.ok(nearestToCenter > 5, "seed 2 no longer has an empty school centroid to guard");
+  // Two groups with empty water between them: their centroid is not a fish.
+  assert.ok(nearestToCenter > 5, "the fixture must have an empty school centroid");
 
   const follow = (x, y) => ({
     ...base,
@@ -312,7 +313,7 @@ test("a strike puts the mouth in the sand without burying the fish, on every see
           const object = scene.objects.find((candidate) => candidate.id === `individual:${index}:${fish.seed}`);
           if (!object?.fill?.length) continue;
           const entered = Math.max(...object.fill.map((span) => span.y + span.height)) / rowPixels
-            - substrateSurfaceY(state, fish.x);
+            - fishSubstrateY(fish, state, fish.x);
           if (deepest === null || entered > deepest) deepest = entered;
           const glyphs = glyphsForObject(scene, object);
           const mouth = glyphs[spriteMouthOffset(spriteForFish(fish)).glyph];
@@ -323,7 +324,7 @@ test("a strike puts the mouth in the sand without burying the fish, on every see
           // terrain the fish is not feeding from.
           const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / (config.pixelWidth / config.cols);
           const reached = Math.max(...glyphPixelRects(mouth).map((rectangle) => rectangle.y + rectangle.height))
-            / rowPixels - substrateSurfaceY(state, mouthX);
+            / rowPixels - fishSubstrateY(state.individuals[index], state, mouthX);
           if (shyest === null || reached < shyest) shyest = reached;
         }
         if (deepest !== null && step > 3000) break;
@@ -395,11 +396,11 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   // the crest its own contact mark is drawn against.
   const mouth = glyphs[spriteMouthOffset(spriteForFish(feeding)).glyph];
   const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / cellWidth;
-  const gap = substrateSurfaceY(state, mouthX) - bottomOf([mouth]);
+  const gap = fishSubstrateY(state.individuals[index], state, mouthX) - bottomOf([mouth]);
   assert.ok(gap <= 0.35, `far feeding mouth hovered ${gap.toFixed(2)} rows above its contact mark`);
   assert.ok(gap >= -0.6, `far feeding mouth drove ${(-gap).toFixed(2)} rows under the crest`);
   // Reaching it costs body, and the authored bite is the ceiling on that cost.
-  const buried = bottomOf(glyphs) - substrateSurfaceY(state, feeding.x);
+  const buried = bottomOf(glyphs) - fishSubstrateY(feeding, state, feeding.x);
   assert.ok(
     buried <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
     `far feeding fish buried ${buried.toFixed(2)} rows of itself`,
@@ -437,7 +438,7 @@ test("contact marks follow the posed mouth and silt stays at the released strike
           const contact = glyphs.at(-1);
           const contactX = (contact.x + CELL_WIDTH * contact.scaleX / 2) / cellWidth;
           const contactY = (contact.y + CELL_HEIGHT * contact.scaleY / 2) / cellHeight;
-          const localSurface = substrateSurfaceY(state, contactX);
+          const localSurface = fishSubstrateY(fish, state, contactX);
           assert.ok(
             Math.abs(contactY - (localSurface - 0.12)) < 1e-9,
             "the contact mark did not sit on the terrain under the visible mouth",
@@ -662,7 +663,7 @@ test("a feeding fish gets its mouth to the sand at every size it can grow to", (
     const base = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
     const index = 3;
     const pitch = sceneTuning(base, "substrate-search").grazePitchDegrees;
-    const crest = substrateSurfaceY(base, base.cols * 0.5);
+    const crest = fishSubstrateY(base.individuals[index], base, base.cols * 0.5);
     const measured = [];
 
     for (const stage of new Set(individualSprites.flatMap((species) => growthStagesFor(species.id)))) {
@@ -714,7 +715,7 @@ test("a feeding fish gets its mouth to the sand at every size it can grow to", (
         // span, so one sample for the whole animal is a third of a row of noise.
         const mouthX = (mouth.x + CELL_WIDTH * mouth.scaleX / 2) / cellWidth;
         return {
-          mouth: substrateSurfaceY(base, mouthX) - bottomOf([mouth]),
+          mouth: fishSubstrateY(fish, base, mouthX) - bottomOf([mouth]),
           buried: bottomOf(glyphs) - crest,
         };
       };

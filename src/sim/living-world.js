@@ -1,5 +1,5 @@
 import { clamp } from './entities.js';
-import { substrateSurfaceY } from './environment.js';
+import { groundY, woodDepth } from './habitat-depth.js';
 import { sample01, sampleRange } from './prng.js';
 
 const TAU = Math.PI * 2;
@@ -26,7 +26,7 @@ export function driftwoodPath(state, index = 0) {
   return Array.from({ length: 19 }, (_, i) => {
     const u = i / 18;
     const x = root + width * u;
-    return { x, y: substrateSurfaceY(state, x) - 0.08
+    return { x, y: groundY(state, x, woodDepth(index)) - 0.08
       - Math.sin(u * Math.PI) * (left ? 2.1 : 1.35)
         * (0.92 + sample01(state.seed, 12020 + index) * 0.16)
         - Math.sin(u * Math.PI * 2) * 0.14, u };
@@ -43,8 +43,9 @@ export function livingWorldRecords(state) {
     const seed = state.seed ^ (0x43a912 + i * 7919);
     const phase = time * sampleRange(seed, 1, 0.002, 0.0036) + sampleRange(seed, 2, 0, TAU);
     const x = state.cols * (0.5 + Math.sin(phase) * 0.4);
-    records.push({ id: `snail:${i}`, kind: 'snail', seed, x,
-      y: substrateSurfaceY(state, x) - 0.16, facing: Math.cos(phase) < 0 ? -1 : 1,
+    const depth = sampleRange(seed, 19, 0.12, 0.85);
+    records.push({ id: `snail:${i}`, kind: 'snail', seed, x, depth,
+      y: groundY(state, x, depth) - 0.16, facing: Math.cos(phase) < 0 ? -1 : 1,
       pulse: Math.sin(time * 0.7 + i), visibility: 1 });
   }
   for (let i = 0; i < (days >= 100 ? 3 : days >= 7 ? 2 : 1); i++) {
@@ -53,8 +54,9 @@ export function livingWorldRecords(state) {
     const cycle = (time / 19 + sample01(seed, 5)) % 1;
     const hop = cycle < 0.28 ? Math.sin(cycle / 0.28 * Math.PI) : 0;
     const x = state.cols * (0.5 + Math.sin(phase) * 0.37);
-    records.push({ id: `shrimp:${i}`, kind: 'shrimp', seed, x,
-      y: substrateSurfaceY(state, x) - 0.4 - hop * 1.35,
+    const depth = sampleRange(seed, 19, 0.08, 0.88);
+    records.push({ id: `shrimp:${i}`, kind: 'shrimp', seed, x, depth,
+      y: groundY(state, x, depth) - 0.4 - hop * 1.35,
       facing: Math.cos(phase) < 0 ? -1 : 1, pulse: hop, visibility: 1 });
   }
   // Tufts travel through the tank, fade at the ends, and reappear at the water
@@ -66,7 +68,7 @@ export function livingWorldRecords(state) {
     const cycle = Math.floor(clock / duration);
     const u = (clock % duration) / duration;
     const x = state.cols * (0.25 + i * 0.43) + Math.sin(time * 0.075 + i * 3) * 3.1;
-    records.push({ id: `tuft:${i}:${cycle}`, kind: 'tuft', seed, x,
+    records.push({ id: `tuft:${i}:${cycle}`, kind: 'tuft', seed, x, depth: sampleRange(seed, 19, 0.15, 0.85),
       y: 2 + u * (state.rows - 5), facing: 1, pulse: Math.sin(time * 0.9 + i),
       visibility: smooth(u / 0.08) * smooth((1 - u) / 0.12) });
   }

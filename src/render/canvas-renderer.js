@@ -17,7 +17,10 @@ function drawBackground(context, scene, region) {
     const block = transition.blockSize;
     const startY = transition.y - transition.height / 2;
     const endY = transition.y + transition.height / 2;
-    if (endY < region.y || startY > region.y + region.height) continue;
+    // Dither blocks straddle the nominal transition interval. Cull against
+    // the pixels they paint, including the last block's overhang.
+    if (Math.ceil(endY / block) * block <= region.y
+      || Math.floor(startY / block) * block >= region.y + region.height) continue;
     const firstY = Math.floor(Math.max(startY, region.y) / block) * block;
     const firstX = Math.floor(region.x / block) * block;
     const lastX = region.x + region.width;

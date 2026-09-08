@@ -1,3 +1,5 @@
+import { plantGroundY, plantDepth } from "../src/sim/habitat-depth.js";
+import { worldLayer } from "../src/render/depth.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -147,7 +149,7 @@ test("growth reveals structural joints while every root remains fixed", () => {
       const mature = posePlant(plant, state, { frameContext: context, ageDays: matureAge });
       assert.equal(seedling.root.x, 8.25);
       assert.equal(mature.root.x, 8.25);
-      assert.equal(seedling.root.y, rows - SUBSTRATE_ROWS + 0.18);
+      assert.equal(seedling.root.y, plantGroundY(state, plant) + 0.18);
       assert.equal(mature.root.y, seedling.root.y);
       assert.ok(mature.activeJointCount > seedling.activeJointCount, species.id + " did not add structure");
       assert.equal(mature.activeJointCount, species.joints.length - 1);
@@ -180,7 +182,7 @@ test("strong current, touch, and fish poses remain finite and bounded", () => {
       for (const point of [pose.root, ...pose.joints]) {
         assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.angle));
         assert.ok(point.y > 1.5, species.id + " crossed the waterline");
-        assert.ok(point.y <= rows - SUBSTRATE_ROWS + 0.181, species.id + " grew below its root");
+        assert.ok(point.y <= pose.root.y + 0.001, species.id + " grew below its root");
       }
     }
   }
@@ -254,31 +256,31 @@ test("mature aquarium plants stay within joint, attachment, and scene budgets", 
   }
 });
 
-test("plant depth ordering keeps background and midground behind opaque fish", () => {
-  const scene = render(matureState("landscape", 5));
-  const background = scene.objects.find((object) => object.layer === LAYERS.backgroundPlants);
-  const midground = scene.objects.find((object) => object.layer === LAYERS.midgroundPlants);
-  const fish = scene.objects.find((object) => object.id.startsWith("individual:"));
-  const foreground = scene.objects.find((object) => object.layer === LAYERS.foregroundPlants);
-  assert.ok(background && midground && fish && foreground);
-  assert.ok(background.layer < midground.layer && midground.layer < fish.layer && fish.layer < foreground.layer);
-  assert.ok(fish.fill.length > 0);
-  const sorted = scene.objects.map((object) => object.layer);
-  assert.deepEqual(sorted, [...sorted].sort((left, right) => left - right));
+test("plant depth ordering follows specimen distance and interleaves with fish", () => {
+  const state = matureState("landscape", 5), scene = render(state);
+  for (const [index, plant] of state.plants.entries()) {
+    const object = scene.objects.find(o => o.id === `plant:${index}:${plant.seed}`);
+    assert.equal(object.layer, worldLayer(plantDepth(plant)));
+  }
+  const fish = scene.objects.filter(o => o.id.startsWith("individual:"));
+  assert.ok(plantObjects(scene).some(p => p.layer > fish[0].layer));
+  assert.ok(plantObjects(scene).some(p => p.layer < fish.at(-1).layer));
+  const sorted = scene.objects.map(o => o.layer);
+  assert.deepEqual(sorted, [...sorted].sort((a, b) => a - b));
 });
 
 test("quantized background poses can skip frames without synchronizing the garden", () => {
   const base = matureState("landscape", 29);
   const first = render({ ...base, elapsedRealSeconds: 1.01 });
   const second = render({ ...base, elapsedRealSeconds: 1.11 });
-  const beforeBackground = plantObjects(first).filter((object) => object.layer === LAYERS.backgroundPlants);
+  const beforeBackground = plantObjects(first).filter((object) => base.plants[Number(object.id.split(":")[1])].layer === "background");
   const afterBackground = new Map(plantObjects(second)
-    .filter((object) => object.layer === LAYERS.backgroundPlants)
+    .filter((object) => base.plants[Number(object.id.split(":")[1])].layer === "background")
     .map((object) => [object.id, object]));
   assert.ok(beforeBackground.length > 0);
   assert.ok(beforeBackground.every((object) => afterBackground.get(object.id).signature === object.signature));
 
-  const moving = plantObjects(first).filter((object) => object.layer !== LAYERS.backgroundPlants);
+  const moving = plantObjects(first).filter((object) => base.plants[Number(object.id.split(":")[1])].layer !== "background");
   const moved = new Map(plantObjects(second).map((object) => [object.id, object]));
   assert.ok(moving.some((object) => moved.get(object.id).signature !== object.signature));
 
@@ -318,7 +320,9 @@ test("plant palettes stay quantized, restrained, and valid at day and night", ()
   const nightScene = render(matureState("landscape", 83, 2));
   const nightPlantColors = plantObjects(nightScene)
     .flatMap((object) => glyphsForObject(nightScene, object).map((glyph) => glyph.fg));
-  assert.ok(new Set(nightPlantColors).size <= 11, "night plants introduced too many palette colours");
+  const known = new Set(scenePalette({ timeOfDayHours: 2 }).plantDepthLanes.flatMap(p =>
+    [...p.background, ...p.midground, ...p.foreground, p.growthTip, p.glowTip]));
+  assert.ok(nightPlantColors.every(color => known.has(color)), "plant colours escaped the depth palette");
 });
 
 test("persistence v2 stores biology, not animated joints, and migrates v1 saves", () => {

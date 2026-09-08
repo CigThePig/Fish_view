@@ -7,6 +7,7 @@ import {
   orientationConfig,
   PITCH_CLEARANCE_FRACTION,
 } from "./config.js";
+import { groundY } from "./habitat-depth.js";
 import { individualDepthScale, spreadDepth } from "./depth.js";
 import { spriteForFish } from "./fish-growth.js";
 import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
@@ -317,12 +318,12 @@ export function fishGrazeClearanceRows(
   return Math.max(0, reserve + FORAGE_GRAZE_MODEL_MARGIN_ROWS);
 }
 
-export function individualVisualScale(fish, index, state) {
+export function individualVisualDepth(fish, index, state) {
   const individuals = state?.individuals ?? [];
   const resolvedIndex = Number.isInteger(index) && index >= 0 && index < individuals.length
     ? index
     : individuals.findIndex((candidate) => candidate === fish || candidate.seed === fish?.seed);
-  if (resolvedIndex < 0 || !Number.isFinite(state?.seed)) return INDIVIDUAL_VISUAL_SCALE_MAX;
+  if (resolvedIndex < 0 || !Number.isFinite(state?.seed)) return 1;
   const distance = spreadDepth(
     state.seed,
     fish.seed,
@@ -330,7 +331,15 @@ export function individualVisualScale(fish, index, state) {
     individuals.length,
     state.elapsedRealSeconds,
   );
-  return individualDepthScale(distance);
+  return distance;
+}
+
+export function individualVisualScale(fish, index, state) {
+  return individualDepthScale(individualVisualDepth(fish, index, state));
+}
+
+export function fishSubstrateY(fish, state, worldX = fish.x, index = null) {
+  return groundY(state, worldX, individualVisualDepth(fish, index, state));
 }
 
 // How far ahead of the fish's centre its mouth is drawn, in columns. The lean
@@ -394,7 +403,7 @@ export function substrateGrazeY(fish, state, worldX = fish.x, index = null) {
   const scale = individualVisualScale(fish, index, state);
   const turnScale = turnPose(fish).widthScale;
   const mouthX = worldX + mouthLeadColumns(fish, tuning.grazePitchDegrees, scale);
-  return substrateSurfaceY(state, mouthX)
+  return fishSubstrateY(fish, state, mouthX, index)
     - fishGrazeClearanceRows(
       fish,
       tuning.grazePitchDegrees,
@@ -422,7 +431,7 @@ export function surfaceSafeY(fish, state, worldX = fish.x) {
 export function forageActivity(fish, index, state, activity = fish?.activity) {
   const eligible = forageEligible(index);
   const tuning = sceneTuning(state, "substrate-search");
-  const surfaceY = substrateSurfaceY(state, fish.x);
+  const surfaceY = fishSubstrateY(fish, state, fish.x, index);
   const targetY = substrateGrazeY(fish, state, fish.x, index);
   // Working the substrate: the fish is on its graze line, in the feeding
   // posture it holds there. This is measured against the authored lean rather
@@ -474,7 +483,7 @@ export function forageActivity(fish, index, state, activity = fish?.activity) {
   // the event resumes a frame later. That collapsed 18% of strike arcs mid-swing
   // and let the renderer draw a peck the simulation had already abandoned.
   const contacting = searching
-    && substrateSurfaceY(state, mouthX) - mouthY <= tuning.strikeReachRows;
+    && fishSubstrateY(fish, state, mouthX, index) - mouthY <= tuning.strikeReachRows;
 
   const substrateAffinity = affinitiesFromSeed(fish.seed).substrate;
   const period = sampleRange(fish.seed, 4600, 5.4, 7.8) * (1.08 - substrateAffinity * 0.2);

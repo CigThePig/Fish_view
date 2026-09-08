@@ -22,9 +22,9 @@ export const CELL_HEIGHT = 24;
 // This remains the simulation's safe swimming clearance. The visible surface
 // is a separate sub-row boundary owned by sim/environment.js.
 export const WATERLINE_ROWS = 2;
-// Keep the floor physically present without surrendering a fifth of landscape
-// mode to a decorative band. Terrain relief is applied around this baseline.
-export const SUBSTRATE_ROWS = 2;
+// A shallow floor occupies 15% of landscape, enough for rooted colonies at
+// different distances. Terrain relief is applied around its rear edge.
+export const SUBSTRATE_ROWS = 3;
 // Continuous visual depth can enlarge an individual beyond its authored logical
 // footprint. The simulation uses the same hard ceiling for conservative water
 // and substrate clearance without importing the renderer's depth module.
