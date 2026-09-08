@@ -145,27 +145,43 @@ test("reaching a species maximum is months of aquarium life, not days", () => {
 
 // --- variation --------------------------------------------------------------
 
-test("not every fry becomes an adult, and a fish that stops never grows again", () => {
-  let atMaximum = 0;
-  let stoppedEarly = 0;
-  const total = 900;
+test("every fish eventually reaches its species adult stage", () => {
+  const total = 1200;
   for (let index = 0; index < total; index += 1) {
     const seed = Math.imul(index + 1, 0x27d4eb2f) >>> 0;
     const profile = fishGrowthProfile(seed);
     const last = profile.stages.length - 1;
-    if (profile.terminalStage === last) atMaximum += 1;
-    else stoppedEarly += 1;
-    // Ten years of aquarium later, a stopped fish is still exactly where it
-    // stopped. Growth is a terminal state, never a slow crawl to maximum.
+    assert.equal(profile.terminalStage, last, `seed ${seed} terminates before adulthood`);
+
     const old = fishGrowth({ seed, ageDays: 3650 });
-    assert.equal(old.stageIndex, profile.terminalStage);
+    assert.equal(old.stageIndex, last, `seed ${seed} never reached its adult stage`);
     assert.ok(old.grown);
+    assert.ok(old.adult);
     assert.equal(old.nextStageDay, null);
-    // A fish stopped short is still a developed fish, never a permanent speck.
-    assert.ok(!String(old.label).startsWith("fry"));
+    assert.equal(old.sprite, speciesForSeed(seed));
   }
-  assert.ok(stoppedEarly / total > 0.3, `only ${stoppedEarly}/${total} fish stop short of maximum`);
-  assert.ok(atMaximum / total > 0.4, `only ${atMaximum}/${total} fish ever reach maximum`);
+});
+
+test("same-species fish can grow at different rates but all become adults", () => {
+  const bySpecies = new Map();
+  for (let seed = 1; seed <= 5000; seed += 1) {
+    const speciesId = speciesForSeed(seed).id;
+    const entries = bySpecies.get(speciesId) ?? [];
+    if (entries.length < 12) entries.push(seed);
+    bySpecies.set(speciesId, entries);
+  }
+
+  for (const [speciesId, seeds] of bySpecies) {
+    assert.ok(seeds.length >= 2, `${speciesId} did not collect duplicate-species samples`);
+    const spans = new Set(seeds.map((seed) => fishGrowthProfile(seed).fullGrowthDays.toFixed(3)));
+    assert.ok(spans.size > 1, `${speciesId} duplicates all grow at the same rate`);
+    for (const seed of seeds) {
+      const profile = fishGrowthProfile(seed);
+      const adult = fishGrowth({ seed, ageDays: profile.fullGrowthDays + 0.001 });
+      assert.ok(adult.adult, `${speciesId} seed ${seed} stopped before adulthood`);
+      assert.equal(adult.stageIndex, profile.stages.length - 1);
+    }
+  }
 });
 
 test("a fish only ever moves forward through its own stages", () => {
@@ -196,17 +212,17 @@ test("an aquarium is handed over empty and grows into itself", () => {
     }
   }
 
-  // By the time the calendar has run out, most of the tank has finished
-  // growing - a mature aquarium is a population of sizes, not of fry.
+  // By day 400 even the final fortnightly arrival has had more than enough
+  // time to complete its seeded growth plan.
   let fish = 0;
-  let grown = 0;
+  let adult = 0;
   for (let seed = 1; seed <= 40; seed += 1) {
     for (const individual of atDay(400, { seed }).individuals) {
       fish += 1;
-      if (fishGrowth(individual).grown) grown += 1;
+      if (fishGrowth(individual).adult) adult += 1;
     }
   }
-  assert.ok(grown / fish > 0.9, `only ${grown}/${fish} fish had finished growing`);
+  assert.equal(adult, fish, `only ${adult}/${fish} fish reached adulthood`);
 });
 
 // --- advancement ------------------------------------------------------------
@@ -269,6 +285,7 @@ test("an arrival hatches as a fry and grows up inside the aquarium", () => {
       .find((fish) => fish.seed === arrival.fishSeed);
     const growth = fishGrowth(grown);
     assert.ok(growth.grown, "an arrival was still growing a year later");
+    assert.ok(growth.adult, "an arrival finished growth without becoming an adult");
     assert.equal(growth.stageIndex, fishGrowthProfile(arrival.fishSeed).terminalStage);
   }
 });
