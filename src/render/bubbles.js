@@ -6,7 +6,7 @@ import {
 import { SUBSTRATE_ROWS } from "../sim/config.js";
 import { SURFACE_Y_ROWS } from "../sim/environment.js";
 import { sampleSigned } from "../sim/prng.js";
-import { laneForDepth } from "./depth.js?v=visual-depth-20260830";
+import { worldLayer, laneForDepth } from "./depth.js?v=visual-depth-20260830";
 import { mixColor } from "./palette.js?v=visual-depth-20260830";
 import { addGlyphObject, positionedGlyph } from "./scene.js?v=true-rotation-20260902";
 
@@ -169,7 +169,7 @@ export function drawBubbles(builder, state, palette, metrics, layer) {
   for (const record of records) {
     addGlyphObject(builder, {
       id: record.id,
-      layer,
+      layer: worldLayer(record.distance ?? 1),
       glyphs: record.glyphs,
       padding: 2,
     });

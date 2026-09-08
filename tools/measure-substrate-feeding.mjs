@@ -1,3 +1,4 @@
+import { fishSubstrateY } from "../src/sim/fish-motion.js";
 /*
  * Substrate feeding, graded and drawn.
  *
@@ -28,7 +29,6 @@ import { render } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import { CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
-import { substrateSurfaceY } from "../src/sim/environment.js";
 import {
   ACTIVITIES,
   createActivityState,
@@ -291,7 +291,7 @@ async function writeSheet(target, only = null, override = null) {
       y: grazing.y + debris.forage.peckDisplacement,
     };
     const top = header + gap + row * (cropHeight * zoom + gap);
-    const crest = substrateSurfaceY(state, grazing.x);
+    const crest = fishSubstrateY(grazing, state, grazing.x);
     const cropTop = Math.round((crest - cropRows + 1.6) * rowPixels);
     const cropLeft = Math.round((grazing.x - cropCols / 2) * columnPixels);
 
@@ -323,11 +323,14 @@ async function writeSheet(target, only = null, override = null) {
       // at the centre's height contradicts the measurement beside it by more
       // than a tenth of a row on some stages, which is exactly the size of the
       // thing being judged.
+      const depthObject = posedScene.objects.find(o => o.id.startsWith(`individual:${SUBJECT_INDEX}:`));
+      const depth = (depthObject.layer - 20) / 36;
+      const projectedY = segment => segment.y + (posedScene.height - 0.48 * rowPixels - segment.y) * depth;
       ink.fillStyle = "rgba(255,96,96,0.75)";
       for (let pixel = 0; pixel < cropWidth * zoom; pixel += 1) {
         const x = cropLeft + pixel / zoom;
         const segment = posedScene.background.substrateSegments.find((segment) => x >= segment.x && x < segment.x + segment.width);
-        if (segment) ink.fillRect(left + pixel, top + (segment.y - cropTop) * zoom, 1, 1);
+        if (segment) ink.fillRect(left + pixel, top + (projectedY(segment) - cropTop) * zoom, 1, 1);
       }
       // Where this panel's own mouth sits along it, which is the point the
       // numbers in the table are measured at.
@@ -339,7 +342,7 @@ async function writeSheet(target, only = null, override = null) {
         const markX = (mouthX * columnPixels - cropLeft) * zoom;
         const segment = posedScene.background.substrateSegments.find((segment) =>
           mouthX * columnPixels >= segment.x && mouthX * columnPixels < segment.x + segment.width);
-        const markY = ((segment?.y ?? cropTop) - cropTop) * zoom;
+        const markY = ((segment ? projectedY(segment) : cropTop) - cropTop) * zoom;
         ink.fillStyle = "rgba(255,214,96,0.95)";
         ink.fillRect(left + markX - 1, top + markY - 4, 2, 9);
       }

@@ -1,3 +1,4 @@
+import { fishSubstrateY } from "../src/sim/fish-motion.js";
 // TEMPORARY diagnostic test for the Phase 2 personality/relationship work.
 // It drives several months of simulation time through tick() and checks that
 // (a) nothing degenerates over that span and (b) repeating the identical run
@@ -161,7 +162,7 @@ function observe(observation, state, previous, scenario) {
     if (!(fish.x >= 0 && fish.x <= state.cols)) {
       observation.violations.push(`${scenario.name}: fish ${index} x=${fish.x} outside [0, ${state.cols}]`);
     }
-    if (!(fish.y >= water.top - 1 && fish.y <= water.bottom + 1)) {
+    if (!(fish.y >= water.top - 1 && fish.y <= Math.max(water.bottom + 1, fishSubstrateY(fish, state) + 0.5))) {
       observation.violations.push(`${scenario.name}: fish ${index} y=${fish.y} outside water column`);
     }
     for (const [key, value] of Object.entries(fish.drives)) {

@@ -1,3 +1,4 @@
+import { fishSubstrateY } from "../src/sim/fish-motion.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -379,7 +380,7 @@ test("the peck meets the substrate crest without burying the fish", () => {
       return bounds.y + bounds.height;
     }));
     const rowPixels = scene.height / state.rows;
-    const terrainPixels = substrateSurfaceY(state, x) * rowPixels;
+    const terrainPixels = fishSubstrateY(fish, state, x) * rowPixels;
     // What has to meet the sand is the mouth. It is what the fish eats with and
     // where the puff of silt is drawn from, and on anything past a fry it is
     // nowhere near the lowest part of the drawing - so grading the lowest ink

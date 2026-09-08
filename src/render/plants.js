@@ -1,3 +1,5 @@
+import { plantDepth } from "../sim/habitat-depth.js";
+import { worldLayer, laneForDepth } from "./depth.js";
 import { MAX_PLANT_JOINTS } from "../art/plants.js";
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
 import { sample01 } from "../sim/prng.js";
@@ -77,14 +79,11 @@ export function glyphForPlantJoint(plant, pose, point) {
   return stemGlyph(species, point, plant.seed);
 }
 
-// The three authored depth groups differ in size as well as colour so the
-// garden occupies a volume. Segment sampling compensates for the smaller far
-// glyphs, so background plants no longer need to sit on an artificial scale
-// floor merely to keep a one-glyph-per-joint stem from turning into dashes.
-export function plantGlyphScale(plant, layer) {
-  const base = layer === "background" ? 0.76 : layer === "foreground" ? 1.12 : 0.9;
-  const spread = layer === "midground" ? 0.12 : 0.09;
-  return base + (sample01(plant.seed, 470) - 0.5) * spread;
+// Glyph thickness follows the specimen's distance. Segment sampling keeps
+// distant stems connected even as their skeleton and ink become smaller.
+export function plantGlyphScale(plant, _layer) {
+  return (0.76 + plantDepth(plant) * 0.36)
+    + (sample01(plant.seed, 470) - 0.5) * 0.06;
 }
 
 // A rare glow-tipped species is not lit permanently any more. Its special tips
@@ -93,15 +92,15 @@ export function plantGlyphScale(plant, layer) {
 // entirely through a palette slot the renderer already has - no shader, no blur,
 // no alpha bloom, no new primitive, and no extra colour in the scene - and it
 // moves on multi-day stages, so it cannot invalidate a plant every frame.
-function colorForPoint(plant, pose, point, palette, lifecycle) {
+function colorForPoint(plant, pose, point, colors, lifecycle) {
   const species = pose.species;
   const slot = (species.paletteSlot + plant.paletteSlot + (sample01(plant.seed, 480 + point.index) > 0.87 ? 1 : 0)) % 3;
   const specialTip = point.isTip || point.role === "tip" || point.role === "lantern" || point.role === "bell";
   if (species.glowTips && specialTip) {
-    return lifecycle.active ? palette.plants.glowTip : palette.plants.growthTip;
+    return lifecycle.active ? colors.glowTip : colors.growthTip;
   }
-  if (specialTip && point.maturity < 0.78) return palette.plants.growthTip;
-  return palette.plants[species.layer][slot];
+  if (specialTip && point.maturity < 0.78) return colors.growthTip;
+  return colors[species.layer][slot];
 }
 
 // How far one glyph's ink reaches along a bone. Ink is a box, so travelling
@@ -245,6 +244,7 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
     pose.species,
     pose.growth,
   );
+  const colors = palette.plantDepthLanes[laneForDepth(plantDepth(plant))];
   const glyphs = [];
   let jointAttachments = 0;
   let fillerAttachments = 0;
@@ -253,7 +253,7 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
   for (const point of pose.joints) {
     const parent = pose.points[point.parent];
     const layout = plantAttachmentLayout(plant, pose, point, metrics, scale);
-    const fg = colorForPoint(plant, pose, point, palette, lifecycle);
+    const fg = colorForPoint(plant, pose, point, colors, lifecycle);
 
     if (!parent) {
       glyphs.push(positionedGlyph(metrics, {
@@ -293,6 +293,7 @@ export function plantRenderRecord(plant, index, state, palette, metrics, {
     id,
     plant,
     layerName: pose.species.layer,
+    depth: plantDepth(plant),
     glyphs,
     pose,
     renderScale: scale,
@@ -335,7 +336,15 @@ export function createPlantRenderRecords(state, palette, metrics, options = {}) 
   return { records, diagnostics, frameContext };
 }
 
-export function addPlantRecord(builder, record, layer) {
+export function addPlantRecord(builder, record, layer = worldLayer(record.depth)) {
+  const metrics = { cellWidth: builder.width / builder.logicalWidth,
+    cellHeight: builder.height / builder.logicalHeight };
+  const x = record.pose.root.x * metrics.cellWidth;
+  const y = (record.pose.root.y - 0.18) * metrics.cellHeight;
+  const width = 5 + record.depth * 7;
+  addGlyphObject(builder, { id: `root-shadow:${record.id}`, layer: 19.1, glyphs: [],
+    fill: [{ x: Math.round(x - width / 2), y: Math.round(y),
+      width: Math.round(width), height: 2, color: builder.background.substrateSegments[0]?.color ?? "#142522" }] });
   return addGlyphObject(builder, {
     id: record.id,
     layer,

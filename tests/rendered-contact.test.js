@@ -20,10 +20,12 @@ test("opaque body burial cannot disappear behind a glyph-only measurement", () =
   const object = scene.objects.find((object) => object.id === `individual:3:${fish.seed}`);
   const first = renderedFeedingContact(scene, fish, 3);
   const segment = scene.background.substrateSegments.find((segment) => segment.x > scene.width / 2);
-  object.fill.push({ x: segment.x, y: segment.y, width: 1, height: 12, color: "#ffffff" });
+  const depth = (object.layer - 20) / 36;
+  const ground = segment.y + (scene.height - 0.48 * (scene.height / scene.logicalHeight) - segment.y) * depth;
+  object.fill.push({ x: segment.x, y: ground, width: 1, height: 12, color: "#ffffff" });
   const next = renderedFeedingContact(scene, fish, 3);
   assert.equal(next.mouth, first.mouth);
   assert.equal(next.glyphBurial, first.glyphBurial);
-  assert.equal(next.bodyBurial, 12 / (scene.height / scene.logicalHeight));
+  assert.ok(Math.abs(next.bodyBurial - 12 / (scene.height / scene.logicalHeight)) < 1e-10);
   assert.equal(next.buried, next.bodyBurial);
 });

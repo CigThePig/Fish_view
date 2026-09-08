@@ -1,3 +1,4 @@
+import { worldLayer } from "../src/render/depth.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -68,7 +69,7 @@ test("the cast is spread through the tank instead of standing on one plane", () 
       const scene = render(state);
       assert.deepEqual(
         individuals(scene).map((object) => object.layer),
-        [...lanes].sort((left, right) => left - right).map((lane) => LAYERS.individuals + lane),
+        state.individuals.map((fish, i) => worldLayer(spreadDepth(state.seed, fish.seed, i, 6, state.elapsedRealSeconds))).sort((a,b) => a-b),
       );
     }
   }
@@ -144,10 +145,9 @@ test("the far end of the school swims behind the midground weed", () => {
     school.some((object) => object.layer > LAYERS.midgroundPlants),
     "no school fish passes in front of the midground plants",
   );
-  // Individuals are the characters of the tank and stay readable at every
-  // distance: between the midground and the foreground, never inside them.
+  // Individuals share the same distance range as vegetation and the shoal.
   for (const object of individuals(scene)) {
-    assert.ok(object.layer > LAYERS.midgroundPlants && object.layer < LAYERS.foregroundPlants);
+    assert.ok(object.layer >= worldLayer(0) && object.layer <= worldLayer(1));
   }
 });
 

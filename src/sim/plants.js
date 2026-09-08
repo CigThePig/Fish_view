@@ -4,7 +4,8 @@ import {
   RARE_PLANT_IDS,
 } from "../art/plants.js";
 import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
-import { plantRootY } from "./environment.js";
+import { PLANT_ROOT_BURIAL_ROWS } from "./environment.js";
+import { plantGroundY, plantDepthScale } from "./habitat-depth.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 const TAU = Math.PI * 2;
@@ -355,8 +356,8 @@ function touchDisturbance(plant, state) {
 
 function fishDisturbance(plant, state, species) {
   if (species.layer === "background" || !Array.isArray(state.individuals)) return 0;
-  const rootY = plantRootY(state, plant.x);
-  const canopyY = rootY - plant.matureHeight * 0.52;
+  const rootY = plantGroundY(state, plant) + PLANT_ROOT_BURIAL_ROWS;
+  const canopyY = rootY - plant.matureHeight * plantDepthScale(plant) * 0.52;
   const radius = 2.8 + plant.matureHeight * 0.16;
   let influence = 0;
   let nearest = Number.POSITIVE_INFINITY;
@@ -387,7 +388,7 @@ export function posePlant(plant, state, {
   const species = plantSpecies(plant);
   const posedPlant = ageDays === plant.ageDays ? plant : { ...plant, ageDays };
   const growth = plantGrowthState(posedPlant, species);
-  const rootY = plantRootY(state, plant.x);
+  const rootY = plantGroundY(state, plant) + PLANT_ROOT_BURIAL_ROWS;
   const points = new Array(species.joints.length).fill(null);
   points[0] = {
     index: 0,
@@ -410,7 +411,7 @@ export function posePlant(plant, state, {
   const secondary = Math.sin(time * plant.frequency * 0.61 + plant.secondaryPhase);
   const disturbance = disturbanceForPlant(plant, state, species, frameContext, disturbanceOverride);
   const flexibility = clamp(1.18 - species.stiffness * plant.stiffness, 0.26, 0.94);
-  const scale = plant.matureHeight / species.nominalHeight;
+  const scale = plant.matureHeight / species.nominalHeight * plantDepthScale(plant);
   let activeJointCount = 0;
 
   for (let index = 1; index < species.joints.length; index += 1) {

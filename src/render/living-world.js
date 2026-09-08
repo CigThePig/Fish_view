@@ -1,5 +1,6 @@
 import { driftwoodPath, habitatState, livingWorldRecords } from '../sim/living-world.js';
-import { substrateSurfaceY } from '../sim/environment.js';
+import { groundY, meadowDepth, woodDepth } from '../sim/habitat-depth.js';
+import { worldLayer, laneForDepth } from './depth.js';
 import { sample01, sampleRange } from '../sim/prng.js';
 import { mixColor } from './palette.js?v=visual-depth-20260830';
 import { addGlyphObject, positionedGlyph } from './scene.js?v=true-rotation-20260902';
@@ -25,14 +26,8 @@ export function drawLivingWorld(builder, state, palette, metrics) {
         glyphs.push(glyph('/', p.x + 0.3, p.y - 0.48, wood, 0.8));
         glyphs.push(glyph('Y', p.x + 0.65, p.y - 0.94, wood, 0.65));
       }
-      addGlyphObject(builder, { id: `wood:${trunk}:${i}`, layer: 23, glyphs,
-        fill: i === 0 ? [] : [{
-          x: Math.round(Math.min(points[i - 1].x, p.x) * metrics.cellWidth),
-          y: Math.round((Math.min(points[i - 1].y, p.y) + 0.1) * metrics.cellHeight),
-          width: Math.ceil(Math.abs(p.x - points[i - 1].x) * metrics.cellWidth) + 1,
-          height: Math.ceil((Math.abs(p.y - points[i - 1].y) + 0.23) * metrics.cellHeight),
-          color: woodShade,
-        }],
+      addGlyphObject(builder, { id: `wood:${trunk}:${i}`, layer: worldLayer(woodDepth(trunk)), glyphs,
+        fill: i === 0 ? [] : woodSpans(points[i - 1], p, metrics, woodShade),
       });
     }
   }
@@ -43,14 +38,15 @@ export function drawLivingWorld(builder, state, palette, metrics) {
     for (let i = 0; i < count; i++) {
       const slot = i === 0 ? 0 : Math.ceil(i / 2) * (i % 2 ? -1 : 1);
       const x = root + slot * 0.75;
-      const y = substrateSurfaceY(state, x) - 0.14;
+      const depth = meadowDepth(state.seed, patch, i);
+      const y = groundY(state, x, depth) - 0.14;
       const growth = 0.35 + habitat.meadow * 0.28;
       const glyphs = [glyph('v', x, y, moss, growth, growth),
         glyph('/', x + 0.15, y - 0.14, palette.plants.foreground[0], growth, growth)];
       if (habitat.bloom > 0.45 && i % 3 === 0 && habitat.meadow > 0.2) {
         glyphs.push(glyph('*', x, y - 0.36, mixColor('#bb9a72', '#392b1a', palette.night), 0.32));
       }
-      addGlyphObject(builder, { id: `meadow:${patch}:${i}`, layer: 51, glyphs });
+      addGlyphObject(builder, { id: `meadow:${patch}:${i}`, layer: worldLayer(depth), glyphs });
     }
   }
   // Epiphyte fans settle on old wood and keep unfurling over several years.
@@ -70,7 +66,7 @@ export function drawLivingWorld(builder, state, palette, metrics) {
         glyphs.push(glyph(joint === 6 ? (habitat.bloom > 0.65 ? '*' : 'Y') : angle < -0.3 ? '\\' : angle > 0.3 ? '/' : '|',
           x, y, joint === 6 ? palette.plants.growthTip : moss, 0.5, 0.5));
       }
-      addGlyphObject(builder, { id: `epiphyte:${frond}`, layer: 24, glyphs });
+      addGlyphObject(builder, { id: `epiphyte:${frond}`, layer: worldLayer(woodDepth(0)) + 0.001, glyphs });
     }
   }
   const records = livingWorldRecords(state);
@@ -92,15 +88,28 @@ export function drawLivingWorld(builder, state, palette, metrics) {
       glyphs = [glyph('"', r.x + r.pulse * 0.12, r.y - 0.15, color, 0.44),
         glyph(',', r.x, r.y + 0.04, color, 0.5)];
     }
-    addGlyphObject(builder, { id: `living:${r.id}`, layer: r.kind === 'tuft' ? 26 : 59, glyphs });
+    const haze = palette.depthLanes[laneForDepth(r.depth)].haze;
+    glyphs = glyphs.map(g => ({ ...g, fg: mixColor(g.fg, palette.fog, haze) }));
+    addGlyphObject(builder, { id: `living:${r.id}`, layer: worldLayer(r.depth), glyphs });
   }
   // Sparse dust catches the light in the water; slow, depth-separated drift.
   for (let i = 0; i < 10; i++) {
     const t = state.elapsedRealSeconds;
     const x = sampleRange(state.seed, 12300 + i, 1, state.cols - 1) + Math.sin(t * 0.08 + i) * 0.65;
     const y = 2 + ((sampleRange(state.seed, 12400 + i, 0, state.rows - 5) + t * 0.035) % (state.rows - 5));
-    addGlyphObject(builder, { id: `dust:${i}`, layer: 21 + (i % 2) * 5,
+    addGlyphObject(builder, { id: `dust:${i}`, layer: worldLayer(sampleRange(state.seed, 12500 + i, 0.05, 0.95)),
       glyphs: [glyph('.', x, y, mixColor(palette.waterBands[3], palette.ambient, 0.5), 0.45)] });
   }
   builder.metadata.livingWorld = { ...habitat, creatures: records.length };
+}
+
+function woodSpans(a, b, metrics, color) {
+  const dx = (b.x - a.x) * metrics.cellWidth;
+  const dy = (b.y - a.y) * metrics.cellHeight;
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 3));
+  return Array.from({ length: steps + 1 }, (_, i) => ({
+    x: Math.round(a.x * metrics.cellWidth + dx * i / steps),
+    y: Math.round(a.y * metrics.cellHeight + dy * i / steps + 2),
+    width: 3, height: 4, color,
+  }));
 }

@@ -1,3 +1,4 @@
+import { plantGroundY } from "../src/sim/habitat-depth.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -27,7 +28,7 @@ function matureState(orientation, seed = 77) {
 }
 
 test("the compact substrate uses a bounded deterministic terrain profile", () => {
-  assert.equal(SUBSTRATE_ROWS, 2);
+  assert.equal(SUBSTRATE_ROWS, 3);
   const state = matureState("landscape", 91);
   const baseline = state.rows - SUBSTRATE_ROWS;
   const first = Array.from({ length: 133 }, (_, index) => substrateSurfaceY(state, index * 0.5));
@@ -52,7 +53,7 @@ test("the visible water surface is a real boundary with air above it", () => {
   assert.ok(expectedSurface > 0 && expectedSurface < 24);
   assert.equal(scene.background.bands[0].y, Math.round(expectedSurface));
   assert.ok(scene.background.substrateSegments.length <= state.cols * 2 + 1);
-  assert.ok(Math.min(...scene.background.substrateSegments.map((segment) => segment.y)) > scene.height * 0.85);
+  assert.ok(Math.min(...scene.background.substrateSegments.map((segment) => segment.y)) > scene.height * 0.83);
 });
 
 test("the water surface is a travelling swell rather than a ruled line", () => {
@@ -148,12 +149,12 @@ test("aquarium plants share the terrain height and visually reach the floor", ()
     const { records } = createPlantRenderRecords(state, palette, metrics, { still: true, interactions: false });
 
     for (const record of records) {
-      const expectedRoot = substrateSurfaceY(state, record.plant.x) + PLANT_ROOT_BURIAL_ROWS;
+      const expectedRoot = plantGroundY(state, record.plant) + PLANT_ROOT_BURIAL_ROWS;
       const pose = posePlant(record.plant, state);
       assert.ok(Math.abs(pose.root.y - expectedRoot) < 1e-10);
 
       const firstGlyph = record.glyphs[0];
-      const visibleFloor = substrateSurfaceY(state, record.plant.x) * metrics.cellHeight;
+      const visibleFloor = plantGroundY(state, record.plant) * metrics.cellHeight;
       const glyphBottom = firstGlyph.y + CELL_HEIGHT * firstGlyph.scaleY;
       assert.ok(glyphBottom >= visibleFloor - 4, `${record.plant.speciesId} still floats above the floor`);
     }

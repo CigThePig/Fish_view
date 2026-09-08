@@ -1,0 +1,58 @@
+{
+  "options": {
+    "root": ".",
+    "seeds": [
+      5,
+      83,
+      147
+    ],
+    "frames": 50,
+    "output": "/tmp/fish-budget-final"
+  },
+  "results": [
+    {
+      "orientation": "landscape",
+      "days": 0,
+      "frames": 150,
+      "averageDamagePercent": 21.77767187500001,
+      "maxDamagePercent": 35.40416666666666,
+      "fullRedraws": 0,
+      "averageGlyphs": 441.18666666666667,
+      "averageObjects": 178.4,
+      "desktopFrameMilliseconds": 6.136469806666669
+    },
+    {
+      "orientation": "landscape",
+      "days": 730,
+      "frames": 150,
+      "averageDamagePercent": 40.56893576388888,
+      "maxDamagePercent": 77.81848958333333,
+      "fullRedraws": 0,
+      "averageGlyphs": 1078.48,
+      "averageObjects": 237.62,
+      "desktopFrameMilliseconds": 9.257863260000022
+    },
+    {
+      "orientation": "portrait",
+      "days": 0,
+      "frames": 150,
+      "averageDamagePercent": 20.232932291666657,
+      "maxDamagePercent": 44.98671875,
+      "fullRedraws": 0,
+      "averageGlyphs": 426.6666666666667,
+      "averageObjects": 151.92666666666668,
+      "desktopFrameMilliseconds": 4.62148792
+    },
+    {
+      "orientation": "portrait",
+      "days": 730,
+      "frames": 150,
+      "averageDamagePercent": 55.913086805555565,
+      "maxDamagePercent": 98.75,
+      "fullRedraws": 0,
+      "averageGlyphs": 1137.16,
+      "averageObjects": 207.14666666666668,
+      "desktopFrameMilliseconds": 10.763049100000002
+    }
+  ]
+}

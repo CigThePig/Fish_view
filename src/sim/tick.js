@@ -9,7 +9,6 @@ import {
   WATERLINE_ROWS,
 } from "./config.js";
 import { advanceAquariumHistory } from "./aquarium-history.js";
-import { substrateSurfaceY } from "./environment.js";
 import { clamp, createSchoolFish, traitsFromSeed } from "./entities.js";
 import {
   chaseEvasionForFish,
@@ -26,6 +25,7 @@ import {
   MAX_FISH_PITCH_DEGREES,
   forageEligible,
   fishMouthPosition,
+  fishSubstrateY,
   substrateGrazeY,
   substrateSafeY,
   surfaceSafeY,
@@ -484,7 +484,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   let activity = activityFrame.activity;
   if (target.peck > 0 && !Number.isFinite(activity.contactX)) {
     const mouth = fishMouthPosition({ ...fish, x, y, visual: finalVisual }, state, index);
-    activity = { ...activity, contactX: mouth.x, contactY: substrateSurfaceY(state, mouth.x) };
+    activity = { ...activity, contactX: mouth.x, contactY: fishSubstrateY(fish, state, mouth.x, index) };
   }
 
   const history = {

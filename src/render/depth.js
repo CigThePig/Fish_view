@@ -19,6 +19,13 @@ export { individualDepthScale as depthScale } from "../sim/depth.js";
 //     atmospheric perspective instead of a per-glyph colour mix.
 export const DEPTH_LANES = 5;
 
+// All inhabitants interleave on this same axis. Quantization is finer than a
+// pixel of projection and prevents subpixel drift invalidating every object.
+export function worldLayer(depth) {
+  return 20 + Math.round(Math.max(0, Math.min(1, depth)) * 1000) * 0.036;
+}
+
+
 // Individuals carry the effect: a near fish is about 60% larger on screen than
 // the same sprite at the far wall, which is the single strongest cue available
 // without leaving the bitmap-glyph budget. Its continuous scale lives beside

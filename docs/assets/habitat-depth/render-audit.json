@@ -1,0 +1,66 @@
+{
+  "options": {
+    "root": ".",
+    "seeds": [
+      5,
+      83,
+      147
+    ],
+    "frames": 90,
+    "days": 420,
+    "output": "/tmp/fish-depth-validation"
+  },
+  "frames": 540,
+  "differences": 0,
+  "escapedBounds": 0,
+  "runs": [
+    {
+      "orientation": "landscape",
+      "seed": 5,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "orientation": "landscape",
+      "seed": 83,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "orientation": "landscape",
+      "seed": 147,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "orientation": "portrait",
+      "seed": 5,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "orientation": "portrait",
+      "seed": 83,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "orientation": "portrait",
+      "seed": 147,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    }
+  ]
+}
