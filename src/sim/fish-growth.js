@@ -57,6 +57,17 @@ export function speciesForSeed(seed) {
   return individualSprites[(seed >>> 0) % individualSprites.length];
 }
 
+// Bottom feeding is a species capability, not a temporary consequence of the
+// fish's current growth stage. A fry belonging to a five-row adult must not
+// learn to graze for a few months and then mysteriously lose the behaviour when
+// it grows. The compact adults are the ones whose posture still reads cleanly
+// against the substrate; the tall five-row silhouettes stay in open water.
+export const MAX_BOTTOM_FEEDING_ADULT_ROWS = 3;
+
+export function speciesCanBottomFeed(seed) {
+  return spriteDimensions(speciesForSeed(seed)).height <= MAX_BOTTOM_FEEDING_ADULT_ROWS;
+}
+
 export function growthStagesForSeed(seed) {
   return growthStagesFor(speciesForSeed(seed).id);
 }
