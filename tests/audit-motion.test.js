@@ -5,11 +5,12 @@ import { advanceAquariumHistory, contentSchedule } from "../src/sim/aquarium-his
 import { createActivityState } from "../src/sim/fish-activities.js";
 import { substrateGrazeY, substrateSafeY, surfaceSafeY, turnPose } from "../src/sim/fish-motion.js";
 import { createAquariumState, applyTouch } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 test("initial poses respect the same surface envelope as swimming", () => {
   for (const orientation of ["landscape", "portrait"]) for (const seed of [5, 29, 83, 147, 192]) {
-    const state = createAquariumState({ orientation, seed });
+    const state = stockedAquarium({ orientation, seed });
     for (const fish of state.individuals) {
       assert.ok(fish.y >= surfaceSafeY(fish, state), `${orientation}/${seed} starts in the air`);
       assert.ok(fish.y <= substrateSafeY(fish, state));
@@ -19,7 +20,7 @@ test("initial poses respect the same surface envelope as swimming", () => {
 
 test("leaving a meal and interrupting a deep strike return smoothly to open water", () => {
   for (const orientation of ["landscape", "portrait"]) for (const touch of [false, true]) {
-    let state = createAquariumState({ orientation, seed: 83 });
+    let state = stockedAquarium({ orientation, seed: 83 });
     const index = 3;
     const fish = {
       ...state.individuals[index], ageDays: 500, x: state.cols / 2, vx: 0.04, vy: 0,
@@ -48,7 +49,7 @@ test("leaving a meal and interrupting a deep strike return smoothly to open wate
 
 test("reversing a half-finished turn preserves the visible side and compression", () => {
   for (const progress of [0.2, 0.4, 0.6, 0.8]) for (const facing of [-1, 1]) {
-    const base = createAquariumState({ seed: 71 });
+    const base = stockedAquarium({ seed: 71 });
     const fish = {
       ...base.individuals[3], x: base.cols / 2, y: base.rows / 2,
       vx: facing * 0.7, vy: 0,
@@ -64,10 +65,17 @@ test("reversing a half-finished turn preserves the visible side and compression"
 
 test("arrivals and reordered records do not change another fish's apparent size or colour", () => {
   for (const seed of [5, 29, 83, 147]) {
+    // A new aquarium, so the arrival below is still ahead of it: a stocked tank
+    // is past every milestone and nothing would join it.
     const base = createAquariumState({ seed });
     const arrival = contentSchedule(seed).find((event) => event.type === "fish-arrival");
-    const before = advanceAquariumHistory(base, arrival.day - 0.00001);
-    const after = advanceAquariumHistory(before, 0.00002);
+    const after = advanceAquariumHistory(base, arrival.day + 0.00001);
+    // The same instant with and without the newcomer, rather than two instants
+    // either side of the arrival: the fortnightly calendar puts arrival days on
+    // whole weeks, which is also where growth stages turn over, so stepping
+    // across the boundary would measure a fish getting bigger and blame it on
+    // the fish that joined.
+    const before = { ...after, individuals: after.individuals.slice(0, -1) };
     assert.equal(after.individuals.length, before.individuals.length + 1);
     const scenes = [render(before), render(after)];
     for (const object of scenes[0].objects.filter((object) => object.id.startsWith("individual:"))) {

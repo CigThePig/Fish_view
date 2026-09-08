@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createCanvas } from "@napi-rs/canvas";
-import { DEFAULT_SETTINGS } from "../src/sim/config.js";
+import { DEFAULT_SETTINGS, INITIAL_INDIVIDUAL_COUNT } from "../src/sim/config.js";
 import { createAquariumState } from "../src/sim/state.js";
+import { ARRIVAL_INTERVAL_DAYS } from "../src/sim/fish-roster.js";
 import { savePersistedState } from "../src/platform/storage.js";
 
 test("the application resumes both tanks after suspension and displays restored/reset controls", async (t) => {
@@ -76,7 +77,13 @@ test("the application resumes both tanks after suspension and displays restored/
     assert.equal(envelope.savedAtMs, now);
     // Offline history counts wall time, independently of the developer speed.
     assert.equal(envelope.state.totalDays, 90);
-    assert.equal(envelope.state.individuals.length, 8);
+    // Ninety days of wall time is ninety days of stocking: the founder plus one
+    // arrival a fortnight, materialized by the offline catch-up rather than by
+    // any frame the tab actually rendered.
+    assert.equal(
+      envelope.state.individuals.length,
+      INITIAL_INDIVIDUAL_COUNT + Math.floor(90 / ARRIVAL_INTERVAL_DAYS),
+    );
   }
   nodes.get("#reset-simulation").listeners.get("click")();
   assert.equal(speed.value, String(DEFAULT_SETTINGS.schoolSpeed));

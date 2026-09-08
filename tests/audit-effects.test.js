@@ -8,10 +8,13 @@ import { createBubbleEmitters, createBubbleWorldRecords } from "../src/sim/bubbl
 import { createShowcaseState, tickShowcase } from "../src/dev/behavior-showcase.js";
 import { fishMouthPosition, forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { createAquariumState, serializePersistentState } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 test("plant propagation and storage order cannot move an existing bubble emitter", () => {
   for (const orientation of ["landscape", "portrait"]) for (const seed of [5, 29, 83, 147]) {
+    // Deliberately a new aquarium: this is about the garden filling in, and a
+    // stocked one has already reached the plant cap with nothing left to grow.
     const initial = createAquariumState({ seed, orientation });
     const grown = advanceAquariumHistory(initial, 420);
     assert.ok(grown.plants.length > initial.plants.length);
@@ -23,7 +26,7 @@ test("plant propagation and storage order cannot move an existing bubble emitter
 
 test("shared mouth origins match drawn mouth anchors through growth, pitch and turning", () => {
   for (const orientation of ["landscape", "portrait"]) {
-    const base = createAquariumState({ orientation, seed: 5 });
+    const base = stockedAquarium({ orientation, seed: 5 });
     for (const species of individualSprites) for (const sprite of growthStagesFor(species.id)) {
       for (const facing of [-1, 1]) for (const progress of [0.3, 0.7, 1]) {
         const fish = {
@@ -46,7 +49,7 @@ test("shared mouth origins match drawn mouth anchors through growth, pitch and t
 });
 
 test("an exhaled bubble leaves the posed mouth and then moves independently", () => {
-  let state = createAquariumState({ seed: 13 });
+  let state = stockedAquarium({ seed: 13 });
   let release = null;
   for (let frame = 0; frame < 1200 && !release; frame++) {
     state = tick(state, 0.1);

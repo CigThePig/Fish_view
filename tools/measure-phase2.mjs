@@ -8,6 +8,7 @@ const url = (relative) => pathToFileURL(path.join(root, relative)).href + `?meas
 const { calculateDamage } = await import(url("src/render/damage.js"));
 const { render } = await import(url("src/render/render.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
+const { stocked } = await import(url("tools/stocked-aquarium.mjs"));
 const { tick } = await import(url("src/sim/tick.js"));
 
 const hasPhase2 = fs.existsSync(path.join(root, "src/sim/bubbles.js"));
@@ -110,7 +111,7 @@ function forcePlantSocialHeavy(state) {
 }
 
 function prepare(orientation, scenario) {
-  let state = createAquariumState({ orientation, seed: 5, wallClockHours: 12 });
+  let state = stocked(createAquariumState({ orientation, seed: 5, wallClockHours: 12 }));
   for (let frame = 0; frame < 100; frame += 1) state = tick(state, 0.1);
   if (scenario === "bubble-heavy") {
     let best = state;

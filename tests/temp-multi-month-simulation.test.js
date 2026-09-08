@@ -19,6 +19,8 @@ import { MAX_FISH_PITCH_DEGREES } from "../src/sim/fish-motion.js";
 import { ACTIVITIES, BEHAVIORS } from "../src/sim/fish-activities.js";
 import { MAX_SOCIAL_MEMORY } from "../src/sim/fish-personality.js";
 import { MAX_INDIVIDUALS, contentSchedule } from "../src/sim/aquarium-history.js";
+import { ARRIVAL_INTERVAL_DAYS } from "../src/sim/fish-roster.js";
+import { INITIAL_INDIVIDUAL_COUNT } from "../src/sim/config.js";
 import { plantCapFor } from "../src/sim/plants.js";
 import {
   applyTouch,
@@ -32,6 +34,13 @@ import { render } from "../src/render/render.js";
 
 const ACTIVITY_NAMES = new Set(Object.values(ACTIVITIES));
 const DAY_SECONDS = 86400;
+
+// How many samples a fish has to appear in before the run can hold it to a
+// unit of travel or to a range of behaviour. Movement is accumulated one tick
+// per sample, and behaviour churn is gated on real seconds, so both are really
+// statements about how much of the run the fish was actually present for.
+const TRAVEL_SAMPLE_FLOOR = 60;
+const BEHAVIOR_SAMPLE_FLOOR = 60;
 
 const SCENARIOS = [
   {
@@ -292,6 +301,7 @@ function runScenario(scenario) {
       distance: record.distance,
       hungerPinnedFromDay: record.hungerPinnedFromDay,
       hungerPinnedFraction: record.samples ? record.hungerPinnedSamples / record.samples : 0,
+      samples: record.samples,
       arrived: record.firstSeenDay !== null,
       firstSeenDay: record.firstSeenDay,
       index: state.individuals.findIndex((fish) => fish.seed === seed),
@@ -405,22 +415,29 @@ for (const scenario of SCENARIOS) {
     }
     assert.ok(first.originalPlantsPresent, "no plant may disappear through age");
     first.perFish.forEach((record) => {
-      // A fish that arrived in the final samples of a coarse run has barely
-      // been ticked, so only the cast that lived through the run must travel.
-      if (record.arrived && record.firstSeenDay > first.simDays - 20) return;
+      // Travel is accumulated one tick per sample, so what decides whether a
+      // fish can have covered a unit of tank is how many samples it appeared
+      // in - not how long ago it arrived. The aquarium stocks itself a fish
+      // every fortnight for seven months, so the newest members legitimately
+      // have only a handful of samples behind them.
+      if (record.samples < TRAVEL_SAMPLE_FLOOR) return;
       assert.ok(record.distance > 1, `fish ${record.seed} should keep moving (travelled ${record.distance})`);
     });
 
     // --- Phase 3 long-horizon assertions -----------------------------------
-    assert.ok(first.maxIndividuals <= MAX_INDIVIDUALS, "persistent cast exceeded eight fish");
+    assert.ok(first.maxIndividuals <= MAX_INDIVIDUALS, "persistent cast exceeded its ceiling");
     assert.ok(first.maxPlants <= first.plantCap, "garden exceeded its hard plant cap");
     assert.equal(new Set(first.finalFishSeeds).size, first.finalFishSeeds.length, "duplicate fish seed");
     assert.equal(new Set(first.finalPlantSeeds).size, first.finalPlantSeeds.length, "duplicate plant seed");
     for (const seed of first.startFishSeeds) {
       assert.ok(first.finalFishSeeds.includes(seed), `original fish ${seed} disappeared`);
     }
-    // Six months crosses both seeded arrival windows, in schedule order.
-    assert.equal(first.finalFishSeeds.length, MAX_INDIVIDUALS, "both arrivals should have happened by month six");
+    // Six months is thirteen fortnights, so the cast is the founder plus every
+    // arrival the calendar has reached - not yet the full roster, which takes
+    // seven.
+    const dueByNow = INITIAL_INDIVIDUAL_COUNT + Math.floor(first.simDays / ARRIVAL_INTERVAL_DAYS);
+    assert.ok(dueByNow > 1 && dueByNow <= MAX_INDIVIDUALS);
+    assert.equal(first.finalFishSeeds.length, dueByNow, "the fortnightly arrivals did not all happen");
     assert.deepEqual(
       first.arrivalOrder.map((entry) => entry.index),
       first.arrivalOrder.map((_, ordinal) => first.startFishSeeds.length + ordinal),
@@ -435,7 +452,7 @@ for (const scenario of SCENARIOS) {
     assert.ok(first.finalPlantSeeds.length > first.plantAgeGrowth.length, "the garden did not change in six months");
     assert.equal(first.content.version, 1);
     assert.ok(Number.isInteger(first.content.propagationEpoch) && first.content.propagationEpoch >= 0);
-    assert.ok(first.content.milestones >= 0 && first.content.milestones < 16);
+    assert.ok(first.content.milestones >= 0 && first.content.milestones < 2 ** first.schedule.length);
     // Everything the aquarium acquired survives a save/restore round trip.
     assert.deepEqual(first.restoredMatchesLive.plantSeeds, first.finalPlantSeeds);
     assert.deepEqual(first.restoredMatchesLive.individualSeeds, first.finalFishSeeds);
@@ -452,8 +469,9 @@ for (const scenario of SCENARIOS) {
     if (first.realSeconds >= 120) {
       first.perFish.forEach((record) => {
         // A late arrival has not been in the tank long enough to have shown a
-        // range of behaviour; the cast that lived through the run has.
-        if (record.arrived && record.firstSeenDay > first.simDays - 60) return;
+        // range of behaviour; the cast that lived through the run has. Counted
+        // in samples for the same reason travel is.
+        if (record.samples < BEHAVIOR_SAMPLE_FLOOR) return;
         const behaviors = record.behaviors;
         const starving = record.index >= 3 && record.hungerPinnedFraction > 0.9;
         if (starving && behaviors.length === 1) {

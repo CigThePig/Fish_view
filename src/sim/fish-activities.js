@@ -5,6 +5,7 @@ import { plantGroundY, plantDepthScale } from "./habitat-depth.js";
 import { sceneTuning } from "./choreography-tuning.js";
 import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
+import { fishShoals } from "./fish-roster.js";
 import {
   MAX_FISH_PITCH_DEGREES,
   forageActivity,
@@ -34,6 +35,12 @@ const SCHOOL_CONTACT_RADIUS = 4.6;
 const SCHOOL_CONTACT_SATURATION = 2;
 
 export const BEHAVIORS = Object.freeze(["cruise", "explore", "social", "forage", "rest"]);
+
+// What a shoaling species adds to joining the school, over following one
+// companion or cruising beside a friend. It is applied inside the social
+// behaviour rather than instead of it, so a ribbed-dart still forms individual
+// relationships - it just answers a sociable mood by finding the school.
+const SHOALING_FOLLOW_UTILITY = 0.45;
 
 export const ACTIVITIES = Object.freeze({
   cruise: "cruise",
@@ -480,6 +487,7 @@ function activityChoices(fish, index, state, {
     const choices = [choice(
       ACTIVITIES.schoolFollow,
       0.21 + affinities.school * 0.72 + traits.sociability * 0.17
+        + (fishShoals(fish.seed) ? SHOALING_FOLLOW_UTILITY : 0)
         + continuity(ACTIVITIES.schoolFollow) + jitter(ACTIVITIES.schoolFollow),
       { targetType: "school" },
     )];

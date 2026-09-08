@@ -11,6 +11,7 @@ import { LAYERS, poseSprite, render, renderSpriteScene } from "../src/render/ren
 import { glyphsForObject } from "../src/render/scene.js";
 import { orientationConfig } from "../src/sim/config.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -57,13 +58,13 @@ function average(values) {
 }
 
 test("same state produces an exactly identical continuous glyph scene", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 1, wallClockHours: 14.5 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 1, wallClockHours: 14.5 });
   assert.deepEqual(render(state), render(state));
 });
 
 test("renderer emits the exact physical panel dimensions", () => {
-  const portrait = render(createAquariumState({ orientation: "portrait", seed: 1 }));
-  const landscape = render(createAquariumState({ orientation: "landscape", seed: 1 }));
+  const portrait = render(stockedAquarium({ orientation: "portrait", seed: 1 }));
+  const landscape = render(stockedAquarium({ orientation: "landscape", seed: 1 }));
   assert.deepEqual([portrait.width, portrait.height], [480, 800]);
   assert.deepEqual([landscape.width, landscape.height], [800, 480]);
   assert.deepEqual([portrait.logicalWidth, portrait.logicalHeight], [40, 33]);
@@ -71,7 +72,7 @@ test("renderer emits the exact physical panel dimensions", () => {
 });
 
 test("movement within one former character column changes physical glyph coordinates", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 8, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 8, wallClockHours: 12 });
   const at = (x) => ({
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0 ? { ...fish, x } : fish),
@@ -87,7 +88,7 @@ test("movement within one former character column changes physical glyph coordin
 
 test("every scene command uses a supported crisp glyph and sane values", () => {
   for (const orientation of ["portrait", "landscape"]) {
-    const scene = render(createAquariumState({ orientation, seed: 33, wallClockHours: 7 }));
+    const scene = render(stockedAquarium({ orientation, seed: 33, wallClockHours: 7 }));
     const ids = new Set();
     for (const object of scene.objects) {
       assert.equal(ids.has(object.id), false, "duplicate object id " + object.id);
@@ -128,7 +129,7 @@ test("animated left poses preserve glyph-aware mirroring", () => {
 });
 
 test("deep night is one coherent warm field that darkens with depth", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 2, wallClockHours: 2 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 2, wallClockHours: 2 });
   const scene = render(state);
   assert.equal(scene.metadata.night, 1);
   const bands = scene.background.bands;
@@ -148,7 +149,7 @@ test("deep night is one coherent warm field that darkens with depth", () => {
 });
 
 test("the night floor stays quieter than the water it sits under", () => {
-  const scene = render(createAquariumState({ orientation: "portrait", seed: 2, wallClockHours: 2 }));
+  const scene = render(stockedAquarium({ orientation: "portrait", seed: 2, wallClockHours: 2 }));
   const deepestWater = colorLuminance(scene.background.bands.at(-1).color);
   const segments = scene.background.substrateSegments;
   // Terrain segments now carry the tank's side falloff, so the columns at the
@@ -174,7 +175,7 @@ test("the night floor stays quieter than the water it sits under", () => {
 });
 
 test("deep night draws fish as dark silhouettes with a single lit accent", () => {
-  const scene = render(createAquariumState({ orientation: "landscape", seed: 2, wallClockHours: 2 }));
+  const scene = render(stockedAquarium({ orientation: "landscape", seed: 2, wallClockHours: 2 }));
   const individuals = scene.objects.filter((object) => object.id.startsWith("individual:"));
   const fishGlyphs = individuals.flatMap((object) => glyphsForObject(scene, object));
   const inkLuminance = fishGlyphs.map((glyph) => colorLuminance(glyph.fg)).sort((a, b) => a - b);
@@ -214,7 +215,7 @@ const MAX_BODY_SPANS = 128;
 
 test("every individual fish is opaque, through every pose it swims", () => {
   for (const orientation of ["portrait", "landscape"]) {
-    let state = createAquariumState({ orientation, seed: 11, wallClockHours: 13 });
+    let state = stockedAquarium({ orientation, seed: 11, wallClockHours: 13 });
     const cellWidth = orientationConfig(orientation).pixelWidth / state.cols;
     let checked = 0;
     // Long enough for every individual to turn, bob, and change depth band.
@@ -239,7 +240,10 @@ test("every individual fish is opaque, through every pose it swims", () => {
         // silhouette rather than requiring one rectangle to span it.
         const bodyLeft = Math.min(...object.fill.map((span) => span.x));
         const bodyRight = Math.max(...object.fill.map((span) => span.x + span.width));
-        assert.ok(bodyRight - bodyLeft > cellWidth, object.id + " body is narrower than one cell");
+        // A whole cell, not more: spans are rounded to whole device pixels, and
+        // the smallest juvenile in the roster drawn at the far plane rounds to
+        // exactly one cell. What this guards against is a sliver.
+        assert.ok(bodyRight - bodyLeft >= cellWidth, object.id + " body is narrower than one cell");
         for (const span of object.fill) {
           assert.match(span.color, HEX_COLOR);
           assert.ok(span.width > 0 && span.height > 0);
@@ -323,7 +327,7 @@ test("fins are left outside the body so they keep an open silhouette", () => {
 
 test("a fish body is shaded from the band it is actually swimming in", () => {
   for (const orientation of ["portrait", "landscape"]) {
-    const base = createAquariumState({ orientation, seed: 3, wallClockHours: 12 });
+    const base = stockedAquarium({ orientation, seed: 3, wallClockHours: 12 });
     const palette = scenePalette(base);
     const cellHeight = orientationConfig(orientation).pixelHeight / base.rows;
     // Vertical position picks the band companion; distance from the glass picks
@@ -353,7 +357,7 @@ test("a fish body is shaded from the band it is actually swimming in", () => {
 });
 
 test("a fish body repaints whenever its painted pixels move", () => {
-  let state = createAquariumState({ orientation: "portrait", seed: 5, wallClockHours: 12 });
+  let state = stockedAquarium({ orientation: "portrait", seed: 5, wallClockHours: 12 });
   const previous = new Map();
   let repaints = 0;
   for (let frame = 0; frame < 300; frame += 1) {
@@ -379,7 +383,7 @@ test("a fish body repaints whenever its painted pixels move", () => {
 });
 
 test("a moved fish repaints its body as well as its glyphs", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 8, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 8, wallClockHours: 12 });
   const at = (x) => render({
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0 ? { ...fish, x } : fish),
@@ -392,21 +396,33 @@ test("a moved fish repaints its body as well as its glyphs", () => {
   assert.notDeepEqual(moved.fill, settled.fill);
 });
 
+// What one 10 fps frame of a *mature* aquarium is allowed to repaint. The two
+// tanks are the same number of cells but not the same shape: a portrait tank is
+// thirty-three rows tall, so a full roster of fifteen grown individuals plus the
+// school spreads over far more scanlines than the same cast does across a wide
+// landscape one, and the damage rectangles merge into taller bands. The budget
+// is per orientation because the cost genuinely is, and it is measured against
+// the fullest tank the calendar can produce rather than against a new one.
+const FRAME_DAMAGE_BUDGET = Object.freeze({ landscape: 0.45, portrait: 0.6 });
+
 test("ordinary 10 fps frames damage a minority of either framebuffer", () => {
   for (const orientation of ["landscape", "portrait"]) {
-    let state = createAquariumState({ orientation, seed: 5, wallClockHours: 12 });
+    let state = stockedAquarium({ orientation, seed: 5, wallClockHours: 12 });
     for (let index = 0; index < 100; index += 1) state = tick(state, 0.1);
     const before = render(state);
     const after = render(tick(state, 0.1));
     const damage = calculateDamage(before, after);
     assert.equal(damage.full, false);
     assert.ok(damage.rects.length > 0);
-    assert.ok(damage.area < damage.total * 0.45, orientation + " damaged " + (damage.area / damage.total * 100).toFixed(1) + "%");
+    assert.ok(
+      damage.area < damage.total * FRAME_DAMAGE_BUDGET[orientation],
+      orientation + " damaged " + (damage.area / damage.total * 100).toFixed(1) + "%",
+    );
   }
 });
 
 test("touch ripple is immediate, deterministic, and expands continuously", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 7, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 7, wallClockHours: 12 });
   const first = render(applyTouch(state, 20.25, 9.4));
   const second = render(applyTouch(state, 20.25, 9.4));
   assert.deepEqual(first, second);

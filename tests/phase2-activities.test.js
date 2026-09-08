@@ -21,6 +21,7 @@ import {
   createAquariumState,
   withSettings,
 } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { behaviorUtilities, tick } from "../src/sim/tick.js";
 
 function affinities(overrides = {}) {
@@ -51,7 +52,7 @@ function manualBubble(fish) {
 }
 
 test("specific affinities raise matching activity utility under equivalent opportunity", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 92, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 92, wallClockHours: 12 });
   const fish = withBehavior(base.individuals[4], "explore");
   const state = { ...base, individuals: base.individuals.map((value, index) => index === 4 ? fish : value) };
   const traits = traitsFromSeed(fish.seed, fish.history);
@@ -69,7 +70,7 @@ test("specific affinities raise matching activity utility under equivalent oppor
 });
 
 test("school and shelter affinities shape social and rest expression", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 193, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 193, wallClockHours: 12 });
   const social = withBehavior(base.individuals[3], "social");
   const resting = withBehavior(base.individuals[4], "rest");
   const state = {
@@ -88,7 +89,7 @@ test("school and shelter affinities shape social and rest expression", () => {
 });
 
 test("surface affinity modifies the existing eligible surface opportunity", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 447, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 447, wallClockHours: 12 });
   const fish = withBehavior(base.individuals[4], "explore");
   let opportunity = null;
   for (let seconds = 0; seconds < 240; seconds += 0.5) {
@@ -126,7 +127,7 @@ test("substrate affinity influences forage readiness without overpowering low hu
   }
   assert.ok(lowSeed !== null && highSeed !== null);
 
-  const state = createAquariumState({ orientation: "landscape", seed: 52, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 52, wallClockHours: 12 });
   const template = state.individuals[4];
   const traits = traitsFromSeed(template.seed, template.history);
   const make = (seed, hunger) => ({
@@ -142,7 +143,7 @@ test("substrate affinity influences forage readiness without overpowering low hu
 });
 
 test("plant targets use stable plant seeds and real root, height, and water bounds", () => {
-  const state = createAquariumState({ orientation: "portrait", seed: 74, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "portrait", seed: 74, wallClockHours: 12 });
   const fish = state.individuals[4];
   const plant = state.plants.find((candidate) => candidate.matureHeight > 3);
   assert.ok(plant);
@@ -171,7 +172,7 @@ test("plant targets use stable plant seeds and real root, height, and water boun
 });
 
 test("recent structural growth creates temporary plant novelty", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 105 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 105 });
   const plant = state.plants.find((candidate) => plantSpecies(candidate).maximumStage >= 1);
   assert.ok(plant);
   const species = plantSpecies(plant);
@@ -182,7 +183,7 @@ test("recent structural growth creates temporary plant novelty", () => {
 });
 
 test("tiny plants are excluded from shelter and suitable foreground growth enables it", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 88 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 88 });
   const fish = withBehavior(base.individuals[4], "rest");
   const tiny = {
     ...base,
@@ -199,7 +200,7 @@ test("tiny plants are excluded from shelter and suitable foreground growth enabl
 });
 
 test("activity continuity retains a valid target through its minimum real-time dwell", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 309 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 309 });
   let fish = withBehavior(state.individuals[4], "explore");
   fish.activity = {
     ...createActivityState(ACTIVITIES.wander),
@@ -223,7 +224,7 @@ test("activity continuity retains a valid target through its minimum real-time d
 });
 
 test("invalid targets and broad behavior changes reselect deterministic safe activities", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 613 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 613 });
   const source = state.individuals[4];
   const missingPlant = {
     ...withBehavior(source, "explore"),
@@ -243,7 +244,7 @@ test("invalid targets and broad behavior changes reselect deterministic safe act
 });
 
 test("completed plant visits return to open water before choosing vegetation again", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 614 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 614 });
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
   assert.ok(plant);
   for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave]) {
@@ -264,7 +265,7 @@ test("completed plant visits return to open water before choosing vegetation aga
 });
 
 test("touch immediately overrides every major activity and remains deterministic", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 771 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 771 });
   const kinds = [
     ACTIVITIES.bubbleInvestigate,
     ACTIVITIES.plantInvestigate,
@@ -305,7 +306,7 @@ test("glass affinity changes deterministic approach style without allowing refus
     if (value > 0.9) highSeed = seed;
   }
   assert.ok(lowSeed !== null && highSeed !== null);
-  const base = createAquariumState({ orientation: "landscape", seed: 1010 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 1010 });
   const template = { ...base.individuals[0], x: 12, y: 8 };
   const stateForSeed = (seed) => ({
     ...base,
@@ -325,7 +326,7 @@ test("glass affinity changes deterministic approach style without allowing refus
 });
 
 test("familiar energetic fish can select a brief bounded playful chase", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 2020, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 2020, wallClockHours: 12 });
   const targetSeed = base.individuals[1].seed;
   const fish = {
     ...withBehavior(base.individuals[0], "social"),
@@ -378,7 +379,7 @@ test("familiar energetic fish can select a brief bounded playful chase", () => {
 });
 
 test("activity timers remain real-time under week-per-second biology", () => {
-  const base = withSettings(createAquariumState({ orientation: "portrait", seed: 998 }), { timeScale: 604800 });
+  const base = withSettings(stockedAquarium({ orientation: "portrait", seed: 998 }), { timeScale: 604800 });
   const fish = {
     ...withBehavior(base.individuals[0], "explore"),
     behavior: { current: "explore", previous: "cruise", blend: 0, ageSeconds: 0 },
@@ -396,7 +397,7 @@ test("activity timers remain real-time under week-per-second biology", () => {
 });
 
 test("bubble crowding lowers utility without ownership locks", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 717 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 717 });
   const fish = withBehavior(base.individuals[4], "explore");
   const bubble = manualBubble(fish);
   const alone = {
@@ -424,7 +425,7 @@ test("bubble crowding lowers utility without ownership locks", () => {
 });
 
 test("a valid live bubble target remains stable while its world position moves", () => {
-  let base = createAquariumState({ orientation: "landscape", seed: 321, wallClockHours: 12 });
+  let base = stockedAquarium({ orientation: "landscape", seed: 321, wallClockHours: 12 });
   let target = null;
   for (let frame = 0; frame < 1200 && !target; frame += 1) {
     const records = createBubbleWorldRecords(base);
@@ -449,7 +450,7 @@ test("a valid live bubble target remains stable while its world position moves",
 });
 
 test("a starving fish suppresses company and curiosity but never its need to rest", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 52, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 52, wallClockHours: 12 });
   const template = state.individuals[4];
   const traits = traitsFromSeed(template.seed, template.history);
   const withHunger = (hunger) => ({
@@ -480,7 +481,7 @@ test("forage-eligible fish still feed once hunger reaches its ceiling", () => {
   // Regression guard: hunger stops rising at DRIVE_MAXIMUM, so a fish whose
   // saturated social drive permanently outbids forage stops eating for good.
   let state = withSettings(
-    createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
+    stockedAquarium({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
     { timeScale: 3600 },
   );
   const eligible = [3, 4, 5];

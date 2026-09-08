@@ -7,6 +7,7 @@ import { tick } from '../src/sim/tick.js';
 import { render } from '../src/render/render.js';
 import { isSupportedGlyph } from '../src/art/bitmap-font.js';
 import { resolveActivityTarget, ACTIVITIES, createActivityState } from '../src/sim/fish-activities.js';
+import { stockedAquarium } from './support/aquarium.js';
 
 const living = (scene) => scene.objects.filter((o) => /^(living:|wood:|meadow:|dust:|epiphyte:)/.test(o.id));
 
@@ -56,7 +57,7 @@ test('resident movement is continuous and slower than the fish', () => {
 });
 
 test('a disappearing tuft releases its fish and cannot be followed after recycling', () => {
-  const state=createAquariumState({seed:83});
+  const state=stockedAquarium({seed:83});
   const fish=state.individuals[3];
   const tuft=livingWorldRecords(state).find(r=>r.kind==='tuft' && r.visibility>0.8);
   assert.ok(tuft);
@@ -67,7 +68,7 @@ test('a disappearing tuft releases its fish and cannot be followed after recycli
 
 test('ordinary watching produces new encounters and a traveling school in both orientations', () => {
   for(const orientation of ['landscape','portrait']) {
-    let state=createAquariumState({seed:83,orientation});
+    let state=stockedAquarium({seed:83,orientation});
     let inspections=0, nearInspections=0, minX=Infinity,maxX=-Infinity;
     for(let frame=0;frame<1800;frame++) {
       const previous=state;state=tick(state,0.1);

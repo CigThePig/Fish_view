@@ -13,9 +13,10 @@ import {
 import { mixColor, scenePalette } from "../src/render/palette.js";
 import { edgeDimming, LAYERS, render } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
-import { SUBSTRATE_ROWS } from "../src/sim/config.js";
+import { MAX_INDIVIDUALS, SUBSTRATE_ROWS } from "../src/sim/config.js";
 import { SUBSTRATE_RELIEF_ROWS, SURFACE_WAVE_ROWS, SURFACE_Y_ROWS } from "../src/sim/environment.js";
 import { createAquariumState } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 const SEEDS = [1, 5, 7, 33, 818];
@@ -57,26 +58,29 @@ function lanesFor(state) {
 test("the cast is spread through the tank instead of standing on one plane", () => {
   for (const orientation of ["portrait", "landscape"]) {
     for (const seed of SEEDS) {
-      const state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+      const state = stockedAquarium({ orientation, seed, wallClockHours: 12 });
       const lanes = lanesFor(state);
-      assert.equal(lanes.length, 6);
-      // Six fish over five lanes will double up, but they must never all land
-      // on the same plane - that is exactly the flatness this axis exists for.
+      assert.equal(lanes.length, MAX_INDIVIDUALS);
+      // A full roster over five lanes will double up, but it must never all
+      // land on the same plane - that is exactly the flatness this axis exists
+      // for.
       assert.ok(
         new Set(lanes).size >= 3,
-        `${orientation}/${seed} put six fish on ${new Set(lanes).size} plane(s)`,
+        `${orientation}/${seed} put the whole cast on ${new Set(lanes).size} plane(s)`,
       );
       const scene = render(state);
       assert.deepEqual(
         individuals(scene).map((object) => object.layer),
-        state.individuals.map((fish, i) => worldLayer(spreadDepth(state.seed, fish.seed, i, 6, state.elapsedRealSeconds))).sort((a,b) => a-b),
+        state.individuals
+          .map((fish, i) => worldLayer(spreadDepth(state.seed, fish.seed, i, lanes.length, state.elapsedRealSeconds)))
+          .sort((a, b) => a - b),
       );
     }
   }
 });
 
 test("distance changes a fish's size, its ink, and the body behind it together", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 33, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 33, wallClockHours: 12 });
   const palette = scenePalette(state);
   const scene = render(state);
   const lanes = lanesFor(state);
@@ -132,7 +136,7 @@ test("depth colours come from tables the palette builds once per stage", () => {
 });
 
 test("the far end of the school swims behind the midground weed", () => {
-  const scene = render(createAquariumState({ orientation: "landscape", seed: 7, wallClockHours: 12 }));
+  const scene = render(stockedAquarium({ orientation: "landscape", seed: 7, wallClockHours: 12 }));
   const school = scene.objects.filter((object) => object.id.startsWith("school:"));
   assert.ok(school.length > 20);
   const layers = new Set(school.map((object) => object.layer));

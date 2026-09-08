@@ -28,6 +28,13 @@
  * Like affinities and pair compatibility, none of it is stored. A fish stores
  * its identity (seed) and its age; its pace, its stage boundaries, and how far
  * it will ever grow are derived.
+ *
+ * Every fish in the aquarium hatched in it. There is no stocked initial cast
+ * with seeded starting ages any more: the founder is created at age zero on the
+ * day the aquarium is, and every later arrival is created at age zero on its own
+ * fortnightly milestone (see sim/fish-roster.js). A fish's age is therefore
+ * always the aquarium's age minus the day it arrived, which is what lets a save
+ * written without ages be reconstructed exactly rather than guessed at.
  */
 
 import { growthStagesFor, individualSprites, spriteDimensions } from "../art/sprites.js";
@@ -47,19 +54,6 @@ const FULL_GROWTH_SHARE = 0.56;
 const PACE_SALT = 1200;
 const STAGE_SALT = 1210;
 const TERMINAL_SALT = 1240;
-const INITIAL_AGE_SALT = 1260;
-// An aquarium is handed over as an established tank rather than as six eggs, so
-// most of the initial cast starts at or near the size it will keep. This is the
-// share that starts genuinely young instead - about one fish in an aquarium,
-// which is the one that visibly changes over the first weeks.
-const YOUNG_START_SHARE = 0.2;
-// Somewhere along its own development, expressed as a fraction of the span it
-// has left to grow. Only the lowest part of this range is still a fry.
-const YOUNG_START_SPAN = Object.freeze([0.08, 0.92]);
-// Finished, with a spread of how long ago. A fraction of 1 is the day the fish
-// reached its terminal stage, so every fish on this branch starts grown.
-const ESTABLISHED_START_SPAN = Object.freeze([1, 1.75]);
-const ESTABLISHED_START_BIAS = 0.72;
 
 // Species selection is unchanged in kind - a pure function of the fish seed -
 // and lives here so growth never has to import the entity constructors that
@@ -72,12 +66,17 @@ export function growthStagesForSeed(seed) {
   return growthStagesFor(speciesForSeed(seed).id);
 }
 
-// A stage a fish may still be at when it stops growing for good. The shared fry
-// forms are excluded: a permanent speck would read as a rendering fault rather
-// than as a small fish, and every species develops recognisable anatomy before
-// its first stoppable stage.
+// A stage a fish may still be at when it stops growing for good.
+//
+// The rule is the stage's own artwork: a fish may only stop somewhere it is
+// drawn with an opaque body. That excludes the shared fry forms, as it always
+// has - a permanent speck would read as a rendering fault rather than as a
+// small fish - and it excludes anything else too small to carry a silhouette,
+// which a label test could not. Stopping a fish forever at a see-through stage
+// would leave one member of the cast that plants and other fish read straight
+// through for the life of the aquarium.
 function firstTerminalStage(stages) {
-  const index = stages.findIndex((stage) => !String(stage.label).startsWith("fry"));
+  const index = stages.findIndex((stage) => stage.body !== false);
   return index < 0 ? stages.length - 1 : index;
 }
 
@@ -90,12 +89,12 @@ export function fishAgeDays(fish) {
   return Number.isFinite(age) ? Math.max(0, age) : 0;
 }
 
-// An aquarium holds at most eight individuals, and every one of them asks for
+// An aquarium holds at most fifteen individuals, and every one of them asks for
 // its plan several times a frame - clearance, tank margins, exhale placement,
 // the renderer. The plan is a pure function of the seed, so it is memoized
 // against a cap a little above the roster ceiling and dropped wholesale rather
 // than evicted one entry at a time. Nothing here may grow with aquarium age.
-const PROFILE_CACHE_LIMIT = 16;
+const PROFILE_CACHE_LIMIT = 32;
 const profileCache = new Map();
 
 /**
@@ -188,23 +187,8 @@ export function fishSpriteWidth(fish) {
   return spriteDimensions(spriteForFish(fish)).width;
 }
 
-/**
- * The age the initial cast is created at.
- *
- * A starting age is a seeded fraction of the fish's own full growth span, so it
- * means the same thing for a fish that finishes in a fortnight and one that
- * takes three months. Most of the cast is already grown on day one - an empty
- * tank of specks is not an aquarium - while roughly one fish in six starts
- * young, and that fish is the first thing the aquarium visibly does.
- */
-export function initialFishAgeDays(seed) {
-  const numericSeed = safeSeed(seed);
-  const profile = fishGrowthProfile(numericSeed);
-  const roll = sample01(numericSeed, INITIAL_AGE_SALT);
-  const fraction = roll < YOUNG_START_SHARE
-    ? sampleRange(numericSeed, INITIAL_AGE_SALT + 1, YOUNG_START_SPAN[0], YOUNG_START_SPAN[1])
-    : ESTABLISHED_START_SPAN[0]
-      + Math.pow(sample01(numericSeed, INITIAL_AGE_SALT + 2), ESTABLISHED_START_BIAS)
-        * (ESTABLISHED_START_SPAN[1] - ESTABLISHED_START_SPAN[0]);
-  return profile.fullGrowthDays * fraction;
-}
+// Every fish is created on the day it hatches, founder and arrival alike, so
+// there is one age to create a fish at and it is zero. It is a named constant
+// rather than a bare literal because persistence, the history resolver and the
+// entity constructor all have to agree on it.
+export const HATCHLING_AGE_DAYS = 0;

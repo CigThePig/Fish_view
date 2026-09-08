@@ -30,6 +30,8 @@ import { spriteMouthOffset } from "../src/art/sprites.js";
 import { spriteForFish } from "../src/sim/fish-growth.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
 import { createAquariumState, withSettings } from "../src/sim/state.js";
+import { fishShoals } from "../src/sim/fish-roster.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 function withActivity(fish, behavior, activity, target = {}) {
@@ -83,12 +85,18 @@ test("activity choreography profiles preserve a calm baseline and distinct energ
 });
 
 test("school, deliberate follow, companion formation, and chase expose different social geometry", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
-  const source = base.individuals[3];
-  const companion = { ...base.individuals[4], x: 35, y: 9, vx: 0.48, vy: 0.06 };
+  const base = stockedAquarium({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  // Deliberately an ordinary territorial fish rather than a shoaling one: a
+  // shoaling species holds a sociability floor that lifts its following speed,
+  // which is the point of that species and not what this test is measuring.
+  const sourceIndex = base.individuals.findIndex((fish, index) => index >= 3 && !fishShoals(fish.seed));
+  const companionIndex = base.individuals.findIndex((fish, index) => index !== sourceIndex && index >= 3);
+  assert.ok(sourceIndex >= 0 && companionIndex >= 0);
+  const source = base.individuals[sourceIndex];
+  const companion = { ...base.individuals[companionIndex], x: 35, y: 9, vx: 0.48, vy: 0.06 };
   const state = {
     ...base,
-    individuals: base.individuals.map((fish, index) => index === 4 ? companion : fish),
+    individuals: base.individuals.map((fish, index) => index === companionIndex ? companion : fish),
   };
   const targetFor = (activity) => {
     const fish = withActivity(source, "social", activity, {
@@ -96,7 +104,7 @@ test("school, deliberate follow, companion formation, and chase expose different
       targetId: activity === ACTIVITIES.schoolFollow ? null : companion.seed,
       ageRealSeconds: 1.2,
     });
-    return resolveActivityTarget(fish, 3, state, fish.activity);
+    return resolveActivityTarget(fish, sourceIndex, state, fish.activity);
   };
   const school = targetFor(ACTIVITIES.schoolFollow);
   const follow = targetFor(ACTIVITIES.individualFollow);
@@ -121,7 +129,7 @@ test("school, deliberate follow, companion formation, and chase expose different
 });
 
 test("bubble pursuit predicts a real rising bubble and produces a readable ascent", () => {
-  const found = findDurableBubble(createAquariumState({
+  const found = findDurableBubble(stockedAquarium({
     orientation: "landscape",
     seed: 321,
     wallClockHours: 12,
@@ -189,7 +197,7 @@ test("bubble pursuit predicts a real rising bubble and produces a readable ascen
 });
 
 test("playful chase is faster than following and gives the chased fish a bounded evasive response", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 2020, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 2020, wallClockHours: 12 });
   const chaserSource = base.individuals[0];
   const chasedSource = base.individuals[1];
   const chaser = {
@@ -267,11 +275,20 @@ test("playful chase is faster than following and gives the chased fish a bounded
 });
 
 test("substrate feeding uses deterministic clustered pecks at a physically readable scale", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 444, wallClockHours: 12 });
-  const index = 3;
-  const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
-  const fish = { ...source, x: 25 };
-  fish.y = substrateGrazeY(fish, base, fish.x);
+  const base = stockedAquarium({ orientation: "landscape", seed: 444, wallClockHours: 12 });
+  // Any fish actually working the sand here. The graze line is per-fish - a
+  // fish's distance from the glass sets the scale it is drawn at and so how far
+  // its mouth reaches, and its mouth leads its centre over terrain that is not
+  // flat - so the fixture places a fish on its own line and then checks it is
+  // really in contact rather than assuming a roster slot that once was.
+  const placed = base.individuals.map((individual, slot) => {
+    const source = withActivity(individual, "forage", ACTIVITIES.substrateSearch);
+    const candidate = { ...source, x: 25 };
+    candidate.y = substrateGrazeY(candidate, base, candidate.x, slot);
+    return { slot, fish: candidate };
+  }).find(({ slot, fish: candidate }) => forageActivity(candidate, slot, base).contacting);
+  assert.ok(placed, "no fish in the roster could reach the substrate");
+  const { slot: index, fish } = placed;
 
   const eventStarts = [];
   let previousPeck = false;
@@ -316,7 +333,7 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
 });
 
 test("the strike moves the fish, not just its target", () => {
-  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 444, wallClockHours: 12 }), {
+  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 444, wallClockHours: 12 }), {
     timeScale: 1,
   });
   const index = 3;
@@ -351,7 +368,7 @@ test("the strike moves the fish, not just its target", () => {
 
 test("the peck meets the substrate crest without burying the fish", () => {
   for (const orientation of ["landscape", "portrait"]) {
-    const base = createAquariumState({ orientation, seed: 444, wallClockHours: 12 });
+    const base = stockedAquarium({ orientation, seed: 444, wallClockHours: 12 });
     const index = 3;
     const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
     const x = orientation === "landscape" ? 25 : 20;
@@ -411,7 +428,7 @@ test("the peck meets the substrate crest without burying the fish", () => {
 });
 
 test("plant inspection hovers around one specimen while weaving alternates route sides", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 614, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 614, wallClockHours: 12 });
   const index = 4;
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
   assert.ok(plant);
@@ -422,18 +439,30 @@ test("plant inspection hovers around one specimen while weaving alternates route
   const anchor = plantTargetPosition(source, plant, base);
   const near = { ...source, x: anchor.x, y: anchor.y, activity: { ...source.activity, ageRealSeconds: 3.1 } };
   const inspect = resolveActivityTarget(near, index, base, near.activity);
-  const later = resolveActivityTarget(
-    { ...near, activity: { ...near.activity, ageRealSeconds: 5.6 } },
-    index,
-    base,
-    { ...near.activity, ageRealSeconds: 5.6 },
-  );
+  // The head sweep and the hover are sines with seeded phases, so two arbitrary
+  // instants can land on the same point however lively the inspection is. What
+  // has to be true is that the station moves over the span of one, which is
+  // read from the path rather than from a pair of samples.
+  const path = Array.from({ length: 26 }, (_, step) => {
+    const ageRealSeconds = 3.1 + step * 0.1;
+    return resolveActivityTarget(
+      { ...near, activity: { ...near.activity, ageRealSeconds } },
+      index,
+      base,
+      { ...near.activity, ageRealSeconds },
+    );
+  });
+  const later = path.at(-1);
+  const travel = Math.max(...path.map((point) => (
+    Math.hypot(point.x - inspect.x, point.y - inspect.y)
+  )));
   const far = { ...source, x: Math.max(4, anchor.x - 5), y: anchor.y - 2 };
   const approach = resolveActivityTarget(far, index, base, far.activity);
   assert.equal(inspect.choreographyPhase, "inspect");
   assert.equal(approach.choreographyPhase, "approach");
   assert.ok(inspect.speed < approach.speed);
-  assert.ok(Math.hypot(inspect.x - later.x, inspect.y - later.y) > 0.2);
+  assert.ok(travel > 0.2, `inspection hovered on one point (${travel.toFixed(3)} rows of travel)`);
+  assert.ok(path.every((point) => Math.abs(point.x - plant.x) < 1.8));
   assert.ok(Math.abs(inspect.x - plant.x) < 1.8 && Math.abs(later.x - plant.x) < 1.8);
 
   const weaving = {
@@ -451,7 +480,7 @@ test("plant inspection hovers around one specimen while weaving alternates route
 });
 
 test("surface investigation ascends, probes the safe meniscus, and remains below it", () => {
-  const base = createAquariumState({ orientation: "portrait", seed: 447, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "portrait", seed: 447, wallClockHours: 12 });
   const index = 4;
   const source = withActivity(base.individuals[index], "explore", ACTIVITIES.surfaceInvestigate, {
     targetType: "surface",
@@ -489,7 +518,7 @@ test("surface investigation ascends, probes the safe meniscus, and remains below
 });
 
 test("resting locomotion and body rhythm are measurably quieter than cruise", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 91, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 91, wallClockHours: 12 });
   const source = base.individuals[2];
   const resting = withActivity(source, "rest", ACTIVITIES.openWaterRest, {
     targetType: "waypoint",

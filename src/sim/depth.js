@@ -1,5 +1,5 @@
-import { INDIVIDUAL_VISUAL_SCALE_MAX, INITIAL_INDIVIDUAL_COUNT } from "./config.js";
-import { individualSeedFor } from "./entities.js";
+import { INDIVIDUAL_VISUAL_SCALE_MAX } from "./config.js";
+import { ROSTER_SIZE, rosterEntryForSeed } from "./fish-roster.js";
 import { sample01, sampleRange } from "./prng.js";
 
 // Continuous distance from the glass is world state, even though most of its
@@ -35,22 +35,20 @@ function drift(seed, salt, elapsedRealSeconds) {
   return Math.sin(elapsedRealSeconds * DRIFT_RATE + phase) * DRIFT_AMOUNT;
 }
 
-// Six persistent fish are deliberately spread through deterministic slices of
-// tank depth so a seed cannot accidentally place the whole cast on one plane.
+// The persistent cast is deliberately spread through deterministic slices of
+// tank depth so a seed cannot accidentally place the whole roster on one plane.
 export function spreadDepth(baseSeed, seed, _index, _count, elapsedRealSeconds = 0) {
   // Population and array order are not a fish's distance from the glass.
   // Repartitioning on an arrival moved every existing fish to a new depth,
-  // changing size, colour and grazing clearance in a single frame. Keep the
-  // original six strata keyed to identity; newcomers take their own seeded
-  // depth without moving the established cast.
-  let ordinal = -1;
-  for (let candidate = 0; candidate < INITIAL_INDIVIDUAL_COUNT; candidate += 1) {
-    if (individualSeedFor(baseSeed, candidate) === (seed >>> 0)) { ordinal = candidate; break; }
-  }
-  const rotation = Math.floor(sample01(baseSeed, 3300) * INITIAL_INDIVIDUAL_COUNT);
-  const slot = (ordinal + rotation) % INITIAL_INDIVIDUAL_COUNT;
+  // changing size, colour and grazing clearance in a single frame. The stratum
+  // is therefore keyed to the fish's own roster slot, which is fixed from the
+  // day the aquarium is created: the tank fills in over months, but the fish
+  // already in it never move plane when a new one turns up.
+  const ordinal = rosterEntryForSeed(baseSeed, seed)?.slot ?? -1;
+  const rotation = Math.floor(sample01(baseSeed, 3300) * ROSTER_SIZE);
+  const slot = (ordinal + rotation) % ROSTER_SIZE;
   const base = ordinal < 0 ? sampleRange(seed, 60, 0.04, 0.96)
-    : (slot + sampleRange(seed, 60, 0.16, 0.84)) / INITIAL_INDIVIDUAL_COUNT;
+    : (slot + sampleRange(seed, 60, 0.16, 0.84)) / ROSTER_SIZE;
   return clamp(base + drift(seed, 60, elapsedRealSeconds), 0, 1);
 }
 

@@ -1,5 +1,6 @@
 import { mix32, sample01, sampleRange } from "./prng.js";
 import { traitsFromSeed } from "./entities.js";
+import { fishShoals } from "./fish-roster.js";
 
 export const AFFINITY_KEYS = Object.freeze([
   "bubble",
@@ -50,6 +51,17 @@ export function affinitiesFromSeed(seed) {
       - sample01(numericSeed, affinitySalt(left) + 1);
     return difference || left.localeCompare(right);
   });
+  // A shoaling species is interested in the school by what it is, not by what
+  // its seed happened to roll. Promoting the key inside the ranking rather than
+  // overwriting the value afterwards is what keeps the shape of a personality
+  // intact: it still has two or three accents and two suppressed interests,
+  // and one of the accents is simply always this one. Overwriting after the
+  // fact could hand a ribbed-dart four accents, or leave it a shoaling fish
+  // whose weakest interest is company.
+  if (fishShoals(numericSeed)) {
+    ranking.splice(ranking.indexOf("school"), 1);
+    ranking.unshift("school");
+  }
   const signatureCount = sample01(numericSeed, 7199) < 0.52 ? 2 : 3;
   const signatureRanges = [[0.88, 0.96], [0.8, 0.9], [0.74, 0.84]];
   for (let index = 0; index < signatureCount; index += 1) {

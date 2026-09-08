@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { paintedSurfaceGap, renderedFeedingContact } from "../src/dev/rendered-contact.js";
 import { createAquariumState } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { render } from "../src/render/render.js";
 
 test("contact measures the crest under every painted span, including partial overlaps", () => {
@@ -14,7 +15,7 @@ test("contact measures the crest under every painted span, including partial ove
 });
 
 test("opaque body burial cannot disappear behind a glyph-only measurement", () => {
-  const state = createAquariumState({ seed: 5 });
+  const state = stockedAquarium({ seed: 5 });
   const fish = state.individuals[3];
   const scene = render(state);
   const object = scene.objects.find((object) => object.id === `individual:3:${fish.seed}`);
