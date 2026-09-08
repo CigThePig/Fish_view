@@ -13,7 +13,9 @@
     "measure:readability": "node tools/measure-behavior-readability.mjs",
     "measure:screen": "node tools/measure-screen-legibility.mjs",
     "measure:feeding": "node tools/measure-substrate-feeding.mjs",
-    "capture:behaviors": "node tools/capture-behavior-showcase.mjs"
+    "capture:behaviors": "node tools/capture-behavior-showcase.mjs",
+    "capture:living": "node tools/capture-living-aquarium.mjs",
+    "measure:living": "node tools/measure-living-aquarium.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.100"

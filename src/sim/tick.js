@@ -1,3 +1,4 @@
+import { schoolJourney } from './living-world.js';
 import {
   DRIVE_MAXIMUM,
   DRIVE_MINIMUM,
@@ -104,6 +105,7 @@ function tickSchool(state, realDelta, motionScale) {
   const reactionStrength = state.reaction ? 1.8 * (1 - state.reaction.ageSeconds / state.reaction.durationSeconds) : 0;
 
   return source.map((fish, index) => {
+    const journey = schoolJourney(state, index);
     let separationX = 0;
     let separationY = 0;
     let alignmentX = 0;
@@ -125,12 +127,13 @@ function tickSchool(state, realDelta, motionScale) {
         separationX -= dx / distanceSquared;
         separationY -= dy / distanceSquared;
       }
-      if (distanceSquared < 64) {
+      const sameShoal = otherIndex % 2 === index % 2 || journey.split < 0.5;
+      if (distanceSquared < 64 && sameShoal) {
         alignmentX += other.vx;
         alignmentY += other.vy;
         alignmentCount += 1;
       }
-      if (distanceSquared < 110) {
+      if (distanceSquared < 110 && sameShoal) {
         cohesionX += other.x;
         cohesionY += other.y;
         cohesionCount += 1;
@@ -147,6 +150,11 @@ function tickSchool(state, realDelta, motionScale) {
       ax += (cohesionX / cohesionCount - fish.x) * state.settings.cohesion * 0.055;
       ay += (cohesionY / cohesionCount - fish.y) * state.settings.cohesion * 0.055;
     }
+
+    // A moving gathering place gives the existing boids a shared excursion.
+    // Forces ease velocity, so regrouping never teleports a school member.
+    ax += clamp((journey.x - fish.x) * 0.075, -0.75, 0.75) + journey.vx * 0.22;
+    ay += clamp((journey.y - fish.y) * 0.12, -0.55, 0.55) + journey.vy * 0.22;
 
     const edge = 3.2;
     if (fish.x < edge) ax += (edge - fish.x) * state.settings.boundary;

@@ -1,3 +1,4 @@
+import { livingWorldRecords } from '../sim/living-world.js';
 import { bubbleWaterTop, createBubbleWorldRecords } from "../sim/bubbles.js";
 import { clamp } from "../sim/entities.js";
 import {
@@ -44,6 +45,7 @@ export const SHOWCASE_SCENARIOS = Object.freeze([
   Object.freeze({ id: "open-water-rest", label: "Open-water rest", subjects: [SUBJECT_INDEX], loopSeconds: 9 }),
   Object.freeze({ id: "plant-shelter", label: "Plant shelter", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
   Object.freeze({ id: "touch-react", label: "Touch reaction", subjects: [SUBJECT_INDEX], loopSeconds: 3 }),
+  Object.freeze({ id: "drifting-inspect", label: "Drifting seed inspection", subjects: [SUBJECT_INDEX], loopSeconds: 14 }),
   Object.freeze({ id: "arrival-enter", label: "Arrival entry", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
 ]);
 
@@ -297,6 +299,14 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
       activity: ACTIVITIES.wander,
       target: { targetType: "waypoint", targetX: destination.x, targetY: destination.y },
       preserveAge,
+    });
+  } else if (scenario.id === ACTIVITIES.driftingInspect) {
+    const tuft = livingWorldRecords(state).filter((r) => r.kind === 'tuft')
+      .sort((a,b) => b.visibility - a.visibility)[0];
+    individuals[SUBJECT_INDEX] = posedFish(subject, state, {
+      x: tuft.x - 5, y: tuft.y - 0.5, vx: 0.5, vy: 0.05,
+      behavior: 'explore', activity: ACTIVITIES.driftingInspect,
+      target: { targetType: 'tuft', targetId: tuft.id },
     });
   } else if (scenario.id === ACTIVITIES.bubbleInvestigate && bubble) {
     const approachSide = bubble.worldX < state.cols / 2 ? 1 : -1;

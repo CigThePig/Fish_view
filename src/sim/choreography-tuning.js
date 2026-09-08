@@ -39,6 +39,11 @@ export const DEFAULT_STEERING_PROFILE = Object.freeze({
 });
 
 export const STEERING_PROFILES = Object.freeze({
+  "drifting-inspect": Object.freeze({
+    accelerationResponse: 2.2, turningResponse: 2.4, verticalSpeedScale: 1,
+    minimumSpeed: 0.025, maximumSpeed: 0.9, approachRadius: 1.2,
+    arrivalSpeedScale: 0.3, pitchScale: 0.85, turnDuration: 0.52,
+  }),
   cruise: Object.freeze({
     accelerationResponse: 1.2,
     turningResponse: 1.12,

@@ -10,6 +10,19 @@ This is deliberately not a port of `asciiquarium`'s screensaver loop. Its
 small-fish artwork is used as a sprite sheet inside a deterministic,
 persistent simulation.
 
+## Living habitat upgrade
+
+The aquarium now has gold and teal shoals that separate and regroup, creeping
+snails, hopping shrimp, and drifting seed tufts that curious fish actually
+inspect. Driftwood gathers moss, low plants spread across the sand, and
+fern-like growth unfolds from old wood over several years, with recurring
+seasonal tip blooms. It remains calm and warmly lit at night.
+
+See [the visual walkthrough, motion clip, and measured costs](docs/living-aquarium.md).
+Reproduce the age captures with `npm run capture:living`, add `-- --video` for a
+motion clip (FFmpeg required), or compare rendering costs with
+`npm run measure:living`. Seed inspection is also available in the behavior lab.
+
 ## What is in Phase 0
 
 - A 25–40 fish boids school with live tuning for separation, alignment,

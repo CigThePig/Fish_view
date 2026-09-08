@@ -407,9 +407,13 @@ test("the whole scene stays inside the substrate layer at every distance", () =>
     for (const object of scene.objects) {
       assert.ok(object.layer >= LAYERS.shafts && object.layer <= LAYERS.substrate);
     }
+    const smallGlyphs = new Set(scene.objects
+      .filter((object) => /^(living:|meadow:|dust:|epiphyte:)/.test(object.id))
+      .flatMap((object) => scene.glyphs.slice(object.glyphStart, object.glyphStart + object.glyphCount)));
     for (const glyph of scene.glyphs) {
-      assert.ok(glyph.scaleX >= 0.5 && glyph.scaleX <= 1.5, `glyph scaleX ${glyph.scaleX}`);
-      assert.ok(glyph.scaleY >= 0.5 && glyph.scaleY <= 1.5, `glyph scaleY ${glyph.scaleY}`);
+      const minimumScale = smallGlyphs.has(glyph) ? 0.3 : 0.5;
+      assert.ok(glyph.scaleX >= minimumScale && glyph.scaleX <= 1.5, `glyph scaleX ${glyph.scaleX}`);
+      assert.ok(glyph.scaleY >= minimumScale && glyph.scaleY <= 1.5, `glyph scaleY ${glyph.scaleY}`);
     }
   }
 });
