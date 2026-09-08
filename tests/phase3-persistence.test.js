@@ -174,20 +174,23 @@ test("missing plant motion traits are re-derived from the plant's own seed", () 
 test("a pre-Phase-3 save restores safely and starts its history from where it is", () => {
   const orientation = "landscape";
   const original = base(orientation);
+  // A save written by an older build: a real cast with learned history, an
+  // aquarium age, and no content record at all.
+  const aged = advanceAquariumHistory(original, 180);
   const phase2Like = {
-    ...original,
+    ...aged,
     totalDays: 180,
-    individuals: original.individuals.map((fish, index) => ({
+    individuals: aged.individuals.map((fish, index) => ({
       ...fish,
       history: {
         ...fish.history,
         touches: index,
         socialMemory: index < 2
-          ? [{ seed: original.individuals[index === 0 ? 1 : 0].seed, familiarity: 0.4 }]
+          ? [{ seed: aged.individuals[index === 0 ? 1 : 0].seed, familiarity: 0.4 }]
           : [],
       },
     })),
-    plants: original.plants.map((plant) => ({ ...plant, ageDays: plant.ageDays + 180 })),
+    plants: aged.plants.map((plant) => ({ ...plant, ageDays: plant.ageDays })),
   };
   const saved = serializePersistentState(phase2Like);
   // Exactly the shape a Phase 2 save has on disk: no content record at all.
@@ -196,7 +199,7 @@ test("a pre-Phase-3 save restores safely and starts its history from where it is
 
   const restored = restorePersistentState(original, saved);
   // The existing cast, its learned history, and its garden all survive.
-  for (let index = 0; index < INITIAL_INDIVIDUAL_COUNT; index += 1) {
+  for (let index = 0; index < phase2Like.individuals.length; index += 1) {
     assert.equal(restored.individuals[index].seed, phase2Like.individuals[index].seed);
     assert.equal(restored.individuals[index].history.touches, index);
     assert.deepEqual(
@@ -210,10 +213,21 @@ test("a pre-Phase-3 save restores safely and starts its history from where it is
     assert.deepEqual(restoredPlant, plant);
   }
 
-  // Bounded one-time milestones the save is overdue for are materialized...
-  assert.equal(restored.individuals.length, MAX_INDIVIDUALS);
+  // Bounded one-time milestones the save is overdue for are materialized - all
+  // of them and only them, since a milestone the calendar has not reached yet
+  // is not overdue.
+  const schedule = contentSchedule(SEED);
+  const due = schedule.filter((milestone) => milestone.day <= phase2Like.totalDays);
+  assert.ok(due.length > 1 && due.length < schedule.length, "the fixture stopped exercising the migration");
+  assert.equal(
+    restored.individuals.length,
+    due.filter((milestone) => milestone.type === "fish-arrival").length + INITIAL_INDIVIDUAL_COUNT,
+  );
   assert.equal(restored.content.version, CONTENT_VERSION);
-  assert.equal(restored.content.milestones, (1 << contentSchedule(SEED).length) - 1);
+  assert.equal(
+    restored.content.milestones,
+    schedule.reduce((mask, milestone, index) => (milestone.day <= phase2Like.totalDays ? mask | (1 << index) : mask), 0),
+  );
   // ...while six months of hypothetical colony reproduction is deliberately not
   // invented: propagation simply begins from the save's own age.
   assert.equal(restored.content.propagationEpoch, Math.floor(180 / PROPAGATION_EPOCH_DAYS));
@@ -225,6 +239,7 @@ test("a pre-Phase-3 save restores safely and starts its history from where it is
   const later = advanceAquariumHistory(restored, 400);
   assert.ok(later.plants.length > restored.plants.length, "a migrated save stopped growing");
   assert.ok(later.plants.length <= plantCapFor(orientation));
+  assert.ok(later.individuals.length > restored.individuals.length, "a migrated save stopped stocking");
   assert.equal(later.individuals.length, MAX_INDIVIDUALS);
   assert.ok(later.individuals.every((fish) => fish.history.socialMemory.length <= MAX_SOCIAL_MEMORY));
 });

@@ -1,15 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { render } from "../src/render/render.js";
-import { SETTING_LIMITS } from "../src/sim/config.js";
+import { MAX_INDIVIDUALS, SETTING_LIMITS } from "../src/sim/config.js";
 import { createIndividualFromSeed } from "../src/sim/entities.js";
+import { advanceAquariumHistory } from "../src/sim/aquarium-history.js";
 import { createAquariumState, restorePersistentState, serializePersistentState, withSettings } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 import { loadPersistedState, savePersistedState, clearPersistedState } from "../src/platform/storage.js";
 import { createPlantSpecimen, plantSpecies } from "../src/sim/plants.js";
 
+// A fully stocked aquarium, which is what most of these audits want to damage:
+// a fresh tank holds a single fish, so a save written from one has no slot 2 to
+// corrupt and no fourth identity to displace.
+function stocked(seed) {
+  return advanceAquariumHistory(createAquariumState({ seed }), 400);
+}
+
 function assertHealthy(state) {
-  assert.ok(state.individuals.length >= 5 && state.individuals.length <= 8);
+  assert.ok(state.individuals.length >= 1 && state.individuals.length <= MAX_INDIVIDUALS);
   assert.equal(new Set(state.individuals.map((fish) => fish.seed)).size, state.individuals.length);
   for (const [key, [minimum, maximum]] of Object.entries(SETTING_LIMITS)) {
     assert.ok(Number.isFinite(state.settings[key]) && state.settings[key] >= minimum && state.settings[key] <= maximum, key);
@@ -21,7 +29,7 @@ function assertHealthy(state) {
 }
 
 test("damaged fish slots do not reset healthy identities or the aquarium's history", () => {
-  const base = createAquariumState({ seed: 5 });
+  const base = stocked(5);
   for (const damaged of [null, [], false, "fish", { seed: -1 }, { seed: 1.5 }]) {
     const saved = serializePersistentState(base);
     saved.totalDays = 9;
@@ -36,7 +44,7 @@ test("damaged fish slots do not reset healthy identities or the aquarium's histo
 });
 
 test("duplicate identities are repaired without displacing a valid later record", () => {
-  const base = createAquariumState({ seed: 83 });
+  const base = stocked(83);
   const saved = serializePersistentState(base);
   saved.individuals[1] = { ...saved.individuals[0] };
   saved.individuals[4].history.touches = 82;
@@ -47,7 +55,9 @@ test("duplicate identities are repaired without displacing a valid later record"
 });
 
 test("missing saved traits fall back to their own identity rather than their array slot", () => {
-  const base = createAquariumState({ seed: 147 });
+  // Part-grown rather than stocked, so the roster still has a free slot for the
+  // unknown identity pushed in below instead of dropping it at the ceiling.
+  const base = advanceAquariumHistory(createAquariumState({ seed: 147 }), 100);
   const saved = serializePersistentState(base);
   saved.individuals.reverse();
   for (const fish of saved.individuals) delete fish.drives;
@@ -58,12 +68,14 @@ test("missing saved traits fall back to their own identity rather than their arr
   }
   const seed = 123456;
   saved.individuals.push({ seed });
-  const arrival = restorePersistentState(base, saved).individuals.at(-1);
-  assert.deepEqual(arrival.drives, createIndividualFromSeed(seed, 6, base.cols, base.rows).drives);
+  const arrival = restorePersistentState(base, saved).individuals.find((fish) => fish.seed === seed);
+  assert.ok(arrival, "an unknown but valid identity was dropped");
+  // Drives come from the fish's own seed, never from where it sat in the save.
+  assert.deepEqual(arrival.drives, createIndividualFromSeed(seed, 0, base.cols, base.rows).drives);
 });
 
 test("save restoration admits biological fields, never injected sprite or transient state", () => {
-  const base = createAquariumState({ seed: 5 });
+  const base = stocked(5);
   const saved = serializePersistentState(base);
   Object.assign(saved.individuals[0], {
     shape: [""], mask: null, id: "round-fin", body: false,
@@ -80,9 +92,11 @@ test("all settings entry points bound allocation and reject non-numeric or unkno
   for (const value of [null, "bad", Infinity, NaN, -1e300, 1e300]) {
     const patch = Object.fromEntries(Object.keys(SETTING_LIMITS).map((key) => [key, value]));
     patch.unrecognized = 47;
-    const base = createAquariumState({ seed: 5, settings: patch });
+    const base = advanceAquariumHistory(createAquariumState({ seed: 5, settings: patch }), 400);
     assertHealthy(base);
-    assert.ok(base.school.length >= 25 && base.school.length <= 40);
+    // A stocked aquarium's school has finished filling, so it is the setting's
+    // own bounds that have to hold rather than a fraction of them.
+    assert.ok(base.settings.schoolCount >= 25 && base.settings.schoolCount <= 40);
     const tuned = withSettings(base, patch);
     const saved = serializePersistentState(base);
     saved.settings = patch;
@@ -94,7 +108,7 @@ test("all settings entry points bound allocation and reject non-numeric or unkno
 });
 
 test("inherited object keys are not plant species in either save schema", () => {
-  const base = createAquariumState({ seed: 5 });
+  const base = stocked(5);
   for (const persistenceVersion of [1, 2]) for (const speciesId of ["constructor", "__proto__", "toString"]) {
     const saved = serializePersistentState(base);
     saved.persistenceVersion = persistenceVersion;
@@ -111,7 +125,7 @@ test("species lookup rejects inherited keys outside persistence as well", () => 
 });
 
 test("legacy plant migration repairs duplicate plant identities", () => {
-  const base = createAquariumState({ seed: 83 });
+  const base = stocked(83);
   const saved = serializePersistentState(base);
   saved.persistenceVersion = 1;
   saved.plants[1].seed = saved.plants[0].seed;
@@ -123,7 +137,7 @@ test("legacy plant migration repairs duplicate plant identities", () => {
 
 test("rejected save envelopes do not apply offline age to a new aquarium", () => {
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-  const base = createAquariumState({ seed: 5 });
+  const base = stocked(5);
   try {
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
       getItem: () => JSON.stringify({ savedAtMs: 0, state: { persistenceVersion: 99 } }),

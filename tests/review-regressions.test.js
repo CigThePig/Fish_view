@@ -40,11 +40,12 @@ import {
 import { hashSeed } from "../src/sim/prng.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../src/sim/plants.js";
 import { createAquariumState, withSettings } from "../src/sim/state.js";
+import { grazingIndividual, stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 test("implicit terminal stems stay structural instead of becoming detached tip decorations", () => {
   const state = {
-    ...createAquariumState({ orientation: "portrait", seed: 147, wallClockHours: 12 }),
+    ...stockedAquarium({ orientation: "portrait", seed: 147, wallClockHours: 12 }),
     individuals: [],
     reaction: null,
   };
@@ -98,7 +99,7 @@ test("implicit terminal stems stay structural instead of becoming detached tip d
 });
 
 test("school engagement comes from nearby school fish, not an empty centroid", () => {
-  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 2 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 2 }), { timeScale: 3600 });
   base.school = base.school.map((fish, i) => ({ ...fish, x: base.cols / 2 + (i % 2 ? 10 : -10), y: 8 }));
   const center = schoolSummary(base.school, base);
   const nearestToCenter = Math.min(
@@ -170,14 +171,10 @@ test("a target directly behind a level fish turns it around instead of holding i
 });
 
 test("debris keeps the seed of the peck that raised it when the next peck overlaps it", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
-  const index = 3;
-  const resting = state.individuals[index];
-  const fish = {
-    ...resting,
-    y: substrateGrazeY(resting, state, resting.x),
-    behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
-  };
+  const state = stockedAquarium({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  const grazing = grazingIndividual(state);
+  assert.ok(grazing, "no fish in the roster could reach the substrate");
+  const { index, fish } = grazing;
   // Silt belongs to a strike that landed, and only the tick knows which did, so
   // it latches the contacting event on the activity. A fixture that never went
   // through a tick has to keep the same latch or it has no debris at all.
@@ -212,13 +209,12 @@ test("debris keeps the seed of the peck that raised it when the next peck overla
 });
 
 test("the forage phase a fish moves to is the one its debris and pitch are drawn from", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
-  const index = 3;
-  const resting = state.individuals[index];
+  const state = stockedAquarium({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  const grazing = grazingIndividual(state);
+  assert.ok(grazing, "no fish in the roster could reach the substrate");
+  const { index } = grazing;
   const fish = {
-    ...resting,
-    y: substrateGrazeY(resting, state, resting.x),
-    behavior: { current: "forage", previous: "cruise", blend: 1, ageSeconds: 30, ageRealSeconds: 30 },
+    ...grazing.fish,
     activity: { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: 0 },
   };
   const activityAt = (ageRealSeconds) => ({ ...fish.activity, ageRealSeconds });
@@ -301,7 +297,7 @@ test("a strike puts the mouth in the sand without burying the fish, on every see
     for (const orientation of ["landscape", "portrait"]) {
       const config = orientationConfig(orientation);
       const rowPixels = config.pixelHeight / config.rows;
-      let state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+      let state = stockedAquarium({ orientation, seed, wallClockHours: 12 });
       let deepest = null;
       let shyest = null;
       for (let step = 0; step < 4000; step += 1) {
@@ -350,9 +346,10 @@ test("a far-plane feeding fish reaches the contact mark at its rendered scale", 
   const config = orientationConfig(orientation);
   const rowPixels = config.pixelHeight / config.rows;
   const cellWidth = config.pixelWidth / config.cols;
-  const base = createAquariumState({ orientation, seed: 2, wallClockHours: 12 });
-  const index = 3;
-  const resting = base.individuals[index];
+  const base = stockedAquarium({ orientation, seed: 2, wallClockHours: 12 });
+  const grazing = grazingIndividual(base);
+  assert.ok(grazing, "no fish in the roster could reach the substrate");
+  const { index, fish: resting } = grazing;
   let peak = null;
   for (let age = 0; age < 30; age += 0.01) {
     const activity = { ...createActivityState(ACTIVITIES.substrateSearch), ageRealSeconds: age };
@@ -418,7 +415,7 @@ test("contact marks follow the posed mouth and silt stays at the released strike
   let midTurn = 0;
   let slopedContacts = 0;
   for (const seed of [444, 9]) {
-    let state = createAquariumState({ orientation: "landscape", seed, wallClockHours: 12 });
+    let state = stockedAquarium({ orientation: "landscape", seed, wallClockHours: 12 });
     for (let step = 0; step < 4000; step += 1) {
       state = tick(state, 0.1);
       for (const [index, fish] of state.individuals.entries()) {
@@ -473,7 +470,7 @@ test("a pitched fish turns its characters, not just their positions", () => {
   // stayed exactly as level as the water while the fish around them leaned.
   // What the fish carries now is one rotation index, shared by every glyph, and
   // the raster it selects is a genuinely turned one.
-  const state = createAquariumState({ orientation: "landscape", seed: 331, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 331, wallClockHours: 12 });
   const index = 0;
   const posed = (pitch) => render({
     ...state,
@@ -527,7 +524,7 @@ test("a change that moves lit pixels always moves the damage signature", () => {
   // rounded to a pixel, so it can move ink while changing far too little to
   // survive a hash of its raw value. The rasteriser snaps it to a grid the
   // signature carries exactly, which is what this walks.
-  const base = createAquariumState({ orientation: "landscape", seed: 331, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 331, wallClockHours: 12 });
   const snapshot = (pitch) => {
     const scene = render({
       ...base,
@@ -660,7 +657,7 @@ test("a feeding fish gets its mouth to the sand at every size it can grow to", (
     const config = orientationConfig(orientation);
     const rowPixels = config.pixelHeight / config.rows;
     const cellWidth = config.pixelWidth / config.cols;
-    const base = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
+    const base = stockedAquarium({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
     const index = 3;
     const pitch = sceneTuning(base, "substrate-search").grazePitchDegrees;
     const crest = fishSubstrateY(base.individuals[index], base, base.cols * 0.5);

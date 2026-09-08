@@ -8,6 +8,7 @@ import {
   topAffinities,
 } from "../src/sim/fish-personality.js";
 import { createAquariumState, serializePersistentState } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 
 test("fixed affinities are deterministic, bounded, and reconstructed from only the fish seed", () => {
   for (let seed = 0; seed < 200; seed += 1) {
@@ -33,7 +34,7 @@ test("each personality deliberately accents two or three visible signature inter
 });
 
 test("diagnostic affinity ranking is stable and learned history cannot reroll personality", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 913 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 913 });
   for (const fish of state.individuals) {
     const before = topAffinities(fish.seed);
     const changedHistory = {
@@ -62,7 +63,7 @@ test("pair compatibility is symmetric, bounded, and never treats self as a compa
 });
 
 test("derived affinities are not redundantly persisted", () => {
-  const saved = serializePersistentState(createAquariumState({ orientation: "portrait", seed: 881 }));
+  const saved = serializePersistentState(stockedAquarium({ orientation: "portrait", seed: 881 }));
   for (const fish of saved.individuals) {
     assert.equal("affinities" in fish, false);
     assert.equal("personality" in fish, false);

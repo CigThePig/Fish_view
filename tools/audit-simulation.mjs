@@ -9,7 +9,7 @@ const { createAquariumState, applyTouch } = await importFrom(options.root, "src/
 const { advanceAquariumHistory } = await importFrom(options.root, "src/sim/aquarium-history.js");
 const { tick } = await importFrom(options.root, "src/sim/tick.js");
 const { MAX_FISH_PITCH_DEGREES } = await importFrom(options.root, "src/sim/fish-motion.js");
-const { SETTING_LIMITS } = await importFrom(options.root, "src/sim/config.js");
+const { MAX_INDIVIDUALS, SETTING_LIMITS } = await importFrom(options.root, "src/sim/config.js");
 const report = { options, ticks: 0, fishSamples: 0, failures: 0, examples: [], runs: [] };
 
 for (const orientation of ["landscape", "portrait"]) for (const seed of options.seeds) {
@@ -39,7 +39,7 @@ for (const orientation of ["landscape", "portrait"]) for (const seed of options.
         before: index === null ? null : previous.individuals[index],
         after: index === null ? null : state.individuals[index] });
     };
-    if (fishSeeds.size !== state.individuals.length || fishSeeds.size > 8) fail("invalid cast identity/count");
+    if (fishSeeds.size !== state.individuals.length || fishSeeds.size > MAX_INDIVIDUALS) fail("invalid cast identity/count");
     if (plantSeeds.size !== state.plants.length || plantSeeds.size > (orientation === "portrait" ? 22 : 30)) fail("invalid plant identity/count");
     for (const fish of state.school) {
       if (![fish.x, fish.y, fish.vx, fish.vy].every(Number.isFinite)) fail("non-finite school motion");

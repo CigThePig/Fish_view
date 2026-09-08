@@ -10,6 +10,20 @@ This is deliberately not a port of `asciiquarium`'s screensaver loop. Its
 small-fish artwork is used as a sprite sheet inside a deterministic,
 persistent simulation.
 
+## Stocking upgrade
+
+A new aquarium now starts almost empty and fills itself up. Day one is a single
+hatchling in a quarter of a school; another fish swims in every fortnight - one
+of each of the eight species before any species repeats - and the school fills
+in continuously underneath. Fourteen weeks in, the tank holds one of everything
+and a full school; twenty-eight weeks in, it holds all fifteen fish it will ever
+hold. Nothing about it is a screen, an unlock, or a chore: the aquarium is simply
+older than it was.
+
+The eighth species arrives with this: `ribbed-dart`, a slender shoaling fish
+that travels with the school rather than holding water of its own, and which the
+full tank has three of. See [Stocking an aquarium](#stocking-an-aquarium).
+
 ## Living habitat upgrade
 
 The aquarium now has gold and teal shoals that separate and regroup, creeping
@@ -26,12 +40,16 @@ motion clip (FFmpeg required), or compare rendering costs with
 ## What is in Phase 0
 
 - A 25–40 fish boids school with live tuning for separation, alignment,
-  cohesion, boundary pull, depth preference, and speed.
-- Six persistent individual fish with seeded traits, changing drives,
-  utility-selected behavior, interaction history, and local persistence. Their
-  body posture now exposes that behavior: meaningful climbs and dives ease into
-  bounded vertical pitch, while tiny velocity noise leaves them nearly level.
-- Those six fish now have seed-derived, deliberately accented interests beneath
+  cohesion, boundary pull, depth preference, and speed. The setting is the size
+  the school grows *to*: a new aquarium shows a quarter of it and fills in
+  continuously over its first months.
+- Up to fifteen persistent individual fish with seeded traits, changing drives,
+  utility-selected behavior, interaction history, and local persistence. A new
+  aquarium opens with exactly one of them and gains another every fortnight; see
+  "Stocking an aquarium" below. Their body posture exposes that behavior:
+  meaningful climbs and dives ease into bounded vertical pitch, while tiny
+  velocity noise leaves them nearly level.
+- Those fish have seed-derived, deliberately accented interests beneath
   their broad temperament. A bounded real-time activity layer turns explore into
   open-water wandering, plant inspection/weaving, bubble pursuit, or the existing
   surface inspection; social behavior can follow the anonymous school, follow a
@@ -57,8 +75,9 @@ motion clip (FFmpeg required), or compare rendering costs with
   colonies, structural growth, three depth groups, shared current, and subtle
   touch/fish disturbance. ASCII glyphs decorate tiny parent-index skeletons;
   plants are never fixed text sprites.
-- An aquarium that accumulates a history. Over weeks and months a seventh and
-  then an eighth persistent fish swims in from a water edge, mature plants
+- An aquarium that accumulates a history. Every fortnight another persistent
+  fish swims in from a water edge - one of each of the eight species before any
+  species repeats, then the duplicates the tank has room for - mature plants
   establish nearby shoots so colonies visibly widen, an unusual plant comes up
   long after the tank was set up, and rare species light their tips for a few
   days every several weeks. All of it is seed-derived, resolved from simulated
@@ -349,7 +368,7 @@ strike's own rotation is added on top and the two share that ceiling: authored
 to reach it exactly, so the lean is as steep as it can be and every degree of
 the peck rotation is still drawn rather than clipped away in `tickVisualPose()`.
 
-Over every growth stage of all seven species in both orientations, the mouth
+Over every growth stage of all eight species in both orientations, the mouth
 grazes between 0.05 rows under the crest and 0.04 rows over it, and strikes
 0.14 to 0.43 rows in; the whole roster sits inside a twelfth of a row of itself.
 Across four tanks of ordinary ticks, every full strike now lands its mouth at or
@@ -737,8 +756,9 @@ weeks and months instead of being the same entities with larger `ageDays`.
 Nothing about that history is a screen. There is no unlock, notification,
 calendar, achievement, inventory, progress meter, daily reward, chore, or
 feeding requirement, and no text of any kind is added to the aquarium. The
-history exists only as what is now living inside the tank: a seventh and then an
-eighth persistent fish, a patch of needle grass that is slowly getting wider, an
+history exists only as what is now living inside the tank: another fish every
+fortnight, a school that is wider than it was, a patch of needle grass that is
+slowly getting wider, an
 unusual plant that came up months after the tank was set up and now glows for a
 few days every several weeks.
 
@@ -805,18 +825,24 @@ growth stage.
 
 ### Deterministic milestone schedule
 
-`contentSchedule(seed)` is a pure function returning this aquarium's four
-one-time milestones: two fish arrivals and two delayed rare-plant emergences.
-Dates are derived, never stored - the same rule affinities and pair
-compatibility already follow. Seeded windows keep different aquariums on
-different histories:
+`contentSchedule(seed)` is a pure function returning this aquarium's sixteen
+one-time milestones: fourteen fish arrivals and two delayed rare-plant
+emergences. Dates are derived, never stored - the same rule affinities and pair
+compatibility already follow.
 
-| Milestone | Window (aquarium days) |
+Fish arrivals are a fixed fortnightly calendar rather than a seeded window.
+`fish-arrival:n` falls on aquarium day `14 * (n + 1)`, so the tank gains one
+individual every second week from the day it is created until it is full. What
+a seed decides is *which* fish arrives when, not whether one does: an aquarium
+that gains something every fortnight is legible as a thing filling up, while a
+seeded spread would make the same schedule read as chance. The rare plants keep
+their windows, because those are a surprise rather than a routine:
+
+| Milestone | Day (aquarium days) |
 | --- | ---: |
-| `fish-arrival:0` | 10 – 24 |
-| `rare-emergence:0` | 24 – 50 |
-| `fish-arrival:1` | 45 – 85 |
-| `rare-emergence:1` | 80 – 150 |
+| `fish-arrival:0` … `fish-arrival:13` | 14, 28, 42 … 196 |
+| `rare-emergence:0` | 24 – 50 (seeded) |
+| `rare-emergence:1` | 80 – 150 (seeded) |
 
 The schedule is orientation-independent on purpose. Portrait and landscape are
 two views of one aquarium, so for a given seed the same fish arrives on the same
@@ -831,19 +857,20 @@ and an ordinal or epoch through the existing PRNG helpers. `Math.random()` and
 
 ### New fish arrivals
 
-The aquarium begins with the same six persistent individuals it always has, and
-grows 6 → 7 → 8 over its first few months. Eight is the hard ceiling persistence
-has always supported and it is never exceeded. No new fish artwork or species is
-introduced: arrivals use the existing individual sprite system, and new
-ecological resident types remain Phase 4 work.
+The aquarium is created holding exactly one fish and grows 1 → 15 across its
+first seven months, one individual every fortnight. Fifteen is the hard ceiling
+and it is never exceeded. See "Stocking an aquarium" for what arrives when.
 
-Individual identity is now `individualSeedFor(baseSeed, index)`, and
+Individual identity comes from `individualSeedFor(baseSeed, index)`, and
 `createIndividualFromSeed(seed, index, cols, rows, options)` is the single
-construction path. `mix32` is a bijection over uint32 and `index + 17` scaled by
-an odd multiplier is injective, so an arrival seed can never collide with the
-initial six or with the other arrival; the resolver still carries a bounded
-uniqueness walk rather than trusting that argument at runtime. Existing aquarium
-seeds keep their exact Phase 1/2 cast.
+construction path. What the roster actually assigns to a slot is the first seed
+in that ordinal sequence whose species is the one the calendar wants, so species
+stays derived from identity alone and nothing about the schedule has to be
+written to disk. Slot seeds are made distinct as the roster is built, so an
+arrival's seed can never collide with the founder or with another arrival; the
+resolver treats a collision as "this fish is already here" rather than rerolling
+an identity, because rerolling would silently hand the slot to a different
+species.
 
 An arrival enters from a water edge with real body clearance, a sensible depth,
 and inward velocity, all derived from its stable event seed. A fish popping into
@@ -867,8 +894,9 @@ fish AI". It starts with `socialMemory: []`, `touches: 0`, and zero drift:
 familiarity is learned through visible proximity, never granted. Adding a fish
 does not touch the existing cast's memories, drift, or touch history - the
 available-seed sanitation simply recognises that another valid seed exists. The
-first three individuals remain Phase 1's protected mid-water cast; arrivals join
-at index 6 and 7 and behave like the existing later individuals.
+first three roster slots remain Phase 1's protected mid-water cast - now the
+founder and the first two arrivals - and everything that joins after them
+forages and behaves like the existing later individuals.
 
 ### Dynamic plant populations
 
@@ -1011,7 +1039,7 @@ reasoning is worth keeping:
   bounded, exactly reconstructable events, so any that the save is already
   overdue for are materialized on restore - respecting the fish and plant caps
   and the alternating entry placement. Without this a long-lived Phase 2
-  aquarium would be permanently stuck at six fish.
+  aquarium would be permanently stuck at the cast its save was written with.
 
 Offline advancement is catch-up, never a neglect simulation. A month away costs
 an aquarium nothing: no fish is lost, no plant dies, no relationship is
@@ -1169,30 +1197,37 @@ silhouettes, and it is why growth cannot be read as progress: there is nothing
 to complete, and a fish that stops early is simply a small fish. Nothing in the
 aquarium treats it as stunted, unwell, or failed.
 
-The shared fry forms are excluded from that choice. A permanent speck would
-read as a rendering fault, so every species develops recognisable anatomy
-before its first stoppable stage.
+The stages a fish may stop at are decided by their own artwork: a fish may only
+stop for good somewhere it is drawn with an opaque body. That excludes the
+shared fry forms, and anything else too small to carry a silhouette. A permanent
+speck would read as a rendering fault, and a fish stopped forever at a
+see-through stage would be one member of the cast that plants and other fish
+read straight through for the life of the aquarium.
 
-### Day one is still an aquarium
+### Day one is a hatchling
 
-An aquarium is handed over as an established tank rather than as six eggs. A
-starting age is a seeded fraction of the fish's own growth span, so about four
-in five of the initial cast are already finished growing, roughly one fish in
-ten starts as a fry, and about half of aquariums have a visibly young fish on
-the first day. Phase 3's two arrivals hatch at `ageDays = 0` and grow up inside
-the tank, which is the point of the event: the aquarium gained something that
-is still going to change.
+An aquarium is handed over as one fish at `ageDays = 0` in a quarter of a
+school, and everything else in it arrives later. Every individual, founder and
+arrival alike, hatches in the tank and grows up inside it, which is the point of
+the whole schedule: the aquarium is always something that is still going to
+change. See "Stocking an aquarium" below.
 
-### The seventh species
+### The seventh and eighth species
 
-`twin-sail` is drawn for Fish View in the same eight-cell vocabulary rather
-than lifted from asciiquarium, and is appended last so every existing sprite
-keeps its roster index, its authored body profile, and its pitch pose. It has
-its own body profile and pitch pose and passes the same body-registration,
+`twin-sail` and `ribbed-dart` are drawn for Fish View in the same eight-cell
+vocabulary rather than lifted from asciiquarium, and are appended last so every
+existing sprite keeps its roster index, its authored body profile, and its pitch
+pose. Each has its own body profile and passes the same body-registration,
 taper, open-tail, and mirroring regressions as the original six.
 
-Species selection is still `individualSprites[seed % individualSprites.length]`,
-so a seven-species roster changes which species a given aquarium seed draws.
+`ribbed-dart` is the shoaling species and the only two-row adult in the roster:
+a slender ribbed body under a dorsal ridge, because three of them travelling
+with the school have to read as a group at the size the school is drawn at,
+which a five-row fish does not. It carries its ribs rather than fins for most of
+its development, so what changes as it grows is its length. Its eye is the
+degree sign, which the bundled bitmap font gains for it.
+
+Species selection is still `individualSprites[seed % individualSprites.length]`.
 A fish's identity is untouched - same seed, traits, affinities, memories,
 relationships, position, and saved history - but an existing aquarium may find
 one of its fish now wears different artwork. Species has never been persisted
@@ -1213,9 +1248,8 @@ reason: a fish that has grown up works the sand the way it did as a fry rather
 than reading as increasingly unable to reach it.
 
 Nothing else changes. Behaviour, activity selection, foraging eligibility, the
-protected mid-water trio, relationship learning, and the eight-fish ceiling are
-all exactly as Phase 3 left them; a small fish is not a different kind of
-character.
+protected mid-water trio, and relationship learning are all exactly as Phase 3
+left them; a small fish is not a different kind of character.
 
 ### Persistence and migration
 
@@ -1223,10 +1257,11 @@ Persistence stays at **version 2**. The only addition is `ageDays` on each
 saved individual - no stage, no pace, no terminal stage, and no growth log.
 
 A save written before Phase 4 carries no ages, and they are reconstructed
-rather than reset, because every fish in a roster got there in exactly one of
-two ways: the initial cast was created with the aquarium and has aged ever
-since (its seeded starting age plus the aquarium's age), and an arrival hatched
-on its own milestone day, which the deterministic schedule still knows. A
+rather than reset, because every fish in an aquarium hatched in it on a day the
+roster still knows: the founder on day zero, and every other slot on
+`slot * 14`. A fish the roster does not recognise is treated as having been
+there from the beginning, the only assumption that cannot make an aquarium
+younger than it is. A
 long-lived Phase 3 aquarium therefore comes back with the grown fish it earned
 rather than a tank of newborns. A non-finite, negative, or non-numeric age is
 clamped like every other restored field.
@@ -1263,14 +1298,105 @@ Phase 4 structure grows with aquarium age.
 The 22 tests in `tests/phase4-growth.test.js` cover stage ordering and adult
 identity, stage mirroring, mask dimensions and the eight-cell limit, the
 one-week floor and pace variation, the terminal-stage distribution and its
-permanence, monotonic stage progression, day-one population shape, aging in
-step with plants, step-size invariance across 300 days, offline/accelerated
-equivalence, arrivals hatching as fry and growing up, fry clearance and tank
-bounds, stage-accurate rendering with no body under a fry, a growing fish
-repainting only itself, exact save round-tripping, pre-growth save migration,
-age reconstruction for both ways a fish can be in the roster, corrupt-age
-safety, and the save staying one number per fish. The existing Phase 1-3
-suites are retained unchanged.
+permanence, monotonic stage progression, the day-one hatchling and the mature
+population it becomes, aging in step with plants, step-size invariance across
+300 days, offline/accelerated equivalence, arrivals hatching as fry and growing
+up, fry clearance and tank bounds, stage-accurate rendering with no body under a
+fry, a growing fish repainting only itself, exact save round-tripping,
+pre-growth save migration, age reconstruction from the roster calendar,
+corrupt-age safety, and the save staying one number per fish. The existing
+Phase 1-3 suites are retained unchanged.
+
+Because a new aquarium now holds one fish, tests that need a populated tank say
+so: `tests/support/aquarium.js` provides `stockedAquarium()` (the full roster,
+grown, and a full school), `partStockedAquarium()`, and `grazingIndividual()`
+for the feeding fixtures. Measurement and capture tools open the same aquarium
+through `tools/stocked-aquarium.mjs`.
+
+## Stocking an aquarium
+
+A new aquarium is not handed over stocked. It is one hatchling in a quarter of a
+school, and everything else in it arrives later. `src/sim/fish-roster.js` owns
+the whole of that calendar, and three properties are what the rest of the
+simulation relies on.
+
+**It is a pure function of the aquarium seed.** Which species founds the tank,
+which order the other seven arrive in, and which order the duplicates arrive in
+are all derived - never stored, never rolled at runtime - so the same seed
+reaches the same roster at day 200 whether it got there in one accelerated frame
+or across seven months of real evenings.
+
+**Species is still derived from identity alone.** A fish's species remains
+`individualSprites[seed % individualSprites.length]`. The schedule does not
+annotate a fish with a species; it *chooses the seed* whose species is the one
+the calendar wants, by walking that slot's deterministic seed sequence until it
+lands on one. Nothing about the roster has to be written to disk for a save to
+come back with the right fish.
+
+**Slot ordinal, arrival day, and identity are one triple.** Slot `n` hatches on
+day `14 * n`, which is also how its age is reconstructed from an aquarium age
+alone.
+
+### The calendar
+
+| Aquarium day | Week | What the tank holds |
+| ---: | ---: | --- |
+| 0 | 0 | The founder - one hatchling of a species that grows to an adult - and a quarter of the school |
+| 14 – 98 | 2 – 14 | One new fish a fortnight, one of each remaining species |
+| 98 | 14 | Every species present; the school has finished filling in |
+| 112 – 196 | 16 – 28 | The duplicates: two more `tiny-dart`, two more `comma-tail`, one more `box-fin`, two more `ribbed-dart` |
+| 196 | 28 | Fifteen individuals. The tank is full and stays that way |
+
+The founder is drawn from the seven species that develop through several stages,
+never from the shoaling one: a tank whose only fish spends its first fortnight
+trailing the school reads as empty, and the founder is the one fish a new
+aquarium has to be able to watch. The order of everything after it is seeded, so
+two aquariums fill up in different orders.
+
+Fifteen is `MAX_INDIVIDUALS`, and the resolver never exceeds it. The duplicates
+are the three smallest bodies in the roster; nothing that would crowd the large
+finned species repeats.
+
+### The school fills in too
+
+`settings.schoolCount` is the size the school grows *to*, not the size it starts
+at. `schoolCountFor()` shows a quarter of it on day one and interpolates to all
+of it by day 98, so the school reaches its full size on exactly the day the last
+unmet species arrives - the two halves of "the aquarium now holds one of
+everything" happen together on purpose. At the default 32 that is about one more
+schooling glyph every four days: slow enough that nobody watching sees one
+appear, obvious enough that a tank left alone for a month has visibly filled
+out. Members are appended by ordinal and never reshuffled, so the school that
+was there yesterday is the same school today with one more fish in it.
+
+### The shoaling species
+
+`ribbed-dart` travels with the school rather than holding water of its own, and
+that is a species trait rather than a seeded accent:
+
+- `affinitiesFromSeed()` promotes `school` to the front of the fish's signature
+  ranking, so it is always one of the two or three accents a personality has.
+  Promoting inside the ranking rather than overwriting the value afterwards is
+  what keeps the shape of a personality intact - it cannot end up with four
+  accents, or be a shoaling fish whose weakest interest is company.
+- `traitsFromSeed()` gives it a sociability floor, so the seeded spread happens
+  above that rather than around it. Two ribbed-darts still differ; neither is
+  ever a loner.
+- `behaviorUtilities()` adds a standing social term, and the social activity
+  choice adds a standing school-follow term.
+
+Measured over five minutes of ordinary watching in a full tank, a ribbed-dart
+spends about 87% of its time following the school against about 24% for the rest
+of the cast, and is more than twice as likely to be within eight cells of the
+school's centre. It is not an animation: a tired one still rests and a hungry one
+still eats.
+
+### Depth
+
+A fish's distance from the glass is keyed to its roster slot, which is fixed
+from the day the aquarium is created. The tank fills in over months, but the
+fish already in it never change plane when a new one turns up - size, colour,
+and grazing clearance all hang off that depth.
 
 ## Skeletal plants and ESP32 portability
 
@@ -1389,8 +1515,9 @@ turning plant motion into full-frame redraws.
 ```text
 src/art/       extracted art data and glyph-aware mirroring
 src/sim/       seeded state, behaviors, boids, skeletal plant growth and pose,
-               derived fish growth, the authored choreography tuning tables,
-               and the shared long-horizon aquarium-history resolver
+               derived fish growth, the fortnightly stocking roster, the
+               authored choreography tuning tables, and the shared
+               long-horizon aquarium-history resolver
 src/dev/       deterministic production-state setup for visual choreography QA,
                and the slider metadata the tuning labs are built from
 src/render/    scene composition, depth lanes, plant glyph mapping, palette,
@@ -1403,7 +1530,8 @@ tests/         deterministic simulation, art, persistence, and renderer checks
 ## Artwork and license
 
 Fish artwork comes from `asciiquarium` 1.1 by Kirk Baucom, with most ASCII art
-credited to Joan Stark. The `twin-sail` species and every pre-adult growth
-stage were drawn for Fish View in the same eight-cell vocabulary. See
+credited to Joan Stark. The `twin-sail` and `ribbed-dart` species and every
+pre-adult growth stage were drawn for Fish View in the same eight-cell
+vocabulary. See
 `THIRD_PARTY_NOTICES.md`. This repository is licensed under GPL v2 or later;
 see `LICENSE`.

@@ -1,4 +1,4 @@
-// Phase 3: new fish arrive over months, enter from a water edge, and are
+// New fish arrive on a fortnightly calendar, enter from a water edge, and are
 // ordinary Phase 2 individuals from their first frame.
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -10,7 +10,12 @@ import {
   contentSchedule,
 } from "../src/sim/aquarium-history.js";
 import { WATERLINE_ROWS } from "../src/sim/config.js";
-import { individualSeedFor, traitsFromSeed } from "../src/sim/entities.js";
+import { traitsFromSeed } from "../src/sim/entities.js";
+import {
+  ARRIVAL_INTERVAL_DAYS,
+  ROSTER_SIZE,
+  aquariumRoster,
+} from "../src/sim/fish-roster.js";
 import { fishSpriteWidth } from "../src/sim/fish-growth.js";
 import {
   ACTIVITIES,
@@ -47,21 +52,24 @@ function halfWidth(fish) {
   return fishSpriteWidth(fish) / 2;
 }
 
-test("the aquarium grows from six to eight persistent fish and stops", () => {
+test("the aquarium gains one fish a fortnight up to its ceiling and stops", () => {
   for (const orientation of ["landscape", "portrait"]) {
     for (const seed of [SEED, 5, 77, 4242]) {
       const schedule = contentSchedule(seed).filter((milestone) => milestone.type === "fish-arrival");
-      const before = atDay(schedule[0].day - 0.5, { orientation, seed });
-      assert.equal(before.individuals.length, INITIAL_INDIVIDUAL_COUNT);
+      assert.equal(schedule.length, ROSTER_SIZE - INITIAL_INDIVIDUAL_COUNT);
 
-      const afterFirst = atDay(schedule[0].day + 0.5, { orientation, seed });
-      assert.equal(afterFirst.individuals.length, INITIAL_INDIVIDUAL_COUNT + 1);
-
-      const betweenArrivals = atDay(schedule[1].day - 0.5, { orientation, seed });
-      assert.equal(betweenArrivals.individuals.length, INITIAL_INDIVIDUAL_COUNT + 1);
-
-      const afterSecond = atDay(schedule[1].day + 0.5, { orientation, seed });
-      assert.equal(afterSecond.individuals.length, MAX_INDIVIDUALS);
+      for (let ordinal = 0; ordinal < schedule.length; ordinal += 1) {
+        const due = schedule[ordinal].day;
+        assert.equal(due, (ordinal + INITIAL_INDIVIDUAL_COUNT) * ARRIVAL_INTERVAL_DAYS);
+        assert.equal(
+          atDay(due - 0.5, { orientation, seed }).individuals.length,
+          INITIAL_INDIVIDUAL_COUNT + ordinal,
+        );
+        assert.equal(
+          atDay(due + 0.5, { orientation, seed }).individuals.length,
+          INITIAL_INDIVIDUAL_COUNT + ordinal + 1,
+        );
+      }
 
       const distantFuture = atDay(2000, { orientation, seed });
       assert.equal(distantFuture.individuals.length, MAX_INDIVIDUALS);
@@ -70,13 +78,14 @@ test("the aquarium grows from six to eight persistent fish and stops", () => {
   }
 });
 
-test("a fresh aquarium still begins with exactly the current six individuals", () => {
+test("a fresh aquarium begins with exactly the roster's founding fish", () => {
   for (const orientation of ["landscape", "portrait"]) {
     for (const seed of [SEED, 991, 12]) {
       const state = createAquariumState({ orientation, seed });
+      const roster = aquariumRoster(seed);
       assert.equal(state.individuals.length, INITIAL_INDIVIDUAL_COUNT);
       state.individuals.forEach((fish, index) => {
-        assert.equal(fish.seed, individualSeedFor(seed, index), "Phase 3 rerolled an existing fish");
+        assert.equal(fish.seed, roster[index].seed, "the founding fish was rerolled");
       });
     }
   }
@@ -180,7 +189,9 @@ test("an arrival is a full Phase 2 individual, not a simplified newcomer", () =>
 
 test("existing relationships survive an arrival without gaining fake familiarity", () => {
   const schedule = contentSchedule(SEED).filter((milestone) => milestone.type === "fish-arrival");
-  const before = atDay(schedule[0].day - 0.5);
+  // The third arrival, so the tank already holds several fish that can have a
+  // relationship for the newcomer to fail to disturb.
+  const before = atDay(schedule[2].day - 0.5);
   const seeded = {
     ...before,
     individuals: before.individuals.map((fish, index) => (index < 2
@@ -211,7 +222,10 @@ test("existing relationships survive an arrival without gaining fake familiarity
 
 test("an arrival swims in and then joins the ordinary activity system", () => {
   let state = withSettings(
-    advanceAquariumHistory(createAquariumState({ orientation: "landscape", seed: SEED, wallClockHours: 12 }), 13.5),
+    advanceAquariumHistory(
+      createAquariumState({ orientation: "landscape", seed: SEED, wallClockHours: 12 }),
+      ARRIVAL_INTERVAL_DAYS + 0.5,
+    ),
     { timeScale: 1 },
   );
   assert.equal(state.individuals.length, INITIAL_INDIVIDUAL_COUNT + 1);
@@ -230,11 +244,14 @@ test("an arrival swims in and then joins the ordinary activity system", () => {
   assert.ok(Number.isFinite(fish.visual.pitch) && Math.abs(fish.visual.pitch) <= MAX_FISH_PITCH_DEGREES);
 });
 
-test("arrivals do not join the protected mid-water trio", () => {
+// The mid-water trio is now the founder and the first two arrivals - the fish
+// that occupy roster slots 0 to 2 - rather than three of a stocked initial cast.
+// Everything that arrives after them forages like any other fish.
+test("only the first three roster slots hold the protected mid-water band", () => {
   let state = withSettings(atDay(400, { orientation: "landscape", seed: SEED }), { timeScale: 3600 });
   for (let frame = 0; frame < 600; frame += 1) state = tick(state, 0.1);
   const ceiling = WATERLINE_ROWS + (state.rows - 6) * 0.68;
   assert.ok(state.individuals.slice(0, 3).every((fish) => fish.y < ceiling));
-  assert.ok(state.individuals.slice(INITIAL_INDIVIDUAL_COUNT).every((_, offset) =>
-    forageEligible(INITIAL_INDIVIDUAL_COUNT + offset)));
+  assert.ok(state.individuals.slice(0, 3).every((_, index) => !forageEligible(index)));
+  assert.ok(state.individuals.slice(3).every((_, offset) => forageEligible(3 + offset)));
 });

@@ -12,6 +12,7 @@ import {
   serializePersistentState,
   withSettings,
 } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 function run(state, count, dt = 0.1) {
@@ -134,9 +135,13 @@ test("simulated speed does not change how a fish behaves in real time", () => {
   // substrate - costs real time. If the two are allowed to diverge, raising the
   // time scale starves the cast and shreds the pace of behavior change, so the
   // same real-time budget must produce the same life at any speed.
+  // A stocked tank, deliberately: an aquarium fills up on simulated time, so a
+  // new one would hand the fast runs a bigger cast than the slow one and the
+  // comparison would be between two different aquariums rather than between two
+  // speeds of the same one.
   const sample = (timeScale) => {
     let state = withSettings(
-      createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
+      stockedAquarium({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
       { timeScale },
     );
     let previous = state.individuals.map((fish) => fish.behavior.current);

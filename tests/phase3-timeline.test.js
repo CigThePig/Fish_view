@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { RARE_PLANT_IDS } from "../src/art/plants.js";
 import {
-  ARRIVAL_WINDOW_DAYS,
+  ARRIVAL_INTERVAL_DAYS,
   CONTENT_VERSION,
   INITIAL_INDIVIDUAL_COUNT,
   MAX_INDIVIDUALS,
@@ -18,7 +18,7 @@ import {
   migrateContent,
   sanitizeContent,
 } from "../src/sim/aquarium-history.js";
-import { individualSeedFor } from "../src/sim/entities.js";
+import { ROSTER_SIZE, aquariumRoster } from "../src/sim/fish-roster.js";
 import { plantCapFor } from "../src/sim/plants.js";
 import { advanceOffline, createAquariumState, withSettings } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
@@ -62,15 +62,17 @@ test("one-time milestone schedules are deterministic, ordered, and inside their 
   for (const seed of SEEDS) {
     const schedule = contentSchedule(seed);
     assert.deepEqual(schedule, contentSchedule(seed), `schedule for ${seed} is not stable`);
-    assert.equal(schedule.length, ARRIVAL_WINDOW_DAYS.length + RARE_EMERGENCE_WINDOW_DAYS.length);
+    const expectedArrivals = ROSTER_SIZE - INITIAL_INDIVIDUAL_COUNT;
+    assert.equal(schedule.length, expectedArrivals + RARE_EMERGENCE_WINDOW_DAYS.length);
     assert.equal(new Set(schedule.map((milestone) => milestone.id)).size, schedule.length);
 
     const arrivals = milestonesOfType(seed, "fish-arrival");
     const emergences = milestonesOfType(seed, "rare-emergence");
+    assert.equal(arrivals.length, expectedArrivals);
     arrivals.forEach((milestone, ordinal) => {
-      const [minimum, maximum] = ARRIVAL_WINDOW_DAYS[ordinal];
-      assert.ok(Number.isFinite(milestone.day));
-      assert.ok(milestone.day >= minimum && milestone.day <= maximum, `arrival ${ordinal} outside its window`);
+      // A fixed fortnightly calendar, not a seeded window: what a seed decides
+      // is which fish arrives, never whether one does.
+      assert.equal(milestone.day, (ordinal + INITIAL_INDIVIDUAL_COUNT) * ARRIVAL_INTERVAL_DAYS);
     });
     emergences.forEach((milestone, ordinal) => {
       const [minimum, maximum] = RARE_EMERGENCE_WINDOW_DAYS[ordinal];
@@ -78,14 +80,13 @@ test("one-time milestone schedules are deterministic, ordered, and inside their 
       assert.ok(RARE_PLANT_IDS.includes(milestone.speciesId), "emergence drew a non-rare species");
     });
 
-    // No arrival immediately after creation, and the second is meaningfully
-    // later than the first rather than a few hours behind it.
-    assert.ok(arrivals[0].day >= 10);
-    assert.ok(arrivals[1].day - arrivals[0].day >= 20, "the two arrivals are not separated");
+    // No arrival immediately after creation, and no two arrivals share a day.
+    assert.ok(arrivals[0].day >= ARRIVAL_INTERVAL_DAYS);
+    assert.equal(new Set(arrivals.map((milestone) => milestone.day)).size, arrivals.length);
 
-    // Arrival identity is a pure function of aquarium seed and ordinal, and can
-    // never collide with the initial cast.
-    const cast = Array.from({ length: INITIAL_INDIVIDUAL_COUNT }, (_, index) => individualSeedFor(seed, index));
+    // Arrival identity is a pure function of the aquarium seed and the roster
+    // slot, and can never collide with the fish the aquarium was founded on.
+    const cast = aquariumRoster(seed).slice(0, INITIAL_INDIVIDUAL_COUNT).map((entry) => entry.seed);
     const arrivalSeeds = arrivals.map((milestone) => milestone.fishSeed);
     assert.equal(new Set([...cast, ...arrivalSeeds]).size, cast.length + arrivalSeeds.length);
     for (const value of [...arrivalSeeds, ...emergences.map((milestone) => milestone.plantSeed)]) {
@@ -222,7 +223,7 @@ test("long-horizon content stays bounded for years without an event log", () => 
       let state = createAquariumState({ orientation, seed });
       for (const day of [30, 90, 180, 365, 730]) {
         state = advanceAquariumHistory(state, day - state.totalDays);
-        assert.ok(state.individuals.length <= MAX_INDIVIDUALS, `cast exceeded eight at day ${day}`);
+        assert.ok(state.individuals.length <= MAX_INDIVIDUALS, `cast exceeded its ceiling at day ${day}`);
         assert.ok(state.plants.length <= plantCapFor(orientation), `garden exceeded its cap at day ${day}`);
         assert.equal(new Set(state.plants.map((plant) => plant.seed)).size, state.plants.length);
         assert.equal(new Set(state.individuals.map((fish) => fish.seed)).size, state.individuals.length);
@@ -230,7 +231,9 @@ test("long-horizon content stays bounded for years without an event log", () => 
         assert.ok(state.plants.every((plant) => plant.x > 0 && plant.x < state.cols));
         // The whole persisted history record is three numbers, whatever the age.
         assert.deepEqual(Object.keys(state.content).sort(), ["milestones", "propagationEpoch", "version"]);
-        assert.ok(state.content.milestones < 16);
+        // One bit per scheduled milestone and not one more, however old the
+        // aquarium gets: the cursor is bounded by the schedule, not by age.
+        assert.ok(state.content.milestones < 2 ** contentSchedule(seed).length);
       }
       // Nothing disappears through age.
       const original = createAquariumState({ orientation, seed });
@@ -260,7 +263,7 @@ test("corrupt historical bookkeeping is clamped rather than trusted", () => {
     assert.equal(content.version, CONTENT_VERSION);
     assert.ok(Number.isSafeInteger(content.propagationEpoch) && content.propagationEpoch >= 0);
     assert.ok(content.propagationEpoch <= 1e7);
-    assert.ok(content.milestones >= 0 && content.milestones < 16);
+    assert.ok(content.milestones >= 0 && content.milestones < 2 ** contentSchedule(seed).length);
   }
 
   // A cursor left absurdly far in the past must not loop millions of epochs or

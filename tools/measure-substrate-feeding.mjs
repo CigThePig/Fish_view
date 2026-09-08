@@ -37,6 +37,7 @@ import {
 } from "../src/sim/fish-activities.js";
 import { forageActivity, substrateGrazeY } from "../src/sim/fish-motion.js";
 import { createAquariumState } from "../src/sim/state.js";
+import { stocked } from "./stocked-aquarium.mjs";
 
 const SUBJECT_INDEX = 3;
 const ORIENTATIONS = ["landscape", "portrait"];
@@ -183,7 +184,7 @@ export function measureFeeding(override = null) {
   const results = [];
   for (const orientation of ORIENTATIONS) {
     const state = {
-      ...createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }),
+      ...stocked(createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 })),
       ...(override ? { choreographyTuning: override } : {}),
     };
     const tuning = sceneTuning(state, "substrate-search");
@@ -246,7 +247,7 @@ async function writeSheet(target, only = null, override = null) {
   const rowPixels = config.pixelHeight / config.rows;
   const columnPixels = config.pixelWidth / config.cols;
   const state = {
-    ...createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }),
+    ...stocked(createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 })),
     ...(override ? { choreographyTuning: override } : {}),
   };
   const tuning = sceneTuning(state, "substrate-search");

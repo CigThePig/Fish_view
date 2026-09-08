@@ -48,6 +48,7 @@ import {
   substrateGrazeY,
 } from "../src/sim/fish-motion.js";
 import { createAquariumState } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 
 const activities = new Set(Object.values(ACTIVITIES));
 
@@ -195,7 +196,7 @@ test("the authored feeding rotations fit the pitch ceiling between them", () => 
 
   // And a setting that does over-run is bounded where it is composed rather
   // than at the clamp, so the lab shows a capped strike instead of a silent one.
-  const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
   const grazing = {
     ...base.individuals[4],
     y: substrateGrazeY(base.individuals[4], base, base.individuals[4].x, 4),
@@ -228,7 +229,7 @@ test("the authored feeding rotations fit the pitch ceiling between them", () => 
 });
 
 test("bottom feeding answers its rotation and distance tuning", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
   const fish = base.individuals[4];
   const deeper = {
     ...base,

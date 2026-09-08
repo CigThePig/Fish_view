@@ -31,15 +31,23 @@
  */
 
 import { RARE_PLANT_IDS } from "../art/plants.js";
-import { clamp, createIndividualFromSeed, individualSeedFor } from "./entities.js";
+import { clamp, createIndividualFromSeed } from "./entities.js";
 import { ACTIVITIES, createActivityState } from "./fish-activities.js";
 import { INITIAL_INDIVIDUAL_COUNT, MAX_INDIVIDUALS } from "./config.js";
 import {
+  HATCHLING_AGE_DAYS,
   fishAgeDays,
   fishGrowth,
   fishSpriteWidth,
-  initialFishAgeDays,
 } from "./fish-growth.js";
+import {
+  ARRIVAL_INTERVAL_DAYS,
+  ROSTER_COMPLETE_DAY,
+  ROSTER_SIZE,
+  SPECIES_COMPLETE_DAY,
+  aquariumRoster,
+  rosterEntryForSeed,
+} from "./fish-roster.js";
 import { fishVerticalClearanceRows, substrateSafeY, surfaceSafeY } from "./fish-motion.js";
 import {
   createPlantFromSeed,
@@ -52,9 +60,18 @@ import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 export const CONTENT_VERSION = 1;
 
-// The initial cast, and the ceiling persistence has always supported. Phase 3
-// lets an aquarium grow 6 -> 7 -> 8 over its first few months and stop there.
+// The founder an aquarium is created with, and the ceiling persistence
+// supports. An aquarium now grows 1 -> 15 across its first seven months: one new
+// individual every fortnight, one of every species before any species repeats,
+// and then the duplicates the tank has room for. sim/fish-roster.js owns the
+// order; this module owns when each of them actually materializes.
 export { INITIAL_INDIVIDUAL_COUNT, MAX_INDIVIDUALS } from "./config.js";
+export {
+  ARRIVAL_INTERVAL_DAYS,
+  ROSTER_COMPLETE_DAY,
+  ROSTER_SIZE,
+  SPECIES_COMPLETE_DAY,
+} from "./fish-roster.js";
 
 // Reproduction is evaluated on coarse epochs rather than per frame. At real
 // time a frame costs one integer comparison; a week-per-second debug run may
@@ -67,12 +84,12 @@ export const PROPAGATION_EPOCH_DAYS = 12;
 export const PROPAGATION_EPOCH_CHANCE = 0.34;
 export const PROPAGATION_CANDIDATE_OFFSETS = 4;
 
-// Seeded windows, in aquarium days. Two aquariums with different seeds get
-// noticeably different histories; the same seed always gets the same one.
-export const ARRIVAL_WINDOW_DAYS = Object.freeze([
-  Object.freeze([10, 24]),
-  Object.freeze([45, 85]),
-]);
+// Fish arrivals are a fixed fortnightly calendar rather than a seeded window.
+// What varies between two aquariums is which fish arrives when, not whether one
+// does: an aquarium that gains an individual every second week is legible as a
+// thing that is filling up, and a seeded spread would make the same schedule
+// read as chance. The seeded windows below still govern the rare plants, which
+// are a surprise rather than a routine.
 export const RARE_EMERGENCE_WINDOW_DAYS = Object.freeze([
   Object.freeze([24, 50]),
   Object.freeze([80, 150]),
@@ -110,16 +127,17 @@ export function contentSchedule(seed) {
   if (scheduleCache?.seed === base) return scheduleCache.milestones;
 
   const milestones = [];
-  for (let ordinal = 0; ordinal < ARRIVAL_WINDOW_DAYS.length; ordinal += 1) {
-    const [minimum, maximum] = ARRIVAL_WINDOW_DAYS[ordinal];
-    const event = eventSeed(base, FAMILY.arrival, ordinal);
+  // Every roster slot but the founder, which the aquarium is created holding.
+  for (const entry of aquariumRoster(base).slice(INITIAL_INDIVIDUAL_COUNT)) {
+    const ordinal = entry.slot - INITIAL_INDIVIDUAL_COUNT;
     milestones.push(Object.freeze({
       id: `fish-arrival:${ordinal}`,
       type: "fish-arrival",
       ordinal,
-      day: sampleRange(event, 1, minimum, maximum),
-      eventSeed: event,
-      fishSeed: individualSeedFor(base, INITIAL_INDIVIDUAL_COUNT + ordinal),
+      day: entry.day,
+      eventSeed: eventSeed(base, FAMILY.arrival, ordinal),
+      fishSeed: entry.seed,
+      speciesId: entry.speciesId,
     }));
   }
   for (let ordinal = 0; ordinal < RARE_EMERGENCE_WINDOW_DAYS.length; ordinal += 1) {
@@ -145,9 +163,10 @@ export function contentSchedule(seed) {
 }
 
 export function createContentState() {
-  // `milestones` is a bitmask over the schedule (four bits today). It is
-  // computational bookkeeping, never a user-facing statistic, and it cannot
-  // grow with aquarium age.
+  // `milestones` is a bitmask over the schedule (sixteen bits today: fourteen
+  // fish arrivals and two rare plants). It is computational bookkeeping, never
+  // a user-facing statistic, and it is bounded by the schedule length rather
+  // than growing with aquarium age.
   return { version: CONTENT_VERSION, propagationEpoch: 0, milestones: 0 };
 }
 
@@ -197,17 +216,15 @@ export function migrateContent(totalDays) {
 // How old a fish in a save written before growth existed must be today.
 //
 // A fish's age is reconstructable rather than guessable, because every fish in
-// an aquarium got there in one of exactly two ways. The initial cast was
-// created with the aquarium and has been aging ever since, so it is its seeded
-// starting age plus the aquarium's age. An arrival hatched on its own milestone
-// day, which the schedule still knows. Nothing else can be in the roster.
+// an aquarium hatched in it on a day the roster still knows: the founder on day
+// zero, every other slot on `slot * 14`. A fish the roster does not recognise -
+// a save from before the calendar existed, or a damaged one - is treated as
+// having been there from the beginning, which is the only assumption that
+// cannot make an aquarium younger than it is.
 export function inferredFishAgeDays(aquariumSeed, fishSeed, totalDays) {
   const days = Number.isFinite(totalDays) ? Math.max(0, totalDays) : 0;
-  const arrival = contentSchedule(aquariumSeed).find((milestone) => (
-    milestone.type === "fish-arrival" && (milestone.fishSeed >>> 0) === (fishSeed >>> 0)
-  ));
-  if (arrival) return Math.max(0, days - arrival.day);
-  return initialFishAgeDays(fishSeed) + days;
+  const entry = rosterEntryForSeed(aquariumSeed, fishSeed);
+  return Math.max(0, days - (entry?.day ?? 0));
 }
 
 // An arrival is a fry, so it is measured as one. Using the adult silhouette
@@ -296,16 +313,6 @@ function uniquePlantSeed(plants, candidate) {
   return null;
 }
 
-function uniqueFishSeed(individuals, candidate) {
-  const taken = new Set(individuals.map((fish) => fish.seed >>> 0));
-  let seed = candidate >>> 0;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    if (!taken.has(seed)) return seed;
-    seed = mix32(seed ^ Math.imul(attempt + 1, 0x85ebca6b));
-  }
-  return null;
-}
-
 // --- fish arrivals -----------------------------------------------------------
 
 // A fish that materialized in the middle of the tank would read as a rendering
@@ -357,9 +364,12 @@ export function arrivalPlacement(state, milestone, seed) {
 
 function resolveFishArrival(context, milestone) {
   if (context.individuals.length >= MAX_INDIVIDUALS) return;
+  // The scheduled seed is the only seed this arrival can have. It is what
+  // decides the species the calendar promised, so a collision with something
+  // already in the tank means the fish is already here - never a cue to reroll
+  // an identity, which would silently hand the slot to a different species.
   if (context.individuals.some((fish) => (fish.seed >>> 0) === (milestone.fishSeed >>> 0))) return;
-  const seed = uniqueFishSeed(context.individuals, milestone.fishSeed);
-  if (seed === null) return;
+  const seed = milestone.fishSeed >>> 0;
 
   const placement = arrivalPlacement(context, milestone, seed);
   const index = context.individuals.length;
@@ -370,7 +380,7 @@ function resolveFishArrival(context, milestone) {
       // It enters at the size of the school it swims through and becomes its own
       // species over the following months, which is the whole point of the
       // event: the aquarium gained something that is still going to change.
-      ageDays: 0,
+      ageDays: HATCHLING_AGE_DAYS,
       x: placement.x,
       y: placement.y,
       vx: placement.vx,
@@ -614,10 +624,8 @@ export function advanceAquariumHistory(state, deltaDays) {
 export function historyDiagnostics(state) {
   const schedule = contentSchedule(state.seed);
   const content = sanitizeContent(state.content, { totalDays: state.totalDays, seed: state.seed });
-  const baseSeeds = new Set(Array.from(
-    { length: INITIAL_INDIVIDUAL_COUNT },
-    (_, index) => individualSeedFor(state.seed, index),
-  ));
+  const roster = aquariumRoster(state.seed);
+  const baseSeeds = new Set(roster.slice(0, INITIAL_INDIVIDUAL_COUNT).map((entry) => entry.seed));
   return {
     ageDays: state.totalDays,
     content,
@@ -629,6 +637,16 @@ export function historyDiagnostics(state) {
     })(),
     individualCount: state.individuals.length,
     individualCap: MAX_INDIVIDUALS,
+    // What the calendar says the tank should be holding today, so a diagnostic
+    // run can tell "the schedule has not reached this fish yet" apart from "the
+    // schedule reached it and something dropped it".
+    scheduledIndividualCount: roster.filter((entry) => entry.day <= state.totalDays).length,
+    speciesCompleteDay: SPECIES_COMPLETE_DAY,
+    rosterCompleteDay: ROSTER_COMPLETE_DAY,
+    rosterSize: ROSTER_SIZE,
+    arrivalIntervalDays: ARRIVAL_INTERVAL_DAYS,
+    schoolCount: state.school.length,
+    schoolTarget: state.settings?.schoolCount ?? state.school.length,
     growth: state.individuals.map((fish) => {
       const growth = fishGrowth(fish);
       return {

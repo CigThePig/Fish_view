@@ -1,15 +1,27 @@
 import { MIN_BEHAVIOR_REAL_SECONDS, SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
-import { initialFishAgeDays, speciesForSeed } from "./fish-growth.js";
+import { HATCHLING_AGE_DAYS, speciesForSeed } from "./fish-growth.js";
+import { aquariumRoster, fishShoals, individualSeedFor } from "./fish-roster.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 export function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+// The floor a shoaling species' sociability sits on. A fish that travels with
+// the school is gregarious by species before it is gregarious by temperament,
+// so the seeded spread happens above this rather than around it: two
+// ribbed-darts still differ from each other, and neither is ever a loner.
+const SHOALING_SOCIABILITY_FLOOR = 0.74;
+
 export function traitsFromSeed(seed, history = { boldnessDrift: 0, sociabilityDrift: 0 }) {
+  const sociability = clamp(
+    sampleRange(seed, 2, 0.18, 0.88) + (history.sociabilityDrift ?? 0),
+    fishShoals(seed) ? SHOALING_SOCIABILITY_FLOOR : 0.12,
+    0.95,
+  );
   return Object.freeze({
     boldness: clamp(sampleRange(seed, 1, 0.2, 0.82) + (history.boldnessDrift ?? 0), 0.12, 0.95),
-    sociability: clamp(sampleRange(seed, 2, 0.18, 0.88) + (history.sociabilityDrift ?? 0), 0.12, 0.95),
+    sociability,
     activity: sampleRange(seed, 3, 0.28, 0.9),
     preferredDepth: sampleRange(seed, 4, 0.2, 0.8),
     curiosity: sampleRange(seed, 5, 0.2, 0.94),
@@ -37,17 +49,20 @@ export function createSchoolFish(baseSeed, index, cols, rows) {
   };
 }
 
-// Individual identity is a pure function of the aquarium seed and a creation
-// ordinal. Exposing it separately is what lets Phase 3 name a fish that has not
-// arrived yet without rerolling, or even constructing, the initial cast.
-// mix32 is a bijection over uint32 and `index + 17` scaled by an odd multiplier
-// is injective, so two different ordinals can never collide.
-export function individualSeedFor(baseSeed, index) {
-  return mix32((baseSeed >>> 0) ^ Math.imul((index + 17) >>> 0, 0x85ebca6b));
-}
+// The ordinal seed sequence the roster is built from. Re-exported here because
+// this is where every other module has always reached for it; sim/fish-roster.js
+// owns it now, because the identity a roster slot actually gets is the first
+// seed in that sequence whose species is the one the calendar wants.
+export { individualSeedFor };
 
+// The fish occupying roster slot `index`, which for slot 0 is the founder a new
+// aquarium is created with. Identity comes from the roster rather than straight
+// from the ordinal sequence, so which species a slot holds is decided in one
+// place and every constructor agrees with the calendar.
 export function createIndividual(baseSeed, index, cols, rows) {
-  return createIndividualFromSeed(individualSeedFor(baseSeed, index), index, cols, rows);
+  const entry = aquariumRoster(baseSeed)[index];
+  const seed = entry ? entry.seed : individualSeedFor(baseSeed, index);
+  return createIndividualFromSeed(seed, index, cols, rows);
 }
 
 // `options` only overrides the entry pose of a fish that swims in from an
@@ -75,7 +90,9 @@ export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {
     seed,
     // Aquarium days lived, not days since the app was installed. Growth reads
     // it, the shared history resolver advances it, and persistence keeps it.
-    ageDays: Number.isFinite(options.ageDays) ? Math.max(0, options.ageDays) : initialFishAgeDays(seed),
+    // Constructing a fish is hatching it: every individual in the aquarium,
+    // founder and arrival alike, starts here and ages from zero.
+    ageDays: Number.isFinite(options.ageDays) ? Math.max(0, options.ageDays) : HATCHLING_AGE_DAYS,
     x: Number.isFinite(options.x) ? options.x : sampleRange(seed, 8, 4, Math.max(5, cols - 5)),
     y: Number.isFinite(options.y) ? options.y : y,
     vx,

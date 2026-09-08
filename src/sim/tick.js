@@ -15,6 +15,7 @@ import {
   steerActivityVelocity,
 } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
+import { fishShoals, schoolCountFor } from "./fish-roster.js";
 import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
 import {
   BEHAVIORS,
@@ -35,6 +36,11 @@ import { sampleRange } from "./prng.js";
 
 // Hunger above this point is discomfort rather than appetite.
 const HUNGER_COMFORT = 0.62;
+// What being a shoaling species is worth against every other reason to be
+// somewhere. It is large enough that company is a ribbed-dart's default and
+// small enough that a tired one still rests and a hungry one still eats: a fish
+// that could never leave the school would be an animation, not an animal.
+const SHOALING_SOCIAL_UTILITY = 0.32;
 // How far a fully starving fish suppresses the behaviours that compete with
 // feeding for the same active time.
 const STARVATION_DAMPING = 0.45;
@@ -84,8 +90,15 @@ function limitVelocity(vx, vy, minimum, maximum, fallbackDirection = 1) {
   return { vx: direction.x * speed, vy: direction.y * speed };
 }
 
+// How many schooling glyphs the aquarium is showing right now. The setting is
+// the size the school grows *to*; the aquarium opens at a quarter of it and
+// fills in continuously as its age advances, so this is re-evaluated every tick
+// rather than only when the setting changes. Members are appended by ordinal
+// and never reshuffled, so the school that was there yesterday is the same
+// school today with one more fish in it.
 function reconcileSchool(state) {
-  const requested = Math.round(clamp(state.settings.schoolCount, 25, 40));
+  const full = Math.round(clamp(state.settings.schoolCount, 25, 40));
+  const requested = schoolCountFor(full, state.totalDays);
   if (requested === state.school.length) return state.school;
   if (requested < state.school.length) return state.school.slice(0, requested);
   const school = state.school.map((fish) => ({ ...fish }));
@@ -238,6 +251,9 @@ export function behaviorUtilities(
   const socialReadiness = clamp((fish.drives.social - 0.38) / 0.3, 0, 1);
   utilities.social += behaviorBout(fish, state, 8710, 118, 188, 0.22)
     * socialReadiness * (0.07 + traits.sociability * 0.1);
+  // A shoaling species is drawn to company by what it is rather than by how
+  // much company it has lately had, so this is a standing term and not a drive.
+  if (fishShoals(fish.seed)) utilities.social += SHOALING_SOCIAL_UTILITY;
   const restReadiness = clamp((0.58 - fish.drives.energy) / 0.28, 0, 1);
   utilities.rest += behaviorBout(fish, state, 8720, 176, 264, 0.2)
     * restReadiness * (0.34 + (1 - traits.activity) * 0.22);

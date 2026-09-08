@@ -18,10 +18,10 @@ import {
   MINIMUM_STAGE_DAYS,
   fishGrowth,
   fishGrowthProfile,
-  initialFishAgeDays,
   speciesForSeed,
   spriteForFish,
 } from "../src/sim/fish-growth.js";
+import { ROSTER_SIZE, aquariumRoster } from "../src/sim/fish-roster.js";
 import { fishVerticalClearanceRows } from "../src/sim/fish-motion.js";
 import {
   advanceOffline,
@@ -180,22 +180,33 @@ test("a fish only ever moves forward through its own stages", () => {
   }
 });
 
-test("an aquarium is handed over established but still has something to do", () => {
-  let fish = 0;
-  let grown = 0;
-  let developing = 0;
+test("an aquarium is handed over empty and grows into itself", () => {
   for (let seed = 1; seed <= 120; seed += 1) {
-    for (const individual of fresh(seed).individuals) {
+    const start = fresh(seed);
+    // Day one is one hatchling. Nothing in a new tank is grown, and nothing in
+    // it is a fish somebody else raised.
+    assert.equal(start.individuals.length, 1);
+    for (const individual of start.individuals) {
       const growth = fishGrowth(individual);
-      fish += 1;
-      if (growth.grown) grown += 1;
-      else developing += 1;
+      assert.equal(individual.ageDays, 0);
+      assert.equal(growth.stageIndex, 0);
+      assert.ok(!growth.grown, "a founding fish started already finished");
+      // ...and it is one of the species that has an adult worth waiting for.
+      assert.ok(growth.stageCount >= 3);
     }
   }
-  // Day one is an aquarium, not a hatchery.
-  assert.ok(grown / fish > 0.7, `only ${grown}/${fish} fish start grown`);
-  // ...but a tank where nothing is left to change would have no long horizon.
-  assert.ok(developing / fish > 0.08, `only ${developing}/${fish} fish start developing`);
+
+  // By the time the calendar has run out, most of the tank has finished
+  // growing - a mature aquarium is a population of sizes, not of fry.
+  let fish = 0;
+  let grown = 0;
+  for (let seed = 1; seed <= 40; seed += 1) {
+    for (const individual of atDay(400, { seed }).individuals) {
+      fish += 1;
+      if (fishGrowth(individual).grown) grown += 1;
+    }
+  }
+  assert.ok(grown / fish > 0.9, `only ${grown}/${fish} fish had finished growing`);
 });
 
 // --- advancement ------------------------------------------------------------
@@ -383,17 +394,17 @@ test("a save written before growth existed comes back with the fish it earned", 
   }
 });
 
-test("the reconstructed age knows both ways a fish can be in the roster", () => {
+test("the reconstructed age is the aquarium's age minus the day the fish hatched", () => {
   const schedule = contentSchedule(SEED).filter((milestone) => milestone.type === "fish-arrival");
   for (let ordinal = 0; ordinal < schedule.length; ordinal += 1) {
     assert.ok(Math.abs(
-      inferredFishAgeDays(SEED, schedule[ordinal].fishSeed, 200) - (200 - schedule[ordinal].day),
+      inferredFishAgeDays(SEED, schedule[ordinal].fishSeed, 400) - (400 - schedule[ordinal].day),
     ) < 1e-9);
   }
+  // The founder has been in the tank since day zero, so it is exactly as old
+  // as the aquarium.
   const original = fresh().individuals[0];
-  assert.ok(Math.abs(
-    inferredFishAgeDays(SEED, original.seed, 200) - (initialFishAgeDays(original.seed) + 200),
-  ) < 1e-9);
+  assert.ok(Math.abs(inferredFishAgeDays(SEED, original.seed, 200) - 200) < 1e-9);
   // An arrival that has not happened yet cannot be older than the aquarium.
   assert.equal(inferredFishAgeDays(SEED, schedule[1].fishSeed, 1), 0);
 });
@@ -427,9 +438,12 @@ test("growth adds nothing to a save but one number per fish", () => {
   assert.equal(saved.persistenceVersion, 2);
 });
 
-test("the roster ceiling and the initial cast are unchanged by growth", () => {
+test("the roster ceiling and the founding cast are unchanged by growth", () => {
   const state = atDay(500);
   assert.equal(fresh().individuals.length, INITIAL_INDIVIDUAL_COUNT);
-  assert.equal(state.individuals.length, 8);
-  assert.equal(new Set(state.individuals.map((fish) => fish.seed)).size, 8);
+  assert.equal(state.individuals.length, ROSTER_SIZE);
+  assert.equal(new Set(state.individuals.map((fish) => fish.seed)).size, ROSTER_SIZE);
+  // Every fish that ever appears is a fish the calendar named on day one.
+  const planned = new Set(aquariumRoster(SEED).map((entry) => entry.seed));
+  assert.ok(state.individuals.every((fish) => planned.has(fish.seed >>> 0)));
 });

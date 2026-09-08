@@ -57,6 +57,14 @@ const expectedProfiles = Object.freeze({
     rearShoulder: 0.5,
     frontShoulder: 1.5,
   }),
+  "ribbed-dart": Object.freeze({
+    offsetX: -0.18,
+    offsetY: 0,
+    radiusXScale: 1.06,
+    radiusYScale: 1.05,
+    rearShoulder: 4,
+    frontShoulder: 3.2,
+  }),
   "box-fin": Object.freeze({
     offsetX: -0.51,
     offsetY: 0,
@@ -143,7 +151,7 @@ const expectedGrowthStageProfiles = Object.freeze({
   "comma-tail:juvenile": Object.freeze({
     offsetX: 0,
     offsetY: 0,
-    radiusXScale: 0.71,
+    radiusXScale: 1.4,
     radiusYScale: 0.7,
     rearShoulder: 3,
     frontShoulder: 3,
@@ -179,6 +187,14 @@ const expectedGrowthStageProfiles = Object.freeze({
     radiusYScale: 0.5,
     rearShoulder: 0.5,
     frontShoulder: 1.5,
+  }),
+  "ribbed-dart:juvenile": Object.freeze({
+    offsetX: -0.12,
+    offsetY: 0,
+    radiusXScale: 1.04,
+    radiusYScale: 1.05,
+    rearShoulder: 3.4,
+    frontShoulder: 3,
   }),
 });
 

@@ -52,8 +52,14 @@ export const PITCH_ROTATION_FRACTION = 1;
 // receives.
 export const PITCH_CLEARANCE_FRACTION = 1;
 export const DEFAULT_SEED = 0xa51c0a7e;
-export const INITIAL_INDIVIDUAL_COUNT = 6;
-export const MAX_INDIVIDUALS = 8;
+// A new aquarium is one hatchling, not a stocked tank. Everything else arrives
+// on the fortnightly calendar in sim/fish-roster.js, which owns the whole
+// schedule; these two are the counts the rest of the simulation and persistence
+// bound themselves by. They are literals rather than imports because the roster
+// module reaches the artwork, and the artwork reaches this file for its cell
+// metrics - `MAX_INDIVIDUALS === ROSTER_SIZE` is asserted in the tests instead.
+export const INITIAL_INDIVIDUAL_COUNT = 1;
+export const MAX_INDIVIDUALS = 15;
 
 // Drives never reach 0 or 1: a fish is never perfectly satisfied and never
 // starves to death. Behaviour selection has to account for the ceiling, because
@@ -79,6 +85,9 @@ export const MAX_DRIVE_HOURS_PER_REAL_SECOND = 1;
 export const MIN_BEHAVIOR_SIM_SECONDS = 38;
 export const MIN_BEHAVIOR_REAL_SECONDS = 12;
 
+// `schoolCount` is the size the school grows *to*. A new aquarium shows a
+// quarter of it and fills in continuously over the following months; see
+// schoolCountFor() in sim/fish-roster.js.
 export const DEFAULT_SETTINGS = Object.freeze({
   timeScale: 1,
   schoolCount: 32,

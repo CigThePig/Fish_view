@@ -48,6 +48,7 @@ const { spriteMouthOffset } = await import(url("src/art/sprites.js"));
 const { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_PECK_ROWS, forageActivity } = await import(url("src/sim/fish-motion.js"));
 const { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } = await import(url("src/sim/config.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
+const { stocked } = await import(url("tools/stocked-aquarium.mjs"));
 const { tick } = await import(url("src/sim/tick.js"));
 
 const STEP_SECONDS = 0.1;
@@ -173,7 +174,7 @@ for (const [key, value] of motion) {
 report("Feeding strike (production tank)");
 console.log("orientation  plunge px  mouth gap  belly gap  debris glyphs  debris contrast  strike repaint");
 for (const orientation of ["landscape", "portrait"]) {
-  let state = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
+  let state = stocked(createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }));
   let best = null;
   let rest = null;
   let window = null;
@@ -322,7 +323,7 @@ console.log("hour   mean luminance  body vs water  accent vs body");
 const NIGHT_HOURS = new Set([21, 23, 3]);
 let noonLuminance = 0;
 for (const hour of [12, 16, 19, 21, 23, 3, 6, 9]) {
-  let state = createAquariumState({ orientation: "landscape", seed: DEFAULT_SEED, wallClockHours: hour });
+  let state = stocked(createAquariumState({ orientation: "landscape", seed: DEFAULT_SEED, wallClockHours: hour }));
   for (let step = 0; step < 60; step += 1) state = tick(state, STEP_SECONDS);
   const { scene, canvas } = frame(state, "landscape");
   const whole = pixels(canvas, 0, 0, canvas.width, canvas.height);

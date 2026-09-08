@@ -1,7 +1,8 @@
 import { scenePalette } from "../src/render/palette.js";
-// Phase 3: the worst case the renderer now has to survive is not a fresh
-// aquarium but a mature one - eight individuals, the plant cap, grown
-// vegetation, and a rare plant in its glowing window.
+// The worst case the renderer has to survive is not a fresh aquarium but a
+// mature one - the full fifteen-fish roster, the school filled out to its
+// setting, the plant cap, grown vegetation, and a rare plant in its glowing
+// window.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -22,7 +23,7 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const MATURE_PLANT_GLYPH_BUDGET = { landscape: 780, portrait: 860 };
 
 // A deterministic worst-case aquarium: the hard plant cap, every specimen
-// mature, both fish arrivals resolved, and enough age for a rare lifecycle.
+// mature, every fish arrival resolved, and enough age for a rare lifecycle.
 function maturePhase3State(orientation, seed = 5, wallClockHours = 12) {
   const base = createAquariumState({ orientation, seed, wallClockHours });
   const grown = advanceAquariumHistory(base, 900);
@@ -43,10 +44,13 @@ function maturePhase3State(orientation, seed = 5, wallClockHours = 12) {
     }));
     filler += 1;
   }
-  return {
+  // One tick, so the school is reconciled to the size an aquarium this old
+  // holds. The school fills in with age rather than being allocated up front,
+  // and the budget below is measured against a full one.
+  return tick({
     ...grown,
     plants: plants.map((plant) => ({ ...plant, ageDays: 400 })),
-  };
+  }, 0.1);
 }
 
 function plantObjects(scene) {

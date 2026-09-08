@@ -2,6 +2,8 @@
 // that restores without throwing can still poison geometry on its first frame.
 import { auditOptions, writeAudit } from "./audit-options.mjs";
 import { createAquariumState, restorePersistentState, serializePersistentState } from "../src/sim/state.js";
+import { MAX_INDIVIDUALS } from "../src/sim/config.js";
+import { ROSTER_COMPLETE_DAY, advanceAquariumHistory } from "../src/sim/aquarium-history.js";
 import { tick } from "../src/sim/tick.js";
 import { render } from "../src/render/render.js";
 
@@ -18,7 +20,12 @@ const report = { options, generatorSeed: randomState, failures: 0, examples: [] 
 for (let sample = 0; sample < options.cases; sample++) {
   const seed = random(0x100000000);
   const orientation = sample % 2 ? "portrait" : "landscape";
-  const base = createAquariumState({ seed, orientation });
+  // A stocked aquarium, so the fuzzing has a full roster to damage: a new tank
+  // holds one fish and a save written from it corrupts in far fewer ways.
+  const base = advanceAquariumHistory(
+    createAquariumState({ seed, orientation }),
+    ROSTER_COMPLETE_DAY + 200,
+  );
   const saved = serializePersistentState(base);
   for (let mutation = 0; mutation < 1 + sample % 5; mutation++) {
     const index = random(saved.individuals.length);
@@ -43,7 +50,9 @@ for (let sample = 0; sample < options.cases; sample++) {
   try {
     let state = restorePersistentState(base, JSON.parse(json));
     const identities = new Set(state.individuals.map((fish) => fish.seed));
-    if (identities.size !== state.individuals.length || identities.size < 5 || identities.size > 8) throw new Error("invalid restored identities");
+    if (identities.size !== state.individuals.length
+      || identities.size < 1
+      || identities.size > MAX_INDIVIDUALS) throw new Error("invalid restored identities");
     if (new Set(state.plants.map((plant) => plant.seed)).size !== state.plants.length) throw new Error("duplicate restored plants");
     for (let frame = 0; frame < 3; frame++) {
       state = tick(state, 0.1);

@@ -7,6 +7,8 @@ import {
   resolveActivityTarget,
 } from "../sim/fish-activities.js";
 import { plantHeight } from "../sim/plants.js";
+import { advanceAquariumHistory } from "../sim/aquarium-history.js";
+import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 import { substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
@@ -21,6 +23,9 @@ export const SHOWCASE_DEFAULT_SEED = hashSeed(SHOWCASE_SEED_LABEL);
 
 const SUBJECT_INDEX = 3;
 const SUBSTRATE_APPROACH_ROWS = 2.6;
+// A little past the 1.15-row settle radius the shelter resolver uses, so the
+// loop opens on the approach and still reaches the plant well inside it.
+const SHELTER_APPROACH_ROWS = 1.5;
 const COMPANION_INDEX = 4;
 const FORAGE_PREVIEW_SPANS = Object.freeze([0.5, 20]);
 
@@ -405,11 +410,13 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
     // an invalid specimen and wander to a distant fallback.
     const plant = showcaseShelterPlant(state, subject);
     const preview = plantTargetPosition(subject, plant, state, { shelter: true });
+    // Just outside the settle radius, on the side of the plant the resolver
+    // already chose, so one loop shows the arrival and then the quiet shelter
+    // profile it is really here to demonstrate. Starting exactly on the point
+    // shows only the second half; starting anywhere else shows only the first.
+    const approach = preview.x < plant.x ? -SHELTER_APPROACH_ROWS : SHELTER_APPROACH_ROWS;
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
-      // Start at the resolved shelter point so the preview exercises the quiet
-      // shelter profile itself, not only its short approach phase. Recomputing
-      // the target from this pose selects the same side of the plant.
-      x: preview.x,
+      x: preview.x + approach,
       y: preview.y,
       vx: preview.x < state.cols / 2 ? -0.06 : 0.06,
       vy: 0,
@@ -451,12 +458,21 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   return { ...state, individuals };
 }
 
+// The lab poses named roster slots against each other, so it needs an aquarium
+// that is holding its whole cast. A new tank is one hatchling on its first day
+// and fills up over the following months; the lab is not a place to watch that
+// happen, so it opens the same aquarium at the far end of its calendar.
+export const SHOWCASE_AQUARIUM_DAY = ROSTER_COMPLETE_DAY + 200;
+
 export function createShowcaseState({
   orientation = "landscape",
   scenario = "cruise",
   seed = SHOWCASE_DEFAULT_SEED,
 } = {}) {
-  const initial = createAquariumState({ orientation, seed, wallClockHours: 12 });
+  const initial = advanceAquariumHistory(
+    createAquariumState({ orientation, seed, wallClockHours: 12 }),
+    SHOWCASE_AQUARIUM_DAY,
+  );
   return configureScenario(initial, scenario);
 }
 

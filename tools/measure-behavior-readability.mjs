@@ -15,6 +15,7 @@ const { createBubbleWorldRecords } = await import(url("src/sim/bubbles.js"));
 const { chaseEvasionForFish } = await import(url("src/sim/fish-choreography.js"));
 const { forageActivity } = await import(url("src/sim/fish-motion.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
+const { stocked } = await import(url("tools/stocked-aquarium.mjs"));
 const { tick } = await import(url("src/sim/tick.js"));
 const { render } = await import(url("src/render/render.js"));
 const { calculateDamage } = await import(url("src/render/damage.js"));
@@ -200,7 +201,7 @@ for (const orientation of ["landscape", "portrait"]) {
 }
 
 function ordinaryWatch(orientation) {
-  let state = createAquariumState({ orientation, seed: 0xa51c0a7e, wallClockHours: 12 });
+  let state = stocked(createAquariumState({ orientation, seed: 0xa51c0a7e, wallClockHours: 12 }));
   const previousActivities = new Map(state.individuals.map((fish) => [fish.seed, fish.activity.current]));
   const previousPecks = new Map();
   const entries = {};

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { MAX_INDIVIDUALS } from "../src/sim/config.js";
+
 import {
   ACTIVITIES,
   createActivityState,
@@ -17,6 +19,7 @@ import {
   serializePersistentState,
   withSettings,
 } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 function socialFish(fish, targetSeed, x, y) {
@@ -42,13 +45,13 @@ function evolveMemory(individuals, frames = 1200, dt = 0.25) {
 
 test("new fish begin without fake learned relationships", () => {
   for (const count of [5, 6]) {
-    const state = createAquariumState({ orientation: "landscape", seed: 91 });
+    const state = stockedAquarium({ orientation: "landscape", seed: 91 });
     assert.ok(state.individuals.slice(0, count).every((fish) => fish.history.socialMemory.length === 0));
   }
 });
 
 test("familiarity grows from visible proximity and not from a distant shared state label", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 300 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 300 });
   const left = base.individuals[0];
   const right = base.individuals[1];
   const near = [
@@ -68,7 +71,7 @@ test("familiarity grows from visible proximity and not from a distant shared sta
 });
 
 test("social memory is hard-bounded, seed-addressed, and cannot remember self", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 512 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 512 });
   const eight = Array.from({ length: 8 }, (_, index) => {
     const source = base.individuals[index % base.individuals.length];
     return {
@@ -109,7 +112,7 @@ test("malformed, duplicate, and self relationships are clamped and rejected dete
 });
 
 test("a familiar fish wins companion selection over a merely compatible stranger", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 701 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 701 });
   const subject = {
     ...base.individuals[0],
     x: 20,
@@ -140,7 +143,7 @@ test("a familiar fish wins companion selection over a merely compatible stranger
 });
 
 test("learned memory survives persistence while Phase 1 saves start empty", () => {
-  const base = createAquariumState({ orientation: "portrait", seed: 808 });
+  const base = stockedAquarium({ orientation: "portrait", seed: 808 });
   const companionSeed = base.individuals[1].seed;
   const learned = {
     ...base,
@@ -161,27 +164,32 @@ test("learned memory survives persistence while Phase 1 saves start empty", () =
   assert.ok(phase1.individuals.every((fish) => fish.history.socialMemory.length === 0));
 });
 
-test("restore remains safe for the supported five-to-eight fish range", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 990 });
+test("restore remains safe anywhere between one fish and the roster ceiling", () => {
+  const base = stockedAquarium({ orientation: "landscape", seed: 990 });
   const saved = serializePersistentState(base);
-  const five = { ...saved, individuals: saved.individuals.slice(0, 5) };
-  assert.equal(restorePersistentState(base, five).individuals.length, 5);
+  // An aquarium is a legitimate one fish, and any count on the way up.
+  for (const count of [1, 5, MAX_INDIVIDUALS]) {
+    const partial = { ...saved, individuals: saved.individuals.slice(0, count) };
+    assert.equal(restorePersistentState(base, partial).individuals.length, count);
+  }
 
-  const eight = structuredClone(saved);
+  // A save carrying more fish than the tank supports is clamped rather than
+  // trusted, and the survivors still have distinct identities.
+  const overfull = structuredClone(saved);
   for (let index = 0; index < 2; index += 1) {
-    eight.individuals.push({
+    overfull.individuals.push({
       ...structuredClone(saved.individuals[index]),
       seed: (saved.individuals[index].seed ^ (0x5f3759df + index)) >>> 0,
     });
   }
-  const restored = restorePersistentState(base, eight);
-  assert.equal(restored.individuals.length, 8);
-  assert.equal(new Set(restored.individuals.map((fish) => fish.seed)).size, 8);
+  const restored = restorePersistentState(base, overfull);
+  assert.equal(restored.individuals.length, MAX_INDIVIDUALS);
+  assert.equal(new Set(restored.individuals.map((fish) => fish.seed)).size, MAX_INDIVIDUALS);
   assert.ok(restored.individuals.every((fish) => fish.history.socialMemory.length <= MAX_SOCIAL_MEMORY));
 });
 
 test("social need relief and sociability drift require actual physical engagement", () => {
-  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 404 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 404 }), { timeScale: 3600 });
   const left = base.individuals[0];
   const right = base.individuals[1];
   const make = (distance) => {
@@ -201,7 +209,7 @@ test("social need relief and sociability drift require actual physical engagemen
 });
 
 test("being near the school also provides truthful social relief", () => {
-  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 505 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 505 }), { timeScale: 3600 });
   // Company means school fish within reach, not the school's aggregate center,
   // which can sit in open water when the shoal is spread out.
   const densest = base.school.reduce((best, fish) => {
@@ -226,7 +234,7 @@ test("being near the school also provides truthful social relief", () => {
 });
 
 test("tick remains pure through nested activity targets and social-memory arrays", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 610 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 610 });
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => ({
@@ -252,7 +260,7 @@ test("tick remains pure through nested activity targets and social-memory arrays
 });
 
 test("accelerated Phase 2 simulations remain finite and bounded", () => {
-  let state = withSettings(createAquariumState({ orientation: "portrait", seed: 1234 }), { timeScale: 604800 });
+  let state = withSettings(stockedAquarium({ orientation: "portrait", seed: 1234 }), { timeScale: 604800 });
   for (let frame = 0; frame < 300; frame += 1) state = tick(state, 0.1);
   for (const fish of state.individuals) {
     assert.ok(Number.isFinite(fish.x) && Number.isFinite(fish.y));

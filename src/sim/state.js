@@ -5,7 +5,16 @@ import {
   inferredFishAgeDays,
   sanitizeContent,
 } from "./aquarium-history.js";
-import { DEFAULT_SEED, DRIVE_MAXIMUM, DRIVE_MINIMUM, INITIAL_INDIVIDUAL_COUNT, WATERLINE_ROWS, orientationConfig, sanitizeSettings } from "./config.js";
+import {
+  DEFAULT_SEED,
+  DRIVE_MAXIMUM,
+  DRIVE_MINIMUM,
+  INITIAL_INDIVIDUAL_COUNT,
+  MAX_INDIVIDUALS,
+  WATERLINE_ROWS,
+  orientationConfig,
+  sanitizeSettings,
+} from "./config.js";
 import { clamp, createIndividual, createIndividualFromSeed, createSchoolFish } from "./entities.js";
 import {
   ACTIVITIES,
@@ -15,6 +24,7 @@ import {
 } from "./fish-activities.js";
 import { MAX_FISH_PITCH_DEGREES, substrateSafeY, surfaceSafeY } from "./fish-motion.js";
 import { fishSpriteWidth } from "./fish-growth.js";
+import { schoolCountFor } from "./fish-roster.js";
 import { affinitiesFromSeed, sanitizeSocialMemory } from "./fish-personality.js";
 import {
   createPlantFromSeed,
@@ -36,7 +46,10 @@ export function createAquariumState({
   const dimensions = orientationConfig(orientation);
   const numericSeed = typeof seed === "number" ? seed >>> 0 : hashSeed(seed);
   const mergedSettings = sanitizeSettings(settings);
-  const school = Array.from({ length: mergedSettings.schoolCount }, (_, index) =>
+  // A quarter of the school it will grow into. `schoolCount` is the size the
+  // aquarium fills up to over its first months, not the size it opens at, so a
+  // new tank is deliberately sparse and visibly gains company week by week.
+  const school = Array.from({ length: schoolCountFor(mergedSettings.schoolCount, 0) }, (_, index) =>
     createSchoolFish(numericSeed, index, dimensions.cols, dimensions.rows),
   );
   const individuals = Array.from({ length: INITIAL_INDIVIDUAL_COUNT }, (_, index) =>
@@ -238,7 +251,7 @@ export function restorePersistentState(baseState, saved) {
   // before the roster rather than after it.
   const totalDays = savedAge(saved.totalDays);
   const originals = new Map(baseState.individuals.map((fish) => [fish.seed, fish]));
-  const sources = saved.individuals.slice(0, 8);
+  const sources = saved.individuals.slice(0, MAX_INDIVIDUALS);
   const reserved = new Set(sources.filter((fish) => record(fish)
     && stableSeed(fish.seed, -1) === fish.seed).map((fish) => fish.seed));
   const seen = new Set();
@@ -304,13 +317,15 @@ export function restorePersistentState(baseState, saved) {
     };
   });
 
-  if (individuals.length < 5) {
+  // A save that came back with nothing usable still has to come back with the
+  // fish the aquarium was founded on. Everything the calendar has since been
+  // through is restored by the zero-length advance at the end of this function,
+  // so this only has to cover the founder rather than reconstruct a whole cast.
+  if (!individuals.length) {
     for (const fish of baseState.individuals) {
-      if (individuals.length >= 6) break;
-      if (!seen.has(fish.seed)) {
-        individuals.push({ ...fish, ageDays: savedAge(inferredFishAgeDays(baseState.seed, fish.seed, totalDays)) });
-        seen.add(fish.seed);
-      }
+      if (seen.has(fish.seed)) continue;
+      individuals.push({ ...fish, ageDays: savedAge(inferredFishAgeDays(baseState.seed, fish.seed, totalDays)) });
+      seen.add(fish.seed);
     }
   }
   const availableSeeds = new Set(individuals.map((fish) => fish.seed));
@@ -340,8 +355,9 @@ export function restorePersistentState(baseState, saved) {
 
   // A zero-length advance resolves nothing new, but it does materialize the
   // bounded one-time milestones an older save is already overdue for. That is
-  // what keeps a long-lived Phase 2 aquarium from being stuck at six fish
-  // forever, and it is a no-op for a save that already recorded them.
+  // what keeps a long-lived aquarium restored from an older save from being
+  // stuck at the fish it was written with, and it is a no-op for a save that
+  // already recorded them.
   return advanceAquariumHistory(restored, 0);
 }
 

@@ -10,6 +10,7 @@ import {
   serializePersistentState,
   withSettings,
 } from "../src/sim/state.js";
+import { stockedAquarium } from "./support/aquarium.js";
 import { tick, trajectoryPitchDegrees } from "../src/sim/tick.js";
 
 function run(state, count, dt = 0.1) {
@@ -69,7 +70,7 @@ test("visual pitch is deterministic, smooth, and remains real-time under acceler
 });
 
 test("horizontal turn state remains valid while pitch changes", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 71, wallClockHours: 12 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 71, wallClockHours: 12 });
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => index === 4
@@ -111,8 +112,11 @@ test("old saves without pitch fields restore safely at level", () => {
 });
 
 test("the permanent mid-water cast cannot select or receive successful forage", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 17, wallClockHours: 12 });
-  assert.deepEqual(base.individuals.map((_, index) => forageEligible(index)), [false, false, false, true, true, true]);
+  const base = stockedAquarium({ orientation: "landscape", seed: 17, wallClockHours: 12 });
+  assert.deepEqual(
+    base.individuals.slice(0, 6).map((_, index) => forageEligible(index)),
+    [false, false, false, true, true, true],
+  );
   const forced = {
     ...base,
     individuals: base.individuals.map((fish, index) => index < 3
@@ -148,7 +152,7 @@ test("permanent mid-water cast keeps its clearance-adjusted ceiling during long 
 });
 
 test("hunger relief begins only after a forage fish reaches the real substrate search zone", () => {
-  const base = withSettings(createAquariumState({ orientation: "landscape", seed: 501, wallClockHours: 12 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 501, wallClockHours: 12 }), { timeScale: 3600 });
   const index = 3;
   const source = base.individuals[index];
   const onFloor = {
@@ -174,7 +178,7 @@ test("hunger relief begins only after a forage fish reaches the real substrate s
 });
 
 test("fish clearance follows the deterministic terrain and moving surface helpers", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 91, wallClockHours: 12 });
+  const state = stockedAquarium({ orientation: "landscape", seed: 91, wallClockHours: 12 });
   const fish = state.individuals[4];
   const xs = Array.from({ length: 20 }, (_, index) => 2 + index * 2.7);
   const terrain = xs.map((x) => substrateSurfaceY(state, x));

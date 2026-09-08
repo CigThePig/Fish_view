@@ -76,6 +76,20 @@ export const ADULT_BODY_PROFILES = Object.freeze({
     rearShoulder: 0.5,
     frontShoulder: 1.5,
   }),
+  // The only single-row adult, so its measured box is barely half a cell tall
+  // and the usual near-circular shoulders would close the body a full glyph
+  // short of the nose. Long shoulders keep the ribbed midsection at full depth
+  // and let it taper only at the peduncle and the snout, which is what makes a
+  // one-row fish read as a body rather than as a dash.
+  "ribbed-dart": Object.freeze({
+    ...DEFAULT_BODY_PROFILE,
+    offsetX: -0.18,
+    offsetY: 0,
+    radiusXScale: 1.06,
+    radiusYScale: 1.05,
+    rearShoulder: 4,
+    frontShoulder: 3.2,
+  }),
 });
 
 // A growth stage is its own drawing, not a scaled adult: `round-fin` loses a
@@ -172,11 +186,16 @@ export const GROWTH_STAGE_BODY_PROFILES = Object.freeze({
     rearShoulder: 1.1,
     frontShoulder: 1,
   }),
+  // The one stage whose authored width did not back its own ink: at 0.71 the
+  // body came out 1.2 cells across a two-column body, and a far-plane specimen
+  // drew a slab narrower than a single cell with the `(>` standing outside it.
+  // 1.4 puts it alongside the other four-cell juveniles, which measure about
+  // 2.5 cells, without widening the taper it was tuned with.
   "comma-tail:juvenile": Object.freeze({
     ...DEFAULT_BODY_PROFILE,
     offsetX: 0,
     offsetY: 0,
-    radiusXScale: 0.71,
+    radiusXScale: 1.4,
     radiusYScale: 0.7,
     rearShoulder: 3,
     frontShoulder: 3,
@@ -216,6 +235,17 @@ export const GROWTH_STAGE_BODY_PROFILES = Object.freeze({
     radiusYScale: 0.5,
     rearShoulder: 0.5,
     frontShoulder: 1.5,
+  }),
+  // Same one-row body as the adult it becomes, over a shorter run of ribs and
+  // under a single dorsal fin, so it carries the same long shoulders.
+  "ribbed-dart:juvenile": Object.freeze({
+    ...DEFAULT_BODY_PROFILE,
+    offsetX: -0.12,
+    offsetY: 0,
+    radiusXScale: 1.04,
+    radiusYScale: 1.05,
+    rearShoulder: 3.4,
+    frontShoulder: 3,
   }),
 });
 

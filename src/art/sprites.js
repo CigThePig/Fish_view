@@ -78,6 +78,21 @@ export const individualSprites = Object.freeze([
     shape: [" /\\ /\\", ">=__('>", " \\___/"],
     mask: [" 11 11", "6633745", " 11111"],
   },
+  // The shoaling species. Its body is one long ribbed line rather than the
+  // stacked silhouette the other adults carry, because three of them travelling
+  // with the school have to read as a group at the size the school is drawn at,
+  // which a five-row fish does not. The dorsal ridge above the ribs is what
+  // gives that line a silhouette: a one-row sprite carries no opaque body, and
+  // an adult drawn see-through would read as a rendering fault rather than as
+  // a slender fish. Appended last for the same reason `twin-sail` was - every
+  // earlier sprite keeps its roster index.
+  {
+    id: "ribbed-dart",
+    source: "fish-view:shoal",
+    label: "max",
+    shape: ["  ___", "><(((°>"],
+    mask: ["  111", "6677745"],
+  },
 ]);
 
 /*
@@ -167,7 +182,11 @@ const GROWTH_STAGE_ART = Object.freeze({
     }),
   ]),
   "box-fin": Object.freeze([
-    Object.freeze({ label: "fry", shape: Object.freeze(["<o>"]), mask: Object.freeze(["645"]), body: false }),
+    // `><` is the tail every other fry is drawn with. It used to be a single
+    // `<`, which read as the left edge of a box rather than as a fin, so the
+    // one fry in the roster that could not be told apart from a punctuation
+    // mark was the only one without a tail behind its eye.
+    Object.freeze({ label: "fry", shape: Object.freeze(["><o>"]), mask: Object.freeze(["6645"]), body: false }),
     Object.freeze({
       label: "juvenile",
       shape: Object.freeze(["  _", "\\/o\\", "/\\_/"]),
@@ -190,6 +209,23 @@ const GROWTH_STAGE_ART = Object.freeze({
       label: "subadult",
       shape: Object.freeze([" /\\/\\", ">=_('>", " \\__/"]),
       mask: Object.freeze([" 1111", "663745", " 1111"]),
+    }),
+  ]),
+  // A shoaling fish begins as one of the school's own glyphs and stays on that
+  // silhouette longer than anything else in the roster: what it gains first is
+  // ribs, so for most of its development what changes is its length rather than
+  // its outline, and it grows fins only in the last stage.
+  "ribbed-dart": Object.freeze([
+    ...SHARED_FRY,
+    Object.freeze({ label: "fry-3", shape: Object.freeze(["><>"]), mask: Object.freeze(["665"]), body: false }),
+    // The first stage with a back, and so the first this species may stop at
+    // for good: a fish that stopped growing at a single row would spend the
+    // rest of the aquarium's life drawn see-through, which reads as a fault
+    // rather than as a small fish.
+    Object.freeze({
+      label: "juvenile",
+      shape: Object.freeze(["  _", "><(°>"]),
+      mask: Object.freeze(["  1", "66745"]),
     }),
   ]),
 });
