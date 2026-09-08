@@ -365,7 +365,16 @@ test("bubble crowding lowers utility without ownership locks", () => {
   const quiet = activityUtilities(fish, 4, base, { bubbles: [bubble] });
   const crowd = {
     ...base,
-    individuals: base.individuals.map((value, index) => index < 3 ? { ...value, x: bubble.worldX, y: bubble.worldY } : value),
+    individuals: base.individuals.map((value, index) => index < 3 ? {
+      ...value,
+      x: bubble.worldX,
+      y: bubble.worldY,
+      activity: {
+        ...createActivityState(ACTIVITIES.bubbleInvestigate),
+        targetType: "bubble",
+        targetId: bubble.id,
+      },
+    } : value),
   };
   const busy = activityUtilities(fish, 4, crowd, { bubbles: [bubble] });
   assert.ok(busy[ACTIVITIES.bubbleInvestigate] < quiet[ACTIVITIES.bubbleInvestigate]);
