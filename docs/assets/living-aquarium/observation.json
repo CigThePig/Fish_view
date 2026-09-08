@@ -1,0 +1,434 @@
+[
+  {
+    "orientation": "landscape",
+    "days": 0,
+    "hour": 12,
+    "glyphs": 398,
+    "objects": 158,
+    "living": {
+      "moss": 1.116325153329425e-11,
+      "meadow": 0,
+      "patina": 2.3095324388138555e-13,
+      "bloom": 0,
+      "season": 0.5259029479492323,
+      "creatures": 4
+    }
+  },
+  {
+    "orientation": "landscape",
+    "days": 30,
+    "hour": 12,
+    "glyphs": 729,
+    "objects": 163,
+    "living": {
+      "moss": 0.055395003247364544,
+      "meadow": 0.0025818496801037908,
+      "patina": 0.0012493362345098475,
+      "bloom": 0,
+      "season": 0.6080384715631952,
+      "creatures": 5
+    }
+  },
+  {
+    "orientation": "landscape",
+    "days": 180,
+    "hour": 12,
+    "glyphs": 988,
+    "objects": 176,
+    "living": {
+      "moss": 0.9446078312197596,
+      "meadow": 0.22539932237663177,
+      "patina": 0.04185182138587233,
+      "bloom": 0.00000260832251609481,
+      "season": 0.018716089633013633,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "landscape",
+    "days": 730,
+    "hour": 12,
+    "glyphs": 1112,
+    "objects": 209,
+    "living": {
+      "moss": 1,
+      "meadow": 1,
+      "patina": 0.5000004161910109,
+      "bloom": 0,
+      "season": 0.5245340225556423,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "landscape",
+    "days": 1460,
+    "hour": 12,
+    "glyphs": 1112,
+    "objects": 209,
+    "living": {
+      "moss": 1,
+      "meadow": 1,
+      "patina": 1,
+      "bloom": 0,
+      "season": 0.5231650971621846,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "landscape",
+    "days": 730,
+    "hour": 22,
+    "glyphs": 1112,
+    "objects": 204,
+    "living": {
+      "moss": 1,
+      "meadow": 1,
+      "patina": 0.5000004161910109,
+      "bloom": 0,
+      "season": 0.5245340225556423,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "portrait",
+    "days": 0,
+    "hour": 12,
+    "glyphs": 411,
+    "objects": 137,
+    "living": {
+      "moss": 1.116325153329425e-11,
+      "meadow": 0,
+      "patina": 2.3095324388138555e-13,
+      "bloom": 0,
+      "season": 0.5259029479492323,
+      "creatures": 4
+    }
+  },
+  {
+    "orientation": "portrait",
+    "days": 30,
+    "hour": 12,
+    "glyphs": 743,
+    "objects": 142,
+    "living": {
+      "moss": 0.055395003247364544,
+      "meadow": 0.0025818496801037908,
+      "patina": 0.0012493362345098475,
+      "bloom": 0,
+      "season": 0.6080384715631952,
+      "creatures": 5
+    }
+  },
+  {
+    "orientation": "portrait",
+    "days": 180,
+    "hour": 12,
+    "glyphs": 1066,
+    "objects": 153,
+    "living": {
+      "moss": 0.9446078312197596,
+      "meadow": 0.22539932237663177,
+      "patina": 0.04185182138587233,
+      "bloom": 0.00000260832251609481,
+      "season": 0.018716089633013633,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "portrait",
+    "days": 730,
+    "hour": 12,
+    "glyphs": 1167,
+    "objects": 186,
+    "living": {
+      "moss": 1,
+      "meadow": 1,
+      "patina": 0.5000004161910109,
+      "bloom": 0,
+      "season": 0.5245340225556423,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "portrait",
+    "days": 1460,
+    "hour": 12,
+    "glyphs": 1167,
+    "objects": 186,
+    "living": {
+      "moss": 1,
+      "meadow": 1,
+      "patina": 1,
+      "bloom": 0,
+      "season": 0.5231650971621846,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "portrait",
+    "days": 730,
+    "hour": 22,
+    "glyphs": 1167,
+    "objects": 182,
+    "living": {
+      "moss": 1,
+      "meadow": 1,
+      "patina": 0.5000004161910109,
+      "bloom": 0,
+      "season": 0.5245340225556423,
+      "creatures": 7
+    }
+  },
+  {
+    "orientation": "landscape",
+    "observationSeconds": 180,
+    "encounters": 4,
+    "activities": {
+      "cruise": 1665,
+      "open-water-rest": 1850,
+      "drifting-inspect": 536,
+      "open-water-wander": 3886,
+      "school-follow": 1156,
+      "plant-investigate": 724,
+      "bubble-investigate": 983
+    },
+    "maxSchoolStep": 0.14500000000000707,
+    "centers": [
+      {
+        "seconds": 0,
+        "x": 32.401316111738566,
+        "y": 10.307608294841796,
+        "split": 1
+      },
+      {
+        "seconds": 10,
+        "x": 30.37140680469463,
+        "y": 6.969683078474747,
+        "split": 1
+      },
+      {
+        "seconds": 20,
+        "x": 29.047927407543202,
+        "y": 7.660853628900745,
+        "split": 1
+      },
+      {
+        "seconds": 30,
+        "x": 34.94166169180701,
+        "y": 6.966686356341529,
+        "split": 1
+      },
+      {
+        "seconds": 40,
+        "x": 32.30006867489555,
+        "y": 10.194176846639179,
+        "split": 1
+      },
+      {
+        "seconds": 50,
+        "x": 27.369387280129402,
+        "y": 8.415064874329103,
+        "split": 1
+      },
+      {
+        "seconds": 60,
+        "x": 33.04011684063633,
+        "y": 12.880595649487212,
+        "split": 0.9750517702132317
+      },
+      {
+        "seconds": 70,
+        "x": 31.38964630026696,
+        "y": 10.363130604977364,
+        "split": 0.7699984262250174
+      },
+      {
+        "seconds": 80,
+        "x": 22.787634054781385,
+        "y": 8.864369286029037,
+        "split": 0.4177811255924268
+      },
+      {
+        "seconds": 90,
+        "x": 24.109355887699426,
+        "y": 7.371709755858163,
+        "split": 0.08694040297249464
+      },
+      {
+        "seconds": 100,
+        "x": 35.524299696883446,
+        "y": 10.231581869314507,
+        "split": 0
+      },
+      {
+        "seconds": 110,
+        "x": 40.58444413398107,
+        "y": 7.56458421534949,
+        "split": 0
+      },
+      {
+        "seconds": 120,
+        "x": 40.220794735658046,
+        "y": 13.63761922793828,
+        "split": 0
+      },
+      {
+        "seconds": 130,
+        "x": 47.71312659594093,
+        "y": 10.806994085012057,
+        "split": 0
+      },
+      {
+        "seconds": 140,
+        "x": 52.42959517300764,
+        "y": 10.192576426744338,
+        "split": 0
+      },
+      {
+        "seconds": 150,
+        "x": 49.89707856314482,
+        "y": 12.886214724506903,
+        "split": 0
+      },
+      {
+        "seconds": 160,
+        "x": 57.36178862475434,
+        "y": 7.3761142569291644,
+        "split": 0
+      },
+      {
+        "seconds": 170,
+        "x": 50.20860391844852,
+        "y": 10.459574989705073,
+        "split": 0
+      }
+    ],
+    "creatureCount": 4
+  },
+  {
+    "orientation": "portrait",
+    "observationSeconds": 180,
+    "encounters": 9,
+    "activities": {
+      "cruise": 1665,
+      "open-water-rest": 1850,
+      "drifting-inspect": 1020,
+      "open-water-wander": 3924,
+      "school-follow": 1156,
+      "plant-investigate": 724,
+      "bubble-investigate": 461
+    },
+    "maxSchoolStep": 0.14500000000000354,
+    "centers": [
+      {
+        "seconds": 0,
+        "x": 19.646211284180563,
+        "y": 17.09522132107182,
+        "split": 1
+      },
+      {
+        "seconds": 10,
+        "x": 18.329023266795293,
+        "y": 12.615440218343332,
+        "split": 1
+      },
+      {
+        "seconds": 20,
+        "x": 18.686640506368537,
+        "y": 11.459527801950259,
+        "split": 1
+      },
+      {
+        "seconds": 30,
+        "x": 18.969671675118633,
+        "y": 11.283768715982985,
+        "split": 1
+      },
+      {
+        "seconds": 40,
+        "x": 16.149203147229628,
+        "y": 16.08720424920892,
+        "split": 1
+      },
+      {
+        "seconds": 50,
+        "x": 22.07831394331742,
+        "y": 14.354969569866501,
+        "split": 1
+      },
+      {
+        "seconds": 60,
+        "x": 17.0066107434458,
+        "y": 20.44715224461852,
+        "split": 0.9750517702132317
+      },
+      {
+        "seconds": 70,
+        "x": 14.878224746863722,
+        "y": 16.57086544096606,
+        "split": 0.7699984262250174
+      },
+      {
+        "seconds": 80,
+        "x": 17.70916070799296,
+        "y": 16.24136433467362,
+        "split": 0.4177811255924268
+      },
+      {
+        "seconds": 90,
+        "x": 14.644220370928513,
+        "y": 9.430727264524624,
+        "split": 0.08694040297249464
+      },
+      {
+        "seconds": 100,
+        "x": 22.951061139629445,
+        "y": 17.40947239654848,
+        "split": 0
+      },
+      {
+        "seconds": 110,
+        "x": 23.40204560947742,
+        "y": 14.270599964252165,
+        "split": 0
+      },
+      {
+        "seconds": 120,
+        "x": 26.321864831103845,
+        "y": 22.187898923330195,
+        "split": 0
+      },
+      {
+        "seconds": 130,
+        "x": 30.893018283342837,
+        "y": 16.122248856758404,
+        "split": 0
+      },
+      {
+        "seconds": 140,
+        "x": 29.014803728052744,
+        "y": 23.705954645500736,
+        "split": 0
+      },
+      {
+        "seconds": 150,
+        "x": 31.851460023593496,
+        "y": 15.472934509499575,
+        "split": 0
+      },
+      {
+        "seconds": 160,
+        "x": 31.94435092651309,
+        "y": 19.6365056969639,
+        "split": 0
+      },
+      {
+        "seconds": 170,
+        "x": 30.39400769404626,
+        "y": 11.33072324941118,
+        "split": 0
+      }
+    ],
+    "creatureCount": 4
+  }
+]

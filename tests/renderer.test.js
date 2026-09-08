@@ -97,11 +97,15 @@ test("every scene command uses a supported crisp glyph and sane values", () => {
       assert.ok(object.bounds.width > 0 && object.bounds.height > 0);
       assert.ok(object.glyphStart >= 0 && object.glyphStart + object.glyphCount <= scene.glyphs.length);
     }
+    const smallGlyphs = new Set(scene.objects
+      .filter((object) => /^(living:|meadow:|dust:|epiphyte:)/.test(object.id))
+      .flatMap((object) => scene.glyphs.slice(object.glyphStart, object.glyphStart + object.glyphCount)));
     for (const glyph of scene.glyphs) {
+      const minimumScale = smallGlyphs.has(glyph) ? 0.3 : 0.5;
       assert.ok(isSupportedGlyph(glyph.char), "unsupported glyph " + glyph.char);
       assert.ok(Number.isFinite(glyph.x) && Number.isFinite(glyph.y));
-      assert.ok(Number.isFinite(glyph.scaleX) && glyph.scaleX >= 0.5 && glyph.scaleX <= 1.5);
-      assert.ok(Number.isFinite(glyph.scaleY) && glyph.scaleY >= 0.5 && glyph.scaleY <= 1.5);
+      assert.ok(Number.isFinite(glyph.scaleX) && glyph.scaleX >= minimumScale && glyph.scaleX <= 1.5);
+      assert.ok(Number.isFinite(glyph.scaleY) && glyph.scaleY >= minimumScale && glyph.scaleY <= 1.5);
       assert.match(glyph.fg, HEX_COLOR);
       assert.ok(Number.isFinite(glyph.layer) && glyph.layer >= LAYERS.shafts && glyph.layer <= LAYERS.substrate);
       assert.ok(glyph.x > -scene.width && glyph.x < scene.width * 2);

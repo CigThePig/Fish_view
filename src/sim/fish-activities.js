@@ -1,3 +1,4 @@
+import { livingWorldRecords } from './living-world.js';
 import { WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { plantRootY } from "./environment.js";
@@ -54,6 +55,7 @@ export const ACTIVITIES = Object.freeze({
   // times. A new fish is never *chosen* into this activity - it is the transient
   // state a Phase 3 arrival is created in, and it exits into ordinary explore.
   arrivalEnter: "arrival-enter",
+  driftingInspect: "drifting-inspect",
 });
 
 const ACTIVITY_LIST = Object.freeze(Object.values(ACTIVITIES));
@@ -72,6 +74,7 @@ const ACTIVITY_BEHAVIOR = Object.freeze({
   [ACTIVITIES.openWaterRest]: "rest",
   [ACTIVITIES.plantShelter]: "rest",
   [ACTIVITIES.arrivalEnter]: "explore",
+  [ACTIVITIES.driftingInspect]: "explore",
 });
 
 export const DWELL_SECONDS = Object.freeze({
@@ -94,6 +97,7 @@ export const DWELL_SECONDS = Object.freeze({
   [ACTIVITIES.plantShelter]: [11, 30, 50],
   [ACTIVITIES.touchReact]: [0, 3.2, 3.2],
   [ACTIVITIES.arrivalEnter]: [4.5, 9, 14],
+  [ACTIVITIES.driftingInspect]: [5, 10, 15],
 });
 
 function positiveModulo(value, modulus) {
@@ -501,9 +505,16 @@ function activityChoices(fish, index, state, {
         playPeriod,
       ) / playPeriod;
       const daylight = state.timeOfDayHours >= 6 && state.timeOfDayHours < 20;
+      // A compatible fish met at close range can invite a first game. Long-
+      // term familiarity still chooses companions, but no longer gates every
+      // playful encounter in a new aquarium behind minutes of prior contact.
+      const firstMeeting = companion.distance < 4.5 && companion.compatibility > 0.65;
+      const availableForPlay = companion.fish.behavior?.current !== 'rest'
+        && companion.fish.behavior?.current !== 'forage';
       if (fish.activity?.current !== ACTIVITIES.playfulChase
-        && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
-        && traits.activity > 0.38 && traits.sociability > 0.34 && companion.familiarity >= 0.018) {
+        && availableForPlay && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
+        && traits.activity > 0.38 && traits.sociability > 0.34
+        && (companion.familiarity >= 0.018 || firstMeeting)) {
         choices.push(choice(
           ACTIVITIES.playfulChase,
           0.5 + traits.activity * 0.36 + traits.sociability * 0.2 + companion.familiarity * 0.24
@@ -527,6 +538,18 @@ function activityChoices(fish, index, state, {
     // for one readable route before the same favourite can win again.
     if (fish.activity?.current === ACTIVITIES.plantWeave
       || fish.activity?.current === ACTIVITIES.plantInvestigate) return choices;
+
+    if (fish.activity?.current === ACTIVITIES.driftingInspect) return choices;
+    const tuft = livingWorldRecords(state).filter((r) => r.kind === 'tuft'
+      && r.visibility > 0.8 && Math.hypot(r.x - fish.x, r.y - fish.y) < 8
+      && r.y >= surfaceSafeY(fish, state, r.x)
+      && r.y <= (index < 3 ? WATERLINE_ROWS
+        + (substrateSafeY(fish, state, r.x) - WATERLINE_ROWS) * 0.68
+        : substrateSafeY(fish, state, r.x)))
+      .sort((a, b) => Math.hypot(a.x - fish.x, a.y - fish.y) - Math.hypot(b.x - fish.x, b.y - fish.y))[0];
+    if (tuft) choices.push(choice(ACTIVITIES.driftingInspect,
+      0.86 + traits.curiosity * 0.38 + jitter(ACTIVITIES.driftingInspect),
+      { targetType: 'tuft', targetId: tuft.id }));
 
     const plant = selectPlantTarget(fish, state, traits, affinities);
     if (plant) {
@@ -725,6 +748,24 @@ export function resolveActivityTarget(fish, index, state, activity, {
   bubbles = [],
   school = state.school,
 } = {}) {
+  if (activity.current === ACTIVITIES.driftingInspect) {
+    const tuft = livingWorldRecords(state).find((r) => r.id === activity.targetId);
+    if (!tuft || tuft.visibility < 0.35) return null;
+    const side = fish.seed % 2 ? -1 : 1;
+    const standoff = fishSpriteWidth(fish) / 2 + 0.55;
+    const inspecting = Math.hypot(tuft.x - fish.x, tuft.y - fish.y) < standoff + 1.1;
+    const top = surfaceSafeY(fish, state, tuft.x);
+    const floor = substrateSafeY(fish, state, tuft.x);
+    const bottom = index < 3 ? WATERLINE_ROWS + (floor - WATERLINE_ROWS) * 0.68 : floor;
+    if (tuft.y < top || tuft.y > bottom) return null;
+    return choreographed(state, activity.current, {
+      x: clamp(tuft.x + side * standoff, spriteHalfWidth(fish), state.cols - spriteHalfWidth(fish)),
+      y: tuft.y + (inspecting ? Math.sin(activity.ageRealSeconds * 1.8) * 0.16 : 0),
+      speed: inspecting ? 0.20 : 0.76,
+      postureBias: inspecting ? 5 : 0,
+      choreographyPhase: inspecting ? 'inspect' : 'approach',
+    });
+  }
   if (activity.current === ACTIVITIES.touchReact) {
     if (!state.reaction) return null;
     const away = safeNormalize(fish.x - state.reaction.x, fish.y - state.reaction.y, fish.vx < 0 ? -1 : 1, 0);

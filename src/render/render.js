@@ -1,3 +1,4 @@
+import { drawLivingWorld } from './living-world.js';
 import { mirrorRows, normalizeRows } from "../art/mirror.js";
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import {
@@ -49,6 +50,7 @@ import {
 
 const TAU = Math.PI * 2;
 const BODY_MOTION_BY_ACTIVITY = Object.freeze({
+  "drifting-inspect": Object.freeze({ rate: 0.8, deformation: 0.75, bob: 0.3 }),
   cruise: Object.freeze({ rate: 1, deformation: 1, bob: 1 }),
   "open-water-wander": Object.freeze({ rate: 1.03, deformation: 1, bob: 0.9 }),
   "plant-investigate": Object.freeze({ rate: 0.76, deformation: 0.72, bob: 0.48 }),
@@ -647,9 +649,9 @@ function drawSchool(builder, state, palette, metrics) {
     const lane = laneForDepth(distance);
     const scale = sampleRange(seed, 1802, 0.76, 0.88) * schoolDepthScale(distance);
     const spacing = 0.82 * (0.86 + schoolDepthScale(distance) * 0.14);
-    const depth = clamp((fish.y - WATERLINE_ROWS) / Math.max(1, state.rows - WATERLINE_ROWS - SUBSTRATE_ROWS), 0, 0.999);
     const laneColors = palette.depthLanes[lane].school;
-    const color = laneColors[Math.floor(depth * laneColors.length)];
+    // The two travelling shoals keep a recognizable gold/teal identity.
+    const color = laneColors[index % 2];
     const glyphs = chars.map((char, offset) => {
       const tail = chars.length <= 1 ? 0 : facing > 0 ? 1 - offset / (chars.length - 1) : offset / (chars.length - 1);
       return positionedGlyph(metrics, {
@@ -919,6 +921,7 @@ export function render(state, { deformationStrength = 1 } = {}) {
   const plantFrame = createPlantRenderRecords(state, palette, metrics);
   builder.metadata.plants = plantFrame.diagnostics;
 
+  drawLivingWorld(builder, state, palette, metrics);
   drawSunShafts(builder, state, palette, metrics);
   drawSurface(builder, state, palette, metrics);
   drawSurfaceRipples(builder, state, palette, metrics);
