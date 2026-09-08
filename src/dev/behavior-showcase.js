@@ -9,6 +9,7 @@ import {
 import { plantHeight } from "../sim/plants.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
+import { speciesCanBottomFeed } from "../sim/fish-growth.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 import { substrateGrazeY, substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
@@ -22,12 +23,9 @@ export const SHOWCASE_SEED_LABEL = "visible-intention-lab";
 export const SHOWCASE_DEFAULT_SEED = hashSeed(SHOWCASE_SEED_LABEL);
 
 const SUBJECT_INDEX = 3;
-// The showcase must still show a deliberate descent, but a grown fish now has
-// a substantially larger body and takes longer to settle its feeding pitch.
-// Starting 2.6 rows above the graze line let the authored 20-second loop expire
-// before some adult seeds ever reached a real strike. This is far enough above
-// the substrate to read as an approach while leaving the majority of the loop
-// for searching, pecks, recovery and debris.
+// The showcase must still show a deliberate descent, but a grown compact fish
+// should spend most of the authored loop actually working the substrate rather
+// than commuting to it.
 const SUBSTRATE_APPROACH_ROWS = 0.85;
 // A little past the 1.15-row settle radius the shelter resolver uses, so the
 // loop opens on the approach and still reaches the plant well inside it.
@@ -140,15 +138,31 @@ function posedFish(fish, state, {
   };
 }
 
+// The default showcase seed happens to put a tall species in slot 3. Production
+// now deliberately keeps those species away from substrate forage, so the lab
+// must not bypass that rule just to preserve an old fixture. Keep the slot and
+// all of its surrounding scene setup, but advance the preview identity to the
+// nearest deterministic compact species. This is developer-only staging; the
+// real aquarium roster is untouched.
+function compactForagePreviewFish(fish) {
+  let seed = fish.seed >>> 0;
+  for (let offset = 0; offset < 8; offset += 1) {
+    if (speciesCanBottomFeed(seed)) return seed === (fish.seed >>> 0) ? fish : { ...fish, seed };
+    seed = (seed + 1) >>> 0;
+  }
+  return fish;
+}
+
 function foragePreviewFish(fish, state, preserveAge) {
   let best = null;
-  const grown = adult(fish);
+  const previewFish = compactForagePreviewFish(fish);
+  const grown = adult(previewFish);
   for (let x = 4.5; x <= state.cols - 4.5; x += 0.5) {
     // Start a fixed distance above the line this fish will actually graze at.
     // Swimming clearance grows with body size and can sit well above that line,
     // so using it as the origin made adult fish spend most of the showcase just
     // descending while fry reached the same feeding sequence much sooner.
-    const candidate = posedFish(fish, state, {
+    const candidate = posedFish(previewFish, state, {
       x,
       y: substrateGrazeY(grown, state, x, SUBJECT_INDEX) - SUBSTRATE_APPROACH_ROWS,
       vx: 0.16,
@@ -175,7 +189,7 @@ function foragePreviewFish(fish, state, preserveAge) {
     if (!best || separation > best.separation) best = { fish: candidate, separation };
   }
   const fallbackX = state.cols * 0.48;
-  return best?.fish ?? posedFish(fish, state, {
+  return best?.fish ?? posedFish(previewFish, state, {
     x: fallbackX,
     y: substrateGrazeY(grown, state, fallbackX, SUBJECT_INDEX) - SUBSTRATE_APPROACH_ROWS,
     vx: 0.16,
