@@ -11,7 +11,7 @@ import { advanceAquariumHistory } from "../sim/aquarium-history.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
-import { substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
+import { substrateGrazeY, substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
 import { hashSeed } from "../sim/prng.js";
 
 // Every entry point into the lab starts from this one scene. Fish traits,
@@ -137,10 +137,15 @@ function posedFish(fish, state, {
 
 function foragePreviewFish(fish, state, preserveAge) {
   let best = null;
+  const grown = adult(fish);
   for (let x = 4.5; x <= state.cols - 4.5; x += 0.5) {
+    // Start a fixed distance above the line this fish will actually graze at.
+    // Swimming clearance grows with body size and can sit well above that line,
+    // so using it as the origin made adult fish spend most of the showcase just
+    // descending while fry reached the same feeding sequence much sooner.
     const candidate = posedFish(fish, state, {
       x,
-      y: substrateSafeY(adult(fish), state, x) - SUBSTRATE_APPROACH_ROWS,
+      y: substrateGrazeY(grown, state, x, SUBJECT_INDEX) - SUBSTRATE_APPROACH_ROWS,
       vx: 0.16,
       vy: 0.08,
       behavior: "forage",
@@ -164,9 +169,10 @@ function foragePreviewFish(fish, state, preserveAge) {
     const separation = Math.abs(targets[0].x - targets[1].x);
     if (!best || separation > best.separation) best = { fish: candidate, separation };
   }
+  const fallbackX = state.cols * 0.48;
   return best?.fish ?? posedFish(fish, state, {
-    x: state.cols * 0.48,
-    y: substrateSafeY(adult(fish), state, state.cols * 0.48) - SUBSTRATE_APPROACH_ROWS,
+    x: fallbackX,
+    y: substrateGrazeY(grown, state, fallbackX, SUBJECT_INDEX) - SUBSTRATE_APPROACH_ROWS,
     vx: 0.16,
     vy: 0.08,
     behavior: "forage",
