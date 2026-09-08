@@ -3,8 +3,8 @@
  *
  * Phase 3 gave the aquarium a history made of arrivals and vegetation. This is
  * the same long horizon expressed by the cast itself: a fish is hatched as a
- * speck, develops fins over a season, and stops growing somewhere its own seed
- * decided. Nothing here is a score, a level, or a reward - a fish gets larger
+ * speck, develops fins over a season, and eventually reaches its species' adult
+ * form. Nothing here is a score, a level, or a reward - a fish gets larger
  * because it is older, and the only way to see it is to keep the aquarium.
  *
  * Three rules shape it.
@@ -19,15 +19,14 @@
  * 2. Every fish grows at its own rate. Two fish of the same species hatched on
  *    the same day reach the same fin at different times.
  *
- * 3. Not every fry becomes an adult. A seeded terminal stage stops many fish
- *    short of their species' maximum, permanently, which is what keeps a mature
- *    aquarium a population of different sizes instead of eight identical
- *    silhouettes. A fish stopped early is not stunted or unwell: it is simply a
- *    small fish, and nothing in the tank treats it as a failure.
+ * 3. Every healthy fish eventually reaches the adult artwork for its species.
+ *    Variation comes from pace and timing, not from permanently trapping some
+ *    identities in a juvenile sprite. This keeps the long-term progression
+ *    legible: if enough aquarium time has passed, every fish really does grow
+ *    up.
  *
  * Like affinities and pair compatibility, none of it is stored. A fish stores
- * its identity (seed) and its age; its pace, its stage boundaries, and how far
- * it will ever grow are derived.
+ * its identity (seed) and its age; its pace and stage boundaries are derived.
  *
  * Every fish in the aquarium hatched in it. There is no stocked initial cast
  * with seeded starting ages any more: the founder is created at age zero on the
@@ -38,7 +37,7 @@
  */
 
 import { growthStagesFor, individualSprites, spriteDimensions } from "../art/sprites.js";
-import { sample01, sampleRange } from "./prng.js";
+import { sampleRange } from "./prng.js";
 
 // A stage may never pass faster than this. The whole point of growth here is
 // that it is invisible at the timescale of a visit.
@@ -47,13 +46,9 @@ export const MINIMUM_STAGE_DAYS = 7;
 // three and a half weeks per stage.
 const STAGE_SPAN_DAYS = Object.freeze([8, 19]);
 const PACE_RANGE = Object.freeze([0.78, 1.5]);
-// The share of fish that eventually reach their species' maximum. The rest stop
-// at one of the earlier developed stages, evenly spread.
-const FULL_GROWTH_SHARE = 0.56;
 
 const PACE_SALT = 1200;
 const STAGE_SALT = 1210;
-const TERMINAL_SALT = 1240;
 
 // Species selection is unchanged in kind - a pure function of the fish seed -
 // and lives here so growth never has to import the entity constructors that
@@ -62,22 +57,19 @@ export function speciesForSeed(seed) {
   return individualSprites[(seed >>> 0) % individualSprites.length];
 }
 
-export function growthStagesForSeed(seed) {
-  return growthStagesFor(speciesForSeed(seed).id);
+// Bottom feeding is a species capability, not a temporary consequence of the
+// fish's current growth stage. A fry belonging to a five-row adult must not
+// learn to graze for a few months and then mysteriously lose the behaviour when
+// it grows. The compact adults are the ones whose posture still reads cleanly
+// against the substrate; the tall five-row silhouettes stay in open water.
+export const MAX_BOTTOM_FEEDING_ADULT_ROWS = 3;
+
+export function speciesCanBottomFeed(seed) {
+  return spriteDimensions(speciesForSeed(seed)).height <= MAX_BOTTOM_FEEDING_ADULT_ROWS;
 }
 
-// A stage a fish may still be at when it stops growing for good.
-//
-// The rule is the stage's own artwork: a fish may only stop somewhere it is
-// drawn with an opaque body. That excludes the shared fry forms, as it always
-// has - a permanent speck would read as a rendering fault rather than as a
-// small fish - and it excludes anything else too small to carry a silhouette,
-// which a label test could not. Stopping a fish forever at a see-through stage
-// would leave one member of the cast that plants and other fish read straight
-// through for the life of the aquarium.
-function firstTerminalStage(stages) {
-  const index = stages.findIndex((stage) => stage.body !== false);
-  return index < 0 ? stages.length - 1 : index;
+export function growthStagesForSeed(seed) {
+  return growthStagesFor(speciesForSeed(seed).id);
 }
 
 function safeSeed(value) {
@@ -102,8 +94,9 @@ const profileCache = new Map();
  *
  * `thresholds[i]` is the aquarium-relative age in days at which stage `i`
  * begins, so `thresholds[0]` is always 0 and the array is strictly increasing
- * by at least MINIMUM_STAGE_DAYS. `terminalStage` is the last stage this fish
- * will ever reach; stages beyond it never open, however old the fish gets.
+ * by at least MINIMUM_STAGE_DAYS. `terminalStage` remains part of the profile
+ * shape for compatibility with callers, but it is always the species' final
+ * adult stage.
  */
 export function fishGrowthProfile(seed) {
   const numericSeed = safeSeed(seed);
@@ -117,24 +110,13 @@ export function fishGrowthProfile(seed) {
     thresholds.push(thresholds[index - 1] + Math.max(MINIMUM_STAGE_DAYS, span / pace));
   }
 
-  const last = stages.length - 1;
-  const earliest = firstTerminalStage(stages);
-  let terminalStage = last;
-  if (earliest < last) {
-    const roll = sample01(numericSeed, TERMINAL_SALT);
-    if (roll >= FULL_GROWTH_SHARE) {
-      const span = last - earliest;
-      const step = 1 + Math.floor(((roll - FULL_GROWTH_SHARE) / (1 - FULL_GROWTH_SHARE)) * span);
-      terminalStage = Math.max(earliest, last - Math.min(span, step));
-    }
-  }
-
+  const terminalStage = stages.length - 1;
   const profile = Object.freeze({
     stages,
     thresholds: Object.freeze(thresholds),
     terminalStage,
     pace,
-    // How long this fish takes to finish growing, whatever it finishes as.
+    // How long this fish takes to reach its species' adult form.
     fullGrowthDays: thresholds[terminalStage],
   });
   if (profileCache.size >= PROFILE_CACHE_LIMIT) profileCache.clear();
@@ -144,9 +126,6 @@ export function fishGrowthProfile(seed) {
 
 /**
  * Where a fish is in its own growth, right now.
- *
- * `stageIndex` never exceeds the fish's terminal stage, so a fish that stops at
- * the juvenile form stays there for the rest of the aquarium's life.
  */
 export function fishGrowth(fish, profile = fishGrowthProfile(fish?.seed)) {
   const ageDays = fishAgeDays(fish);
@@ -158,7 +137,7 @@ export function fishGrowth(fish, profile = fishGrowthProfile(fish?.seed)) {
     stageIndex += 1;
   }
   const sprite = profile.stages[stageIndex];
-  const grown = stageIndex >= profile.terminalStage;
+  const adult = stageIndex === profile.stages.length - 1;
   return {
     ageDays,
     sprite,
@@ -166,11 +145,10 @@ export function fishGrowth(fish, profile = fishGrowthProfile(fish?.seed)) {
     stageCount: profile.stages.length,
     terminalStage: profile.terminalStage,
     label: sprite.label ?? "max",
-    // "Grown" means this fish is finished, which is not the same as reaching
-    // the species maximum.
-    grown,
-    adult: stageIndex === profile.stages.length - 1,
-    nextStageDay: grown ? null : profile.thresholds[stageIndex + 1],
+    // A fish is only finished growing once it has reached the adult sprite.
+    grown: adult,
+    adult,
+    nextStageDay: adult ? null : profile.thresholds[stageIndex + 1],
     fullGrowthDays: profile.fullGrowthDays,
   };
 }

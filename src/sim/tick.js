@@ -14,7 +14,7 @@ import {
   chaseEvasionForFish,
   steerActivityVelocity,
 } from "./fish-choreography.js";
-import { fishSpriteWidth } from "./fish-growth.js";
+import { fishSpriteWidth, speciesCanBottomFeed } from "./fish-growth.js";
 import { fishShoals, schoolCountFor } from "./fish-roster.js";
 import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
 import {
@@ -387,7 +387,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     ageRealSeconds: (fish.behavior.ageRealSeconds ?? 0) + realDelta,
     blend: clamp(fish.behavior.blend + realDelta / 1.8, 0, 1),
   };
-  const allowForage = forageEligible(index);
+  const allowForage = forageEligible(index) && speciesCanBottomFeed(fish.seed);
   if (!allowForage && behavior.current === "forage") {
     behavior = { current: "cruise", previous: "forage", blend: 0, ageSeconds: 0, ageRealSeconds: 0 };
   }

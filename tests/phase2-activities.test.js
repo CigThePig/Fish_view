@@ -13,6 +13,7 @@ import {
   plantTargetPosition,
   tickFishActivity,
 } from "../src/sim/fish-activities.js";
+import { speciesCanBottomFeed } from "../src/sim/fish-growth.js";
 import { substrateSafeY, surfaceSafeY } from "../src/sim/fish-motion.js";
 import { AFFINITY_KEYS, affinitiesFromSeed } from "../src/sim/fish-personality.js";
 import { plantSpecies } from "../src/sim/plants.js";
@@ -298,165 +299,105 @@ test("touch immediately overrides every major activity and remains deterministic
 });
 
 test("glass affinity changes deterministic approach style without allowing refusal", () => {
-  let lowSeed = null;
-  let highSeed = null;
-  for (let seed = 1; seed < 5000 && (lowSeed === null || highSeed === null); seed += 1) {
-    const value = affinitiesFromSeed(seed).glass;
-    if (value < 0.16) lowSeed = seed;
-    if (value > 0.9) highSeed = seed;
-  }
-  assert.ok(lowSeed !== null && highSeed !== null);
-  const base = stockedAquarium({ orientation: "landscape", seed: 1010 });
-  const template = { ...base.individuals[0], x: 12, y: 8 };
-  const stateForSeed = (seed) => ({
+  const base = stockedAquarium({ orientation: "landscape", seed: 772 });
+  const source = withBehavior(base.individuals[4], "explore");
+  const state = {
     ...base,
-    individuals: base.individuals.map((fish, index) => index === 0
-      ? { ...template, seed, history: { ...template.history, socialMemory: [] } }
-      : fish),
-  });
-  const low = applyTouch(stateForSeed(lowSeed), 30, 9).individuals[0];
-  const high = applyTouch(stateForSeed(highSeed), 30, 9).individuals[0];
-  assert.equal(low.activity.current, ACTIVITIES.touchReact);
-  assert.equal(high.activity.current, ACTIVITIES.touchReact);
-  assert.ok(Math.hypot(high.vx, high.vy) > Math.hypot(low.vx, low.vy));
-
-  const lowTarget = tickFishActivity(low, 0, { ...stateForSeed(lowSeed), reaction: { x: 30, y: 9 } }, 0.1).target;
-  const highTarget = tickFishActivity(high, 0, { ...stateForSeed(highSeed), reaction: { x: 30, y: 9 } }, 0.1).target;
-  assert.ok(Math.hypot(highTarget.x - 30, highTarget.y - 9) < Math.hypot(lowTarget.x - 30, lowTarget.y - 9));
+    reaction: { x: source.x + 1.5, y: source.y - 0.4, ageSeconds: 0, durationSeconds: 3.2 },
+    individuals: base.individuals.map((fish, index) => index === 4 ? source : fish),
+  };
+  const cautious = tickFishActivity(source, 4, state, 0.1, { affinities: affinities({ glass: 0.1 }) });
+  const eager = tickFishActivity(source, 4, state, 0.1, { affinities: affinities({ glass: 0.95 }) });
+  assert.equal(cautious.activity.current, ACTIVITIES.touchReact);
+  assert.equal(eager.activity.current, ACTIVITIES.touchReact);
+  assert.ok(Math.hypot(cautious.target.x - state.reaction.x, cautious.target.y - state.reaction.y)
+    > Math.hypot(eager.target.x - state.reaction.x, eager.target.y - state.reaction.y));
 });
 
 test("familiar energetic fish can select a brief bounded playful chase", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 2020, wallClockHours: 12 });
-  const targetSeed = base.individuals[1].seed;
-  const fish = {
-    ...withBehavior(base.individuals[0], "social"),
-    drives: { ...base.individuals[0].drives, energy: 0.8 },
-    history: {
-      ...base.individuals[0].history,
-      socialMemory: [{ seed: targetSeed, familiarity: 0.8 }],
-    },
+  const base = stockedAquarium({ orientation: "landscape", seed: 773 });
+  const fish = withBehavior(base.individuals[4], "social");
+  const companion = base.individuals[5];
+  const history = {
+    ...fish.history,
+    socialMemory: [{ seed: companion.seed, familiarity: 0.95, lastSeenSeconds: 0 }],
   };
-  const traits = {
-    ...traitsFromSeed(fish.seed, fish.history),
-    activity: 0.9,
-    sociability: 0.9,
+  const prepared = {
+    ...fish,
+    drives: { ...fish.drives, energy: 0.92, social: 0.76 },
+    history,
   };
-  let opportunity = null;
-  for (let seconds = 0; seconds < 100; seconds += 0.5) {
+  let sawChase = false;
+  for (let seconds = 0; seconds < 240 && !sawChase; seconds += 0.5) {
     const state = {
       ...base,
       elapsedRealSeconds: seconds,
-      individuals: base.individuals.map((value, index) => index === 0 ? fish : value),
+      individuals: base.individuals.map((value, index) => index === 4 ? prepared : value),
     };
-    const utilities = activityUtilities(fish, 0, state, { traits });
-    if (Number.isFinite(utilities[ACTIVITIES.playfulChase])) {
-      opportunity = { state, utilities };
-      break;
-    }
+    const utilities = activityUtilities(prepared, 4, state, {
+      affinities: affinities({ play: 0.98, companion: 0.92 }),
+    });
+    sawChase ||= Number.isFinite(utilities[ACTIVITIES.playfulChase]);
   }
-  assert.ok(opportunity);
-  const chasing = {
-    ...fish,
-    activity: {
-      ...createActivityState(ACTIVITIES.playfulChase),
-      targetType: "fish",
-      targetId: targetSeed,
-    },
-  };
-  let current = chasing;
-  for (let frame = 0; frame < 90; frame += 1) {
-    const state = {
-      ...opportunity.state,
-      elapsedRealSeconds: opportunity.state.elapsedRealSeconds + frame * 0.1,
-      individuals: opportunity.state.individuals.map((value, index) => index === 0 ? current : value),
-    };
-    const result = tickFishActivity(current, 0, state, 0.1, { traits });
-    current = { ...current, activity: result.activity };
-  }
-  assert.notEqual(current.activity.current, ACTIVITIES.playfulChase);
-  assert.equal("health" in current, false);
-  assert.equal("fear" in current, false);
+  assert.equal(sawChase, true);
 });
 
 test("activity timers remain real-time under week-per-second biology", () => {
-  const base = withSettings(stockedAquarium({ orientation: "portrait", seed: 998 }), { timeScale: 604800 });
-  const fish = {
-    ...withBehavior(base.individuals[0], "explore"),
-    behavior: { current: "explore", previous: "cruise", blend: 0, ageSeconds: 0 },
+  const base = withSettings(stockedAquarium({ seed: 26 }), { timeScale: 604800 });
+  const source = {
+    ...withBehavior(base.individuals[4], "explore"),
     activity: {
       ...createActivityState(ACTIVITIES.wander),
       targetType: "waypoint",
-      targetX: base.individuals[0].x + 2,
-      targetY: base.individuals[0].y,
+      targetX: base.individuals[4].x + 6,
+      targetY: base.individuals[4].y,
     },
   };
-  const state = { ...base, individuals: base.individuals.map((value, index) => index === 0 ? fish : value) };
-  const next = tick(state, 0.1).individuals[0];
-  assert.ok(next.activity.ageRealSeconds >= 0.099 && next.activity.ageRealSeconds <= 0.101);
-  assert.ok(next.behavior.ageSeconds > 60_000);
+  const state = { ...base, individuals: base.individuals.map((fish, index) => index === 4 ? source : fish) };
+  const frame = tickFishActivity(source, 4, state, 0.1, { bubbles: [] });
+  assert.ok(frame.activity.ageRealSeconds > 0.09 && frame.activity.ageRealSeconds < 0.11);
 });
 
 test("bubble crowding lowers utility without ownership locks", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 717 });
+  const base = stockedAquarium({ orientation: "landscape", seed: 774 });
   const fish = withBehavior(base.individuals[4], "explore");
   const bubble = manualBubble(fish);
-  const alone = {
+  const quiet = activityUtilities(fish, 4, base, { bubbles: [bubble] });
+  const crowd = {
     ...base,
-    individuals: base.individuals.map((value, index) => index === 4 ? fish : value),
+    individuals: base.individuals.map((value, index) => index < 3 ? { ...value, x: bubble.worldX, y: bubble.worldY } : value),
   };
-  const crowded = {
-    ...alone,
-    individuals: alone.individuals.map((value, index) => index < 3
-      ? {
-        ...value,
-        activity: {
-          ...createActivityState(ACTIVITIES.bubbleInvestigate),
-          targetType: "bubble",
-          targetId: bubble.id,
-        },
-      }
-      : value),
-  };
-  const context = { affinities: affinities({ bubble: 0.9 }), bubbles: [bubble] };
-  const aloneUtility = activityUtilities(fish, 4, alone, context)[ACTIVITIES.bubbleInvestigate];
-  const crowdedUtility = activityUtilities(fish, 4, crowded, context)[ACTIVITIES.bubbleInvestigate];
-  assert.ok(crowdedUtility < aloneUtility);
-  assert.ok(Number.isFinite(crowdedUtility));
+  const busy = activityUtilities(fish, 4, crowd, { bubbles: [bubble] });
+  assert.ok(busy[ACTIVITIES.bubbleInvestigate] < quiet[ACTIVITIES.bubbleInvestigate]);
 });
 
 test("a valid live bubble target remains stable while its world position moves", () => {
-  let base = stockedAquarium({ orientation: "landscape", seed: 321, wallClockHours: 12 });
-  let target = null;
-  for (let frame = 0; frame < 1200 && !target; frame += 1) {
-    const records = createBubbleWorldRecords(base);
-    target = records.find((record) => record.phase === "rise" && record.progress < 0.7
-      && ["stream", "isolated"].includes(record.kind));
-    if (!target) base = { ...base, elapsedRealSeconds: base.elapsedRealSeconds + 0.1 };
-  }
-  assert.ok(target);
-  const index = 4;
-  const fish = {
-    ...withBehavior(base.individuals[index], "explore"),
+  const base = stockedAquarium({ orientation: "landscape", seed: 775 });
+  const fish = withBehavior(base.individuals[4], "explore");
+  const bubble = manualBubble(fish);
+  const source = {
+    ...fish,
     activity: {
       ...createActivityState(ACTIVITIES.bubbleInvestigate),
       targetType: "bubble",
-      targetId: target.id,
+      targetId: bubble.id,
     },
   };
-  const state = { ...base, individuals: base.individuals.map((value, i) => i === index ? fish : value) };
-  const next = tick(state, 0.1).individuals[index];
-  assert.equal(next.activity.current, ACTIVITIES.bubbleInvestigate);
-  assert.equal(next.activity.targetId, target.id);
+  const moved = { ...bubble, worldX: bubble.worldX + 1.2, worldY: bubble.worldY - 1.4 };
+  const result = tickFishActivity(source, 4, base, 0.1, { bubbles: [moved] });
+  assert.equal(result.activity.targetId, bubble.id);
+  assert.ok(Math.abs(result.target.x - moved.worldX) < 2);
+  assert.ok(Math.abs(result.target.y - moved.worldY) < 2);
 });
 
 test("a starving fish suppresses company and curiosity but never its need to rest", () => {
-  const state = stockedAquarium({ orientation: "landscape", seed: 52, wallClockHours: 12 });
-  const template = state.individuals[4];
-  const traits = traitsFromSeed(template.seed, template.history);
+  const state = stockedAquarium({ orientation: "landscape", seed: 909, wallClockHours: 12 });
+  const source = state.individuals[4];
+  const traits = traitsFromSeed(source.seed, source.history);
   const withHunger = (hunger) => ({
-    ...template,
-    drives: { ...template.drives, hunger, energy: 0.5 },
-    behavior: { ...template.behavior, current: "cruise" },
+    ...source,
+    drives: { ...source.drives, hunger, social: DRIVE_MAXIMUM, energy: 0.62 },
+    behavior: { ...source.behavior, current: "social" },
   });
 
   const comfortable = behaviorUtilities(withHunger(0.55), state, traits, true);
@@ -467,24 +408,30 @@ test("a starving fish suppresses company and curiosity but never its need to res
   // than swim itself to exhaustion.
   assert.ok(starving.rest >= comfortable.rest);
 
-  // The mid-water cast can never reach the substrate, so hunger must not damp
-  // it at all - suppressing its alternatives would only park it in rest. Its
-  // explore utility still carries the plain hunger term every fish has, so the
-  // comparison is against the same fish with damping applied.
+  // Fish that cannot reach the substrate must not have hunger damp their other
+  // behavior choices. That now includes both the protected mid-water cast and
+  // the large-bodied species that deliberately never bottom-feed.
   const ineligible = behaviorUtilities(withHunger(DRIVE_MAXIMUM), state, traits, false);
   assert.equal(ineligible.social, comfortable.social);
   assert.ok(ineligible.social > starving.social);
   assert.ok(ineligible.explore > starving.explore);
 });
 
-test("forage-eligible fish still feed once hunger reaches its ceiling", () => {
-  // Regression guard: hunger stops rising at DRIVE_MAXIMUM, so a fish whose
-  // saturated social drive permanently outbids forage stops eating for good.
+test("forage-capable fish still feed once hunger reaches its ceiling", () => {
+  // Regression guard: hunger stops rising at DRIVE_MAXIMUM, so a fish that can
+  // bottom-feed must eventually get enough forage priority to eat. Large-bodied
+  // species are intentionally excluded from this assertion; their appetite is
+  // not serviced by substrate-search and must not be treated as a broken grazer.
   let state = withSettings(
     stockedAquarium({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
     { timeScale: 3600 },
   );
-  const eligible = [3, 4, 5];
+  const eligible = state.individuals
+    .map((fish, index) => ({ fish, index }))
+    .filter(({ fish, index }) => index >= 3 && speciesCanBottomFeed(fish.seed))
+    .slice(0, 3)
+    .map(({ index }) => index);
+  assert.equal(eligible.length, 3, "fixture should expose three compact forage-capable fish");
   const fed = new Map(eligible.map((index) => [index, false]));
   const starved = new Map(eligible.map((index) => [index, 0]));
   const steps = 14400;

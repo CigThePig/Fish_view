@@ -9,9 +9,10 @@ import {
 import { plantHeight } from "../sim/plants.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
+import { speciesCanBottomFeed } from "../sim/fish-growth.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
-import { substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
+import { substrateGrazeY, substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
 import { hashSeed } from "../sim/prng.js";
 
 // Every entry point into the lab starts from this one scene. Fish traits,
@@ -22,7 +23,10 @@ export const SHOWCASE_SEED_LABEL = "visible-intention-lab";
 export const SHOWCASE_DEFAULT_SEED = hashSeed(SHOWCASE_SEED_LABEL);
 
 const SUBJECT_INDEX = 3;
-const SUBSTRATE_APPROACH_ROWS = 2.6;
+// The showcase must still show a deliberate descent, but a grown compact fish
+// should spend most of the authored loop actually working the substrate rather
+// than commuting to it.
+const SUBSTRATE_APPROACH_ROWS = 0.85;
 // A little past the 1.15-row settle radius the shelter resolver uses, so the
 // loop opens on the approach and still reaches the plant well inside it.
 const SHELTER_APPROACH_ROWS = 1.5;
@@ -42,9 +46,8 @@ export const SHOWCASE_SCENARIOS = Object.freeze([
   // chaser arrives, and the two fish drifting apart again.
   Object.freeze({ id: "playful-chase", label: "Playful chase", subjects: [SUBJECT_INDEX, COMPANION_INDEX], loopSeconds: 9.5 }),
   // Long enough to show the whole arc now that the graze line is measured to
-  // the mouth and sits the better part of two rows lower: the descent, the
-  // arrival, and enough of the creep along the sand for several strikes. At
-  // fifteen seconds the loop was almost entirely descent.
+  // the mouth: a visible final descent, the arrival, and enough of the creep
+  // along the sand for several strikes.
   Object.freeze({ id: "substrate-search", label: "Substrate search", subjects: [SUBJECT_INDEX], loopSeconds: 20 }),
   Object.freeze({ id: "surface-investigate", label: "Surface investigation", subjects: [SUBJECT_INDEX], loopSeconds: 13 }),
   Object.freeze({ id: "open-water-rest", label: "Open-water rest", subjects: [SUBJECT_INDEX], loopSeconds: 9 }),
@@ -135,12 +138,33 @@ function posedFish(fish, state, {
   };
 }
 
+// The default showcase seed happens to put a tall species in slot 3. Production
+// now deliberately keeps those species away from substrate forage, so the lab
+// must not bypass that rule just to preserve an old fixture. Keep the slot and
+// all of its surrounding scene setup, but advance the preview identity to the
+// nearest deterministic compact species. This is developer-only staging; the
+// real aquarium roster is untouched.
+function compactForagePreviewFish(fish) {
+  let seed = fish.seed >>> 0;
+  for (let offset = 0; offset < 8; offset += 1) {
+    if (speciesCanBottomFeed(seed)) return seed === (fish.seed >>> 0) ? fish : { ...fish, seed };
+    seed = (seed + 1) >>> 0;
+  }
+  return fish;
+}
+
 function foragePreviewFish(fish, state, preserveAge) {
   let best = null;
+  const previewFish = compactForagePreviewFish(fish);
+  const grown = adult(previewFish);
   for (let x = 4.5; x <= state.cols - 4.5; x += 0.5) {
-    const candidate = posedFish(fish, state, {
+    // Start a fixed distance above the line this fish will actually graze at.
+    // Swimming clearance grows with body size and can sit well above that line,
+    // so using it as the origin made adult fish spend most of the showcase just
+    // descending while fry reached the same feeding sequence much sooner.
+    const candidate = posedFish(previewFish, state, {
       x,
-      y: substrateSafeY(adult(fish), state, x) - SUBSTRATE_APPROACH_ROWS,
+      y: substrateGrazeY(grown, state, x, SUBJECT_INDEX) - SUBSTRATE_APPROACH_ROWS,
       vx: 0.16,
       vy: 0.08,
       behavior: "forage",
@@ -164,9 +188,10 @@ function foragePreviewFish(fish, state, preserveAge) {
     const separation = Math.abs(targets[0].x - targets[1].x);
     if (!best || separation > best.separation) best = { fish: candidate, separation };
   }
-  return best?.fish ?? posedFish(fish, state, {
-    x: state.cols * 0.48,
-    y: substrateSafeY(adult(fish), state, state.cols * 0.48) - SUBSTRATE_APPROACH_ROWS,
+  const fallbackX = state.cols * 0.48;
+  return best?.fish ?? posedFish(previewFish, state, {
+    x: fallbackX,
+    y: substrateGrazeY(grown, state, fallbackX, SUBJECT_INDEX) - SUBSTRATE_APPROACH_ROWS,
     vx: 0.16,
     vy: 0.08,
     behavior: "forage",
@@ -176,7 +201,7 @@ function foragePreviewFish(fish, state, preserveAge) {
 }
 
 function bubbleOpportunity(initial, subject) {
-  const adult = { ...subject, ageDays: Math.max(500, subject.ageDays ?? 0) };
+  const adultFish = { ...subject, ageDays: Math.max(500, subject.ageDays ?? 0) };
   const desiredPopSeconds = 7.6;
   let selected = null;
   for (let offset = 0; offset <= 90; offset += 0.5) {
@@ -184,8 +209,8 @@ function bubbleOpportunity(initial, subject) {
     const candidates = createBubbleWorldRecords(candidateState)
       .filter((bubble) => bubble.phase === "rise"
         && ["stream", "isolated", "touch"].includes(bubble.kind)
-        && bubble.worldY <= substrateSafeY(adult, candidateState, bubble.worldX) - 3.25
-        && bubble.worldY >= surfaceSafeY(adult, candidateState, bubble.worldX) + 1.4);
+        && bubble.worldY <= substrateSafeY(adultFish, candidateState, bubble.worldX) - 3.25
+        && bubble.worldY >= surfaceSafeY(adultFish, candidateState, bubble.worldX) + 1.4);
     for (const bubble of candidates) {
       const popSeconds = Math.max(0, (bubble.worldY - bubbleWaterTop()) / bubble.speed);
       const score = Math.abs(popSeconds - desiredPopSeconds);
@@ -316,8 +341,6 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   } else if (scenario.id === ACTIVITIES.bubbleInvestigate && bubble) {
     const approachSide = bubble.worldX < state.cols / 2 ? 1 : -1;
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
-      // Close enough to inspect before this deliberately late-rise bubble
-      // reaches the surface, while still leaving a visible pursuit.
       x: bubble.worldX + approachSide * 2,
       y: bubble.worldY + 0.65,
       vx: -approachSide * 0.26,
@@ -370,12 +393,6 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   } else if (scenario.id === ACTIVITIES.playfulChase) {
     socialPair(individuals, state, ACTIVITIES.playfulChase, { chase: true });
   } else if (scenario.id === ACTIVITIES.substrateSearch) {
-    // Measured from the substrate rather than from the tank height: the loop
-    // has to show the descent and still leave room for the pecks that follow
-    // it, and a fraction of the rows spends most of a landscape loop falling.
-    // Choose the deterministic starting lane through the production resolver.
-    // At this lane the editor's narrow and wide search spans ask for visibly
-    // different route points instead of both hitting the same lead clamp.
     individuals[SUBJECT_INDEX] = foragePreviewFish(subject, state, preserveAge);
   } else if (scenario.id === ACTIVITIES.surfaceInvestigate) {
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
@@ -399,21 +416,12 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
       vy: 0,
       behavior: "rest",
       activity: ACTIVITIES.openWaterRest,
-      // Begin outside the settle radius, then arrive in time to show the quiet
-      // drift profile during the same loop.
       target: { targetType: "waypoint", targetX: center.x + 2.3, targetY: center.y },
       preserveAge,
     });
   } else if (scenario.id === ACTIVITIES.plantShelter) {
-    // Shelter has stricter plant eligibility than inspection. Choose through
-    // the production resolver so the forced scene cannot immediately discard
-    // an invalid specimen and wander to a distant fallback.
     const plant = showcaseShelterPlant(state, subject);
     const preview = plantTargetPosition(subject, plant, state, { shelter: true });
-    // Just outside the settle radius, on the side of the plant the resolver
-    // already chose, so one loop shows the arrival and then the quiet shelter
-    // profile it is really here to demonstrate. Starting exactly on the point
-    // shows only the second half; starting anywhere else shows only the first.
     const approach = preview.x < plant.x ? -SHELTER_APPROACH_ROWS : SHELTER_APPROACH_ROWS;
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
       x: preview.x + approach,
@@ -458,10 +466,6 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   return { ...state, individuals };
 }
 
-// The lab poses named roster slots against each other, so it needs an aquarium
-// that is holding its whole cast. A new tank is one hatchling on its first day
-// and fills up over the following months; the lab is not a place to watch that
-// happen, so it opens the same aquarium at the far end of its calendar.
 export const SHOWCASE_AQUARIUM_DAY = ROSTER_COMPLETE_DAY + 200;
 
 export function createShowcaseState({
@@ -476,8 +480,6 @@ export function createShowcaseState({
   return configureScenario(initial, scenario);
 }
 
-// The sequence starts from a forced production activity, then the ordinary tick
-// owns every micro-phase and pose. The lab does not animate a second system.
 export function tickShowcase(state, realDelta, scenarioId) {
   const scenario = showcaseScenario(scenarioId);
   const subjectIndices = scenario.subjects;
