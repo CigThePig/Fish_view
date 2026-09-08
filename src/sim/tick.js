@@ -8,13 +8,14 @@ import {
   WATERLINE_ROWS,
 } from "./config.js";
 import { advanceAquariumHistory } from "./aquarium-history.js";
+import { substrateSurfaceY } from "./environment.js";
 import { clamp, createSchoolFish, traitsFromSeed } from "./entities.js";
 import {
   chaseEvasionForFish,
   steerActivityVelocity,
 } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
-import { createBubbleWorldRecords } from "./bubbles.js";
+import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
 import {
   BEHAVIORS,
   socialEngagement,
@@ -23,6 +24,7 @@ import {
 import {
   MAX_FISH_PITCH_DEGREES,
   forageEligible,
+  fishMouthPosition,
   substrateGrazeY,
   substrateSafeY,
   surfaceSafeY,
@@ -281,6 +283,10 @@ function tickVisualPose(fish, nextVx, nextVy, realDelta, postureBias = 0, choreo
       targetFacing = desired;
       turnProgress = 0;
     } else if (desired === facing) {
+      // Reverse the same turn. The old destination becomes the departure
+      // facing; otherwise both ends name the original side and the artwork
+      // flips immediately even when the fish was already past edge-on.
+      facing = targetFacing;
       targetFacing = desired;
       turnProgress = 1 - turnProgress;
     }
@@ -391,7 +397,12 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     : drives;
 
   const evasion = chaseEvasionForFish(fishWithBehavior, state);
-  const steered = steerActivityVelocity(fish, target, {
+  // Position stores the visible strike, but locomotion owns the undipped
+  // trajectory. Carry the applied offset explicitly: re-deriving it from a new
+  // phase/contact gate can erase it or apply the same plunge twice.
+  const priorDip = Math.max(0, fish.forageDip ?? 0);
+  const swimmingFish = priorDip > 0 ? { ...fish, y: fish.y - priorDip } : fish;
+  const steered = steerActivityVelocity(swimmingFish, target, {
     realDelta,
     motionScale,
     behaviorBlend: behavior.blend,
@@ -401,7 +412,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
 
   const halfWidth = fishSpriteWidth(fish) / 2;
   let x = fish.x + vx * realDelta;
-  let y = fish.y + vy * realDelta;
+  let y = swimmingFish.y + vy * realDelta;
 
   if (x < halfWidth) {
     x = halfWidth;
@@ -411,14 +422,17 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     vx = -Math.abs(vx);
   }
 
-  const minimumY = surfaceSafeY(fish, state, x);
+  const visual = tickVisualPose(fish, vx, vy, realDelta, target.postureBias, target.choreography);
+  const posedVy = vy;
+  const posedFish = { ...fish, visual };
+  const minimumY = surfaceSafeY(posedFish, state, x);
   // A grazing fish works against the substrate itself, not against the swimming
   // envelope: the envelope keeps a fish crossing open water clear of terrain,
   // and applying it to feeding is what held one a row above its own debris.
   const grazing = Boolean(target.forageGrazing);
   const terrainMaximumY = grazing
-    ? substrateGrazeY(fish, state, x, index)
-    : substrateSafeY(fish, state, x);
+    ? substrateGrazeY(posedFish, state, x, index)
+    : substrateSafeY(posedFish, state, x);
   // The permanent mid-water cast keeps the same clearance-adjusted
   // swimming envelope it had before terrain-aware foraging. Applying the
   // 68% ceiling to the raw water column lets large/pitched fish drift
@@ -427,7 +441,22 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     + Math.max(0, terrainMaximumY - WATERLINE_ROWS) * 0.68;
   const maximumY = index < 3 ? Math.min(terrainMaximumY, protectedMaximumY) : terrainMaximumY;
 
-  if (y < minimumY) {
+  if (swimmingFish.y < minimumY || swimmingFish.y > maximumY) {
+    // Bounds can move over a fish when it grows, turns near the sand, or stops
+    // feeding. Swim back into the new envelope; a hard clamp used to lift a
+    // departing grazer by almost three rows in one frame.
+    const destination = clamp(swimmingFish.y, minimumY, maximumY);
+    const direction = Math.sign(destination - swimmingFish.y);
+    const returnSpeed = Math.min(0.65, Math.abs(destination - swimmingFish.y) * 4);
+    vy += (direction * returnSpeed - vy) * (1 - Math.exp(-realDelta * 4));
+    vy = direction * Math.max(0, direction * vy);
+    const distance = Math.abs(destination - swimmingFish.y);
+    // Follow sub-pixel terrain changes exactly. Larger envelope changes still
+    // take a bounded swim, including growth and leaving the feeding posture.
+    y = distance <= 0.65 * realDelta ? destination
+      : swimmingFish.y + direction * Math.min(distance, Math.abs(vy) * realDelta);
+    vy = (y - swimmingFish.y) / realDelta;
+  } else if (y < minimumY) {
     y = minimumY;
     vy = target.surfaceInspect ? Math.max(0, vy) : Math.abs(vy);
   } else if (y > maximumY) {
@@ -435,13 +464,20 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     vy = behavior.current === "forage" ? Math.min(0, vy) : -Math.abs(vy);
   }
 
-  // The strike is applied to the fish, not requested of it. Steering answers a
-  // position request over seconds, and a peck lasts a quarter of one: routed
-  // through the target it arrived as a single pixel of drift, well after its
-  // own debris. Driving it here puts the lunge and the puff on the same frame.
-  // The clamp above has already returned the fish to the graze line, so each
-  // frame's plunge is measured from the sand rather than stacking on the last.
-  if (target.forageSearching) y += Math.max(0, target.peckDisplacement ?? 0);
+  // A strike remains a fast, authored displacement. An interrupted strike
+  // settles back without adding another plunge or snapping its offset away.
+  const forageDip = target.forageSearching
+    ? Math.max(0, target.peckDisplacement ?? 0)
+    : Math.max(0, priorDip - realDelta * 1.5);
+  y += forageDip;
+
+  const finalVisual = posedVy === vy ? visual
+    : tickVisualPose(fish, vx, vy, realDelta, target.postureBias, target.choreography);
+  let activity = activityFrame.activity;
+  if (target.peck > 0 && !Number.isFinite(activity.contactX)) {
+    const mouth = fishMouthPosition({ ...fish, x, y, visual: finalVisual }, state, index);
+    activity = { ...activity, contactX: mouth.x, contactY: substrateSurfaceY(state, mouth.x) };
+  }
 
   const history = {
     ...fish.history,
@@ -459,18 +495,12 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     y,
     vx,
     vy,
+    forageDip,
     drives: fedDrives,
     history,
     behavior,
-    activity: activityFrame.activity,
-    visual: tickVisualPose(
-      fish,
-      vx,
-      vy,
-      realDelta,
-      target.postureBias,
-      target.choreography,
-    ),
+    activity,
+    visual: finalVisual,
   };
 }
 
@@ -504,7 +534,8 @@ export function tick(state, dt) {
   const movedIndividuals = advanced.individuals.map((fish, index) =>
     tickIndividual(fish, index, activityContext, school, bubbles, realDelta, simDelta, motionScale),
   );
-  const individuals = updateSocialMemories(movedIndividuals, realDelta);
+  const individuals = updateSocialMemories(movedIndividuals, realDelta)
+    .map((fish, index) => tickFishExhale(fish, index, context, realDelta));
 
   return {
     ...context,

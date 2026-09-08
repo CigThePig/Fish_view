@@ -33,6 +33,7 @@
 import { RARE_PLANT_IDS } from "../art/plants.js";
 import { clamp, createIndividualFromSeed, individualSeedFor } from "./entities.js";
 import { ACTIVITIES, createActivityState } from "./fish-activities.js";
+import { INITIAL_INDIVIDUAL_COUNT, MAX_INDIVIDUALS } from "./config.js";
 import {
   fishAgeDays,
   fishGrowth,
@@ -53,8 +54,7 @@ export const CONTENT_VERSION = 1;
 
 // The initial cast, and the ceiling persistence has always supported. Phase 3
 // lets an aquarium grow 6 -> 7 -> 8 over its first few months and stop there.
-export const INITIAL_INDIVIDUAL_COUNT = 6;
-export const MAX_INDIVIDUALS = 8;
+export { INITIAL_INDIVIDUAL_COUNT, MAX_INDIVIDUALS } from "./config.js";
 
 // Reproduction is evaluated on coarse epochs rather than per frame. At real
 // time a frame costs one integer comparison; a week-per-second debug run may

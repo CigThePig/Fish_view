@@ -126,6 +126,7 @@ The site has no runtime dependencies and no build step. Node 20 or later is
 only used for the local server and tests.
 
 ```sh
+npm ci
 npm test
 npm start
 ```
@@ -160,6 +161,43 @@ npm run capture:behaviors -- --scenario bubble-investigate --orientation portrai
 
 `@napi-rs/canvas` is development-only; the aquarium and GitHub Pages build still
 have no runtime dependency or build step.
+
+## Engineering audit and regression tools
+
+See [the engineering audit](docs/engineering-audit-2026-09-07.md) for findings,
+reproductions, before/after evidence, validation results and remaining limits.
+The phase-specific measurements later in this README are historical snapshots,
+not current budgets or test counts.
+
+```sh
+npm run audit:simulation
+npm run audit:persistence
+npm run audit:render
+npm run measure:feeding
+npm run measure:readability
+npm run measure:screen
+```
+
+Audit tools write ignored reports to `.audit-output/` and exit unsuccessfully on
+an invariant failure. Simulation failures include the seed, frame and fish state;
+render failures include the exact mismatching pixel and both PNGs. Useful variants:
+
+```sh
+npm run audit:simulation -- --dt=0.25 --seconds=300 --timeScale=604800
+npm run audit:simulation -- --dt=0.05 --seconds=120 --days=420 --tuning=extremes
+npm run audit:render -- --frames=300 --days=0
+npm run audit:persistence -- --cases=1000
+```
+
+Simulation/render auditors also accept `--root=/path/to/worktree` and
+`--output=/path/to/results`, letting the same oracle inspect an older revision.
+All options for these tools use `--name=value`. Their defaults cover both panel
+orientations. Feeding measurements include opaque bodies and sample painted
+terrain under every span, with a documented 0.25-row mouth-gap tolerance.
+
+Pull requests now run the full suite and bounded simulation, persistence, native
+Canvas and feeding checks. There are no production dependencies; Canvas is a
+development dependency for capture, pixel comparison and the application test.
 
 ## The tuning labs
 
@@ -243,38 +281,27 @@ tick(state, dt) -> state
 render(state) -> RenderScene { width, height, background, glyphs, objects }
 ```
 
-World positions remain floating point through scene composition. Each visible
-ASCII character becomes an independent glyph command with continuous physical
-coordinates, a bitmap scale, colour, and layer. Fish pitch deliberately does not
-rotate that whole coordinate plane: doing so left every bitmap glyph upright while
-scattering the authored drawing diagonally. Instead each of the six fish has a
-tiny strong-pitch pose table. The table supplies a hand-tuned rise for each source
-column and a much smaller opposing lean for each source row, expressed in physical
-cell-width units. Continuous simulation pitch interpolates from the exact level art
-towards those poses; a +/-30 degree intent reads as roughly a 14 degree typographic
-climb or dive, and the renderer saturates there even though simulation state remains
-bounded to +/-32 degrees. This keeps neighbouring marks knitted together while
-still making vertical travel obvious. Glyph bitmaps themselves remain upright and
-crisp, positive pitch always means nose-down after either facing is applied, and
-physical cell-aspect conversion keeps the cue consistent in portrait, landscape,
-and the motion lab.
+World positions remain floating point through scene composition. Each ASCII
+character becomes a glyph command with physical coordinates, colour, scale and
+layer. Pitch rotates both the fish's coordinates and its bitmap ink through the
+same angle, up to ±32 degrees. Cached glyph rasters use two-degree rotation
+steps, with the physical cell aspect included in the transform. Scales are
+quantized before both rasterization and damage signatures.
 
-The opaque body passes through that exact authored pose. Its nine calibrated source
-slices become nine axis-aligned bounding rectangles around the gently skewed slice
-quadrilaterals, preserving the ESP32-friendly fillRect budget instead of adding
-polygon rotation or a per-pixel mask. A level pitch takes the original integer
-geometry path exactly, so existing profile calibration remains unchanged. The two
-rear slices trim only their trailing-side bounding-box excess during pitch so the
-open ASCII tail is not swallowed at the most compressed turn pose.
+Opaque body profiles pass through the same pose and are scan-converted into
+integer fill rectangles. The renderer uses at most 48 axial samples
+and reusable scratch buffers; span count follows the projected pixel height.
+The old nine-rectangle limit and upright-glyph pose tables described in historical
+phase notes are superseded. Object damage bounds cover both glyph ink and fills.
+Water and terrain backgrounds also use integer edges, so an incremental Canvas
+repaint produces the same pixels as a full repaint.
 
-Phase 1 keeps the dirty-rectangle cost effectively flat. Over the repeatable 200-frame
-10 fps measurement, current `main` averaged 27.45% framebuffer damage in landscape
-and 37.74% in portrait; this branch averages 27.51% and 37.94% respectively. The
-landscape maxima are 44.61% on `main` and 47.02% here, while portrait remains 75.24%
-on both. Forced forage measures 27.44% average / 52.50% max in landscape and 34.63%
-average / 56.46% max in portrait. Every scenario records zero full-frame redraws,
-and the maximum individual body fill count remains exactly nine rectangles before
-and after the change.
+Depth belongs to a fish's identity and stays stable through arrivals and record
+reordering. A shared mouth anchor accounts for pitch, facing, turn compression,
+growth and depth scale. Released exhalations keep their own origin; feeding
+contact history retains two strike origins. A separate transient peck offset
+keeps strike animation from accumulating in locomotion. Leaving a grazing pose
+returns to swimming clearance gradually.
 
 Fish/substrate clearance stays on the simulation side. A single shared maximum
 individual visual scale is exposed from sim/config.js and the simulation uses a

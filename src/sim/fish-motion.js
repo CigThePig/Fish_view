@@ -4,6 +4,7 @@ import {
   CELL_HEIGHT,
   CELL_WIDTH,
   INDIVIDUAL_VISUAL_SCALE_MAX,
+  orientationConfig,
   PITCH_CLEARANCE_FRACTION,
 } from "./config.js";
 import { individualDepthScale, spreadDepth } from "./depth.js";
@@ -345,8 +346,27 @@ export function mouthLeadColumns(fish, pitchDegrees, visualScale = 1) {
   // done in row units and converted back: a lean shortens the reach forward as
   // it lengthens the reach down, and a compressed body has less of both.
   const angle = pitch * pose.widthScale;
-  const forward = mouth.dx * Math.cos(angle) - mouth.dy * Math.sin(angle) * (CELL_HEIGHT / CELL_WIDTH);
-  return forward * pose.widthScale * (pose.facing < 0 ? -1 : 1) * visualScale;
+  const forward = mouth.dx * pose.widthScale * Math.cos(angle)
+    - mouth.dy * Math.sin(angle) * (CELL_HEIGHT / CELL_WIDTH);
+  return forward * (pose.facing < 0 ? -1 : 1) * visualScale;
+}
+
+// The mouth-cell anchor through the same rigid pose as the renderer, in the
+// panel's physical aspect. Body flutter is intentionally excluded from effect
+// origins; its small displacement must not shake a released cloud of silt.
+export function fishMouthPosition(fish, state, index, pitchDegrees = fish.visual?.pitch ?? 0) {
+  const mouth = spriteMouthOffset(spriteFor(fish));
+  const pose = turnPose(fish);
+  const dimensions = orientationConfig(state.orientation);
+  const aspect = (dimensions.pixelHeight / dimensions.rows) / (dimensions.pixelWidth / dimensions.cols);
+  const angle = clamp(pitchDegrees, -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES)
+    * pose.widthScale * Math.PI / 180;
+  const scale = individualVisualScale(fish, index, state);
+  const x = mouth.dx * pose.widthScale;
+  return {
+    x: fish.x + (x * Math.cos(angle) - mouth.dy * Math.sin(angle) * aspect) * pose.facing * scale,
+    y: fish.y + (x / aspect * Math.sin(angle) + mouth.dy * Math.cos(angle)) * scale,
+  };
 }
 
 // How far the fish's mouth reaches below its own centre once the drawing leans,

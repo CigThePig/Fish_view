@@ -44,7 +44,12 @@ function fishFillMaximum(scene) {
 
 function prepare(orientation, seed, days) {
   let state = createAquariumState({ orientation, seed, wallClockHours: 12 });
-  if (days > 0) state = advanceOffline(state, days * 86400);
+  // Production intentionally caps a single offline gap at 365 days. Applying
+  // 420 in one call labelled a 365-day fixture as day 420.
+  for (let remaining = days; remaining > 0; remaining -= 365) {
+    state = advanceOffline(state, Math.min(365, remaining) * 86400);
+  }
+  if (Math.abs(state.totalDays - days) > 1e-8) throw new Error(`Expected day ${days}, got ${state.totalDays}`);
   for (let frame = 0; frame < 40; frame += 1) state = tick(state, 0.1);
   return state;
 }

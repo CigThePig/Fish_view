@@ -80,6 +80,7 @@ export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {
     y: Number.isFinite(options.y) ? options.y : y,
     vx,
     vy: Number.isFinite(options.vy) ? options.vy : sampleSigned(seed, 10) * 0.08,
+    forageDip: 0,
     drives: {
       hunger: sampleRange(seed, 11, 0.28, 0.68),
       energy: sampleRange(seed, 12, 0.34, 0.82),

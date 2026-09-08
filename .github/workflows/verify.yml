@@ -1,0 +1,26 @@
+name: Verify aquarium
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run audit:simulation
+      - run: npm run audit:persistence -- --cases=200
+      - run: npm run audit:render
+      - run: npm run measure:feeding

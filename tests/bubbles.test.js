@@ -12,6 +12,7 @@ import { glyphsForObject } from "../src/render/scene.js";
 import { orientationConfig } from "../src/sim/config.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
+import { tick } from "../src/sim/tick.js";
 
 function metricsFor(state) {
   const target = orientationConfig(state.orientation);
@@ -101,10 +102,11 @@ test("bubble lifecycles grow into richer glyphs and actually pop at the surface"
 });
 
 test("individual fish occasionally exhale bubbles without becoming particle emitters", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 13, wallClockHours: 12 });
+  let state = createAquariumState({ orientation: "landscape", seed: 13, wallClockHours: 12 });
   let fishRecords = [];
-  for (let seconds = 0; seconds <= 120 && fishRecords.length === 0; seconds += 1) {
-    fishRecords = recordsAt(state, seconds).filter((record) => record.kind === "fish");
+  for (let frame = 0; frame <= 1200 && fishRecords.length === 0; frame += 1) {
+    state = tick(state, 0.1);
+    fishRecords = recordsAt(state, state.elapsedRealSeconds).filter((record) => record.kind === "fish");
   }
   assert.ok(fishRecords.length > 0);
   assert.ok(fishRecords.length <= state.individuals.length);

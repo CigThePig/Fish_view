@@ -23,7 +23,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { growthStagesFor, individualSprites, spriteDimensions, spriteMouthOffset } from "../src/art/sprites.js";
-import { glyphPixelRects } from "../src/render/glyph-raster.js";
+import { renderedFeedingContact } from "../src/dev/rendered-contact.js";
 import { render } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
@@ -174,35 +174,14 @@ function sceneWith(state, fish) {
 // the fish's doing, and the one that used to widen with every stage a fish
 // grew. `buried` is how far its underside has passed through the crest to put
 // the mouth there, which is what stops the cure being worse than the disease.
-// Both are read off the rasterised glyph rectangles: the panel's own ink.
-function contactRows(state, fish, metrics, sprite) {
-  const { rowPixels, columnPixels } = metrics;
-  const scene = sceneWith(state, fish);
-  const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${SUBJECT_INDEX}:`));
-  const glyphs = glyphsForObject(scene, object);
-  const bottomOf = (list) => Math.max(
-    ...list.flatMap((glyph) => glyphPixelRects(glyph).map((rectangle) => rectangle.y + rectangle.height)),
-  ) / rowPixels;
-  const mouthGlyph = glyphs[spriteMouthOffset(sprite).glyph] ?? glyphs[0];
-  // Each part is measured against the crest under itself. The terrain is not
-  // flat and a grown fish's mouth leads its centre by two to three columns, so
-  // one crest sample for the whole animal is a third of a row of noise - and it
-  // is the crest under the mouth that the contact mark is drawn against.
-  const mouthX = (mouthGlyph.x + CELL_WIDTH * mouthGlyph.scaleX / 2) / columnPixels;
-  return {
-    mouth: substrateSurfaceY(state, mouthX) - bottomOf([mouthGlyph]),
-    buried: bottomOf(glyphs) - substrateSurfaceY(state, fish.x),
-  };
+// Both include the actual painted terrain; burial includes opaque body spans.
+function contactRows(state, fish) {
+  return renderedFeedingContact(sceneWith(state, fish), fish, SUBJECT_INDEX);
 }
 
 export function measureFeeding(override = null) {
   const results = [];
   for (const orientation of ORIENTATIONS) {
-    const config = orientationConfig(orientation);
-    const metrics = {
-      rowPixels: config.pixelHeight / config.rows,
-      columnPixels: config.pixelWidth / config.cols,
-    };
     const state = {
       ...createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }),
       ...(override ? { choreographyTuning: override } : {}),
@@ -216,8 +195,8 @@ export function measureFeeding(override = null) {
         y: grazing.y + peak.forage.peckDisplacement,
       };
       const { width, height } = spriteDimensions(stage);
-      const rest = contactRows(state, grazing, metrics, stage);
-      const hit = contactRows(state, striking, metrics, stage);
+      const rest = contactRows(state, grazing);
+      const hit = contactRows(state, striking);
       results.push({
         orientation,
         id: stage.id,
@@ -239,7 +218,7 @@ function report(results) {
     console.log(`\n${orientation}  mouth = rows the mouth sits above the crest, buried = rows the underside passes through it`);
     console.log(`${"stage".padEnd(26)} ${"size".padEnd(5)} ${"graze".padStart(6)} ${"strike".padStart(7)} ${"buried".padStart(7)}`);
     for (const entry of rows.slice().sort((left, right) => left.cells - right.cells)) {
-      const flag = entry.strike >= 0.25 ? "  <- mouth never reaches the sand" : "";
+      const flag = entry.strike >= 0.25 ? "  <- exceeds 0.25-row contact tolerance" : "";
       console.log(
         `${entry.id.padEnd(26)} ${`${entry.height}x${entry.width}`.padEnd(5)} `
         + `${entry.graze.toFixed(2).padStart(6)} ${entry.strike.toFixed(2).padStart(7)} `
@@ -252,7 +231,7 @@ function report(results) {
     const missed = rows.filter((entry) => entry.strike >= 0.25);
     console.log(`  worst graze: fry ${small.toFixed(2)}, grown ${large.toFixed(2)} (size gradient ${(large - small).toFixed(2)})`);
     console.log(`  deepest underside burial: ${Math.max(...rows.map((entry) => entry.buried)).toFixed(2)} rows`);
-    console.log(`  stages whose deepest strike never brings the mouth to the sand: ${missed.length ? missed.map((entry) => entry.id).join(", ") : "none"}`);
+    console.log(`  stages exceeding the 0.25-row strike-gap tolerance: ${missed.length ? missed.map((entry) => entry.id).join(", ") : "none"}`);
   }
 }
 
@@ -282,15 +261,20 @@ async function writeSheet(target, only = null, override = null) {
   const cropHeight = Math.round(cropRows * rowPixels);
   const labelWidth = 210;
   const gap = 8;
+  const header = 30;
   const sheet = createCanvas(
     labelWidth + (cropWidth * zoom + gap) * 3,
-    stages.length * (cropHeight * zoom + gap) + gap,
+    header + stages.length * (cropHeight * zoom + gap) + gap,
   );
   const ink = sheet.getContext("2d");
   ink.fillStyle = "#101418";
   ink.fillRect(0, 0, sheet.width, sheet.height);
   ink.font = "16px monospace";
   ink.textBaseline = "middle";
+  ink.fillStyle = "#cbd5e1";
+  for (const [column, label] of ["Graze", "Strike", "Settling silt"].entries()) {
+    ink.fillText(label, labelWidth + column * (cropWidth * zoom + gap) + 8, header / 2);
+  }
 
   const frame = createCanvas(config.pixelWidth, config.pixelHeight);
   const renderer = new CanvasSceneRenderer(frame);
@@ -306,7 +290,7 @@ async function writeSheet(target, only = null, override = null) {
       ...agedAt(grazing, debris.age, strikePitch(tuning, debris.forage.peck), debris.activity),
       y: grazing.y + debris.forage.peckDisplacement,
     };
-    const top = gap + row * (cropHeight * zoom + gap);
+    const top = header + gap + row * (cropHeight * zoom + gap);
     const crest = substrateSurfaceY(state, grazing.x);
     const cropTop = Math.round((crest - cropRows + 1.6) * rowPixels);
     const cropLeft = Math.round((grazing.x - cropCols / 2) * columnPixels);
@@ -318,8 +302,14 @@ async function writeSheet(target, only = null, override = null) {
     ink.fillText(`${height}x${width}`, 8, top + cropHeight * zoom / 2 + 11);
 
     for (const [column, fish] of [grazing, striking, settling].entries()) {
+      const posedScene = sceneWith(state, fish);
+      // Isolate the anatomy and its own effect so a plant crossing the mouth
+      // cannot masquerade as a contact marker. Keep the production background.
+      const isolated = { ...posedScene, objects: posedScene.objects.filter((object) =>
+        object.id === `individual:${SUBJECT_INDEX}:${fish.seed}`
+        || object.id === `forage-debris:${SUBJECT_INDEX}:${fish.seed}`) };
       renderer.reset();
-      renderer.draw(sceneWith(state, fish));
+      renderer.draw(isolated);
       const left = labelWidth + column * (cropWidth * zoom + gap);
       ink.drawImage(
         frame,
@@ -335,20 +325,21 @@ async function writeSheet(target, only = null, override = null) {
       // thing being judged.
       ink.fillStyle = "rgba(255,96,96,0.75)";
       for (let pixel = 0; pixel < cropWidth * zoom; pixel += 1) {
-        const worldX = (cropLeft + pixel / zoom) / columnPixels;
-        const y = substrateSurfaceY(state, worldX) * rowPixels - cropTop;
-        ink.fillRect(left + pixel, top + y * zoom, 1, 1);
+        const x = cropLeft + pixel / zoom;
+        const segment = posedScene.background.substrateSegments.find((segment) => x >= segment.x && x < segment.x + segment.width);
+        if (segment) ink.fillRect(left + pixel, top + (segment.y - cropTop) * zoom, 1, 1);
       }
       // Where this panel's own mouth sits along it, which is the point the
       // numbers in the table are measured at.
-      const posedScene = sceneWith(state, fish);
       const posedObject = posedScene.objects
         .find((candidate) => candidate.id.startsWith(`individual:${SUBJECT_INDEX}:`));
       const posedMouth = glyphsForObject(posedScene, posedObject)[spriteMouthOffset(stage).glyph];
       if (posedMouth) {
         const mouthX = (posedMouth.x + CELL_WIDTH * posedMouth.scaleX / 2) / columnPixels;
         const markX = (mouthX * columnPixels - cropLeft) * zoom;
-        const markY = (substrateSurfaceY(state, mouthX) * rowPixels - cropTop) * zoom;
+        const segment = posedScene.background.substrateSegments.find((segment) =>
+          mouthX * columnPixels >= segment.x && mouthX * columnPixels < segment.x + segment.width);
+        const markY = ((segment?.y ?? cropTop) - cropTop) * zoom;
         ink.fillStyle = "rgba(255,214,96,0.95)";
         ink.fillRect(left + markX - 1, top + markY - 4, 2, 9);
       }
@@ -367,6 +358,8 @@ if (isEntry) {
   const sheet = optionValue(argumentsList, "--sheet", null);
   const only = optionValue(argumentsList, "--stages", null);
   const override = tuningOverride(optionValue(argumentsList, "--tune", null));
-  report(measureFeeding(override));
+  const results = measureFeeding(override);
+  report(results);
+  if (results.some((entry) => !Number.isFinite(entry.strike) || entry.strike >= 0.25)) process.exitCode = 1;
   if (sheet) await writeSheet(path.resolve(sheet), only ? only.split(",") : null, override);
 }

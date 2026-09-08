@@ -1,3 +1,4 @@
+import { renderedFeedingContact } from "../src/dev/rendered-contact.js";
 // Screen-space legibility. The behaviour readability tool grades the
 // simulation's own numbers - peck amplitude, pitch degrees, activity counts -
 // and a cue can pass every one of them while changing two pixels. This tool
@@ -42,10 +43,9 @@ const { render } = await import(url("src/render/render.js"));
 const { scenePalette } = await import(url("src/render/palette.js"));
 const { glyphsForObject } = await import(url("src/render/scene.js"));
 const { glyphPixelRects } = await import(url("src/render/glyph-raster.js"));
-const { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_PECK_ROWS, forageActivity } = await import(url("src/sim/fish-motion.js"));
 const { spriteForFish } = await import(url("src/sim/fish-growth.js"));
 const { spriteMouthOffset } = await import(url("src/art/sprites.js"));
-const { substrateSurfaceY } = await import(url("src/sim/environment.js"));
+const { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_PECK_ROWS, forageActivity } = await import(url("src/sim/fish-motion.js"));
 const { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } = await import(url("src/sim/config.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
 const { tick } = await import(url("src/sim/tick.js"));
@@ -54,45 +54,7 @@ const STEP_SECONDS = 0.1;
 const failures = [];
 const canvasCache = new Map();
 
-// How far the fish's mouth sits above the crest under it, in pixels. Feeding is
-// a statement about the mouth: it is what the fish eats with, and where the
-// puff of silt is drawn from. The lowest ink of the whole drawing answers a
-// different question - on a five-row adult the two are two rows apart, which is
-// how a fish could measure as touching the sand while its mouth hung over it.
-// It is also sampled against the crest under the mouth rather than under the
-// fish. A grown fish's nose leads its centre by two to three columns and the
-// relief moves across that span, so measuring the mouth against the centre's
-// terrain grades the gap at the wrong ground - and it is the crest under the
-// mouth that the simulation places the fish against and the contact mark is
-// drawn on.
-function mouthContact(scene, object, sprite, metrics) {
-  const glyph = glyphsForObject(scene, object)[spriteMouthOffset(sprite).glyph];
-  if (!glyph) return { ink: lowestInk(scene, object), worldX: null };
-  let lowest = Number.NEGATIVE_INFINITY;
-  for (const rectangle of glyphPixelRects(glyph)) lowest = Math.max(lowest, rectangle.y + rectangle.height);
-  return {
-    ink: lowest,
-    worldX: (glyph.x + CELL_WIDTH * glyph.scaleX / 2) / metrics.cellWidth,
-  };
-}
-
-// The lowest pixel an object paints: its opaque body and its rotated glyph ink.
-function mouthGapRows(state, scene, object, fish, metrics) {
-  const contact = mouthContact(scene, object, spriteForFish(fish), metrics);
-  const worldX = contact.worldX ?? fish.x;
-  return substrateSurfaceY(state, worldX) - contact.ink / metrics.cellHeight;
-}
-
-function lowestInk(scene, object) {
-  let lowest = Number.NEGATIVE_INFINITY;
-  for (const span of object.fill ?? []) lowest = Math.max(lowest, span.y + span.height);
-  for (const glyph of glyphsForObject(scene, object)) {
-    for (const rectangle of glyphPixelRects(glyph)) lowest = Math.max(lowest, rectangle.y + rectangle.height);
-  }
-  return lowest;
-}
-
-function frame(state, orientation) {
+function frame(state, orientation, sceneOverride = null) {
   const config = orientationConfig(orientation);
   let entry = canvasCache.get(orientation);
   if (!entry) {
@@ -100,7 +62,7 @@ function frame(state, orientation) {
     entry = { canvas, renderer: new CanvasSceneRenderer(canvas), config };
     canvasCache.set(orientation, entry);
   }
-  const scene = render(state);
+  const scene = sceneOverride ?? render(state);
   entry.renderer.draw(scene);
   return { scene, canvas: entry.canvas, config: entry.config };
 }
@@ -212,9 +174,6 @@ report("Feeding strike (production tank)");
 console.log("orientation  plunge px  mouth gap  belly gap  debris glyphs  debris contrast  strike repaint");
 for (const orientation of ["landscape", "portrait"]) {
   let state = createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 });
-  const config = orientationConfig(orientation);
-  const cellHeight = config.pixelHeight / config.rows;
-  const cellWidth = config.pixelWidth / config.cols;
   let best = null;
   let rest = null;
   let window = null;
@@ -238,11 +197,15 @@ for (const orientation of ["landscape", "portrait"]) {
         width: object.bounds.width + 88,
         height: object.bounds.height + 104,
       };
+      const contact = renderedFeedingContact(scene, fish, index, {
+        mouthIndex: spriteMouthOffset(spriteForFish(fish)).glyph, rasterize: glyphPixelRects,
+      });
       const sample = {
         index,
         peck: forage.peck,
         fish,
         state,
+        scene,
         centre: bodyCentre(object.bounds),
         bounds: object.bounds,
         // Measured from the lowest pixel the fish actually paints, not from
@@ -251,8 +214,8 @@ for (const orientation of ["landscape", "portrait"]) {
         // one reserved the lean as well - so this read as contact while the
         // fish was in fact hovering. Bounds are the tight raster now, but the
         // ink is what a person sees either way.
-        mouthGap: mouthGapRows(state, scene, object, fish, { cellWidth, cellHeight }),
-        bellyGap: substrateSurfaceY(state, fish.x) - lowestInk(scene, object) / cellHeight,
+        mouthGap: contact.mouth,
+        bellyGap: -contact.buried,
         debris: debris ? scene.glyphs.slice(debris.glyphStart, debris.glyphStart + debris.glyphCount) : [],
         image: pixels(canvas, window.x, window.y, window.width, window.height),
       };
@@ -291,6 +254,19 @@ for (const orientation of ["landscape", "portrait"]) {
       if (delta > 6) changed += 1;
     }
   }
+  // Isolate the effect itself: body movement cannot stand in for visible silt.
+  const withoutSilt = { ...best.peak.scene, objects: best.peak.scene.objects.filter((object) =>
+    object.id !== `forage-debris:${best.peak.index}:${best.peak.fish.seed}`) };
+  const clearImage = pixels(frame(best.peak.state, orientation, withoutSilt).canvas,
+    window.x, window.y, window.width, window.height);
+  let visibleSiltPixels = 0;
+  for (let offset = 0; offset < clearImage.data.length; offset += 4) {
+    const delta = Math.abs(luminance(clearImage.data[offset], clearImage.data[offset + 1], clearImage.data[offset + 2])
+      - luminance(peakImage.data[offset], peakImage.data[offset + 1], peakImage.data[offset + 2]));
+    if (delta > 6) visibleSiltPixels++;
+  }
+  console.log(`  visible contact/silt pixels (luminance difference > 6): ${visibleSiltPixels}`);
+  if (!visibleSiltPixels) failures.push(`${orientation}: the contact/silt effect is fully occluded`);
   // Graded against the fish's own silhouette rather than a flat pixel count: a
   // strike has to repaint a tenth of the animal that performs it, whatever size
   // that animal is drawn at.

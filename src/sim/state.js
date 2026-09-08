@@ -5,15 +5,16 @@ import {
   inferredFishAgeDays,
   sanitizeContent,
 } from "./aquarium-history.js";
-import { DEFAULT_SEED, DEFAULT_SETTINGS, DRIVE_MAXIMUM, DRIVE_MINIMUM, orientationConfig } from "./config.js";
-import { clamp, createIndividual, createSchoolFish } from "./entities.js";
+import { DEFAULT_SEED, DRIVE_MAXIMUM, DRIVE_MINIMUM, INITIAL_INDIVIDUAL_COUNT, WATERLINE_ROWS, orientationConfig, sanitizeSettings } from "./config.js";
+import { clamp, createIndividual, createIndividualFromSeed, createSchoolFish } from "./entities.js";
 import {
   ACTIVITIES,
   BEHAVIORS,
   createActivityState,
   defaultActivityForBehavior,
 } from "./fish-activities.js";
-import { MAX_FISH_PITCH_DEGREES } from "./fish-motion.js";
+import { MAX_FISH_PITCH_DEGREES, substrateSafeY, surfaceSafeY } from "./fish-motion.js";
+import { fishSpriteWidth } from "./fish-growth.js";
 import { affinitiesFromSeed, sanitizeSocialMemory } from "./fish-personality.js";
 import {
   createPlantFromSeed,
@@ -34,13 +35,21 @@ export function createAquariumState({
 } = {}) {
   const dimensions = orientationConfig(orientation);
   const numericSeed = typeof seed === "number" ? seed >>> 0 : hashSeed(seed);
-  const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
+  const mergedSettings = sanitizeSettings(settings);
   const school = Array.from({ length: mergedSettings.schoolCount }, (_, index) =>
     createSchoolFish(numericSeed, index, dimensions.cols, dimensions.rows),
   );
-  const individuals = Array.from({ length: 6 }, (_, index) =>
+  const individuals = Array.from({ length: INITIAL_INDIVIDUAL_COUNT }, (_, index) =>
     createIndividual(numericSeed, index, dimensions.cols, dimensions.rows),
-  );
+  ).map((fish, index) => {
+    const world = { ...dimensions, seed: numericSeed, elapsedRealSeconds: 0 };
+    const halfWidth = fishSpriteWidth(fish) / 2;
+    const x = clamp(fish.x, halfWidth, dimensions.cols - halfWidth);
+    const top = surfaceSafeY(fish, world, x);
+    const floor = substrateSafeY(fish, world, x);
+    const bottom = index < 3 ? WATERLINE_ROWS + (floor - WATERLINE_ROWS) * 0.68 : floor;
+    return { ...fish, x, y: clamp(fish.y, top, Math.max(top, bottom)) };
+  });
   const plants = Array.from({ length: plantCountFor(orientation) }, (_, index) =>
     createPlant(numericSeed, index, dimensions.cols, dimensions.rows, orientation),
   );
@@ -55,7 +64,7 @@ export function createAquariumState({
     elapsedRealSeconds: 0,
     elapsedSimSeconds: 0,
     totalDays: 0,
-    timeOfDayHours: ((wallClockHours % 24) + 24) % 24,
+    timeOfDayHours: ((finite(wallClockHours, 12) % 24) + 24) % 24,
     settings: mergedSettings,
     school,
     individuals,
@@ -142,7 +151,7 @@ export function applyTouch(state, x, y) {
 export function withSettings(state, patch) {
   return {
     ...state,
-    settings: { ...state.settings, ...patch },
+    settings: sanitizeSettings(patch, state.settings),
   };
 }
 
@@ -209,6 +218,13 @@ function stableSeed(value, fallback) {
     : fallback >>> 0;
 }
 
+// Beyond the content horizon, additional precision carries no visible history.
+// Bounding imported clocks also prevents finite JSON numbers overflowing later
+// when converted into seconds, phases, or render coordinates.
+const MAX_SAVED_DAYS = 10_000_000;
+const savedAge = (value, fallback = 0) => clamp(finite(value, fallback), 0, MAX_SAVED_DAYS);
+const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
 function validBehavior(value, fallback = "cruise") {
   return BEHAVIORS.includes(value) ? value : fallback;
 }
@@ -220,25 +236,40 @@ export function restorePersistentState(baseState, saved) {
 
   // Ages are reconstructed against the save's own aquarium age, so read it
   // before the roster rather than after it.
-  const totalDays = Math.max(0, finite(saved.totalDays, 0));
-  const individuals = saved.individuals.slice(0, 8).map((fish, index) => {
-    const fallback = baseState.individuals[index % baseState.individuals.length];
-    const seed = stableSeed(fish.seed, fallback.seed);
+  const totalDays = savedAge(saved.totalDays);
+  const originals = new Map(baseState.individuals.map((fish) => [fish.seed, fish]));
+  const sources = saved.individuals.slice(0, 8);
+  const reserved = new Set(sources.filter((fish) => record(fish)
+    && stableSeed(fish.seed, -1) === fish.seed).map((fish) => fish.seed));
+  const seen = new Set();
+  const individuals = sources.flatMap((source, index) => {
+    let fish = record(source) ? source : {};
+    const slot = baseState.individuals[index];
+    let seed = stableSeed(fish.seed, -1);
+    if (seed !== fish.seed || seen.has(seed)) {
+      // Repair a damaged original slot without replacing another valid saved
+      // identity or resetting all of the aquarium's learned history.
+      if (!slot || seen.has(slot.seed) || reserved.has(slot.seed)) return [];
+      fish = {};
+      seed = slot.seed;
+    }
+    seen.add(seed);
+    const fallback = originals.get(seed)
+      ?? createIndividualFromSeed(seed, index, baseState.cols, baseState.rows);
     const currentBehavior = validBehavior(fish.behavior?.current);
     const previousBehavior = validBehavior(fish.behavior?.previous, currentBehavior);
     return {
-      ...fallback,
-      ...fish,
       seed,
       // A save written before growth existed carries no age. It is not lost:
       // the initial cast has been aging since the aquarium was created and an
       // arrival since its own milestone day, so the age is reconstructed rather
       // than reset - an old aquarium comes back with the grown fish it earned.
-      ageDays: Math.max(0, finite(fish.ageDays, inferredFishAgeDays(baseState.seed, seed, totalDays))),
-      x: finite(fish.x, fallback.x),
-      y: finite(fish.y, fallback.y),
-      vx: finite(fish.vx, fallback.vx),
-      vy: finite(fish.vy, fallback.vy),
+      ageDays: savedAge(fish.ageDays, inferredFishAgeDays(baseState.seed, seed, totalDays)),
+      x: clamp(finite(fish.x, fallback.x), 0, baseState.cols),
+      y: clamp(finite(fish.y, fallback.y), 0, baseState.rows),
+      vx: clamp(finite(fish.vx, fallback.vx), -2.4, 2.4),
+      vy: clamp(finite(fish.vy, fallback.vy), -2.4, 2.4),
+      forageDip: 0,
       drives: {
         hunger: clamp(finite(fish.drives?.hunger, fallback.drives.hunger), DRIVE_MINIMUM, DRIVE_MAXIMUM),
         energy: clamp(finite(fish.drives?.energy, fallback.drives.energy), DRIVE_MINIMUM, DRIVE_MAXIMUM),
@@ -254,8 +285,8 @@ export function restorePersistentState(baseState, saved) {
         current: currentBehavior,
         previous: previousBehavior,
         blend: clamp(finite(fish.behavior?.blend, 1), 0, 1),
-        ageSeconds: Math.max(0, finite(fish.behavior?.ageSeconds, 0)),
-        ageRealSeconds: Math.max(0, finite(fish.behavior?.ageRealSeconds, 0)),
+        ageSeconds: clamp(finite(fish.behavior?.ageSeconds, 0), 0, MAX_SAVED_DAYS * 86400),
+        ageRealSeconds: clamp(finite(fish.behavior?.ageRealSeconds, 0), 0, MAX_SAVED_DAYS * 86400),
       },
       // Activity targets are visual intentions, not durable biology. Rebuild a
       // safe broad-behavior default instead of resuming yesterday's bubble or
@@ -273,7 +304,15 @@ export function restorePersistentState(baseState, saved) {
     };
   });
 
-  if (individuals.length < 5) return baseState;
+  if (individuals.length < 5) {
+    for (const fish of baseState.individuals) {
+      if (individuals.length >= 6) break;
+      if (!seen.has(fish.seed)) {
+        individuals.push({ ...fish, ageDays: savedAge(inferredFishAgeDays(baseState.seed, fish.seed, totalDays)) });
+        seen.add(fish.seed);
+      }
+    }
+  }
   const availableSeeds = new Set(individuals.map((fish) => fish.seed));
   const normalizedIndividuals = individuals.map((fish) => ({
     ...fish,
@@ -290,10 +329,10 @@ export function restorePersistentState(baseState, saved) {
   const restored = {
     ...baseState,
     rngState: finite(saved.rngState, baseState.rngState) >>> 0,
-    elapsedSimSeconds: Math.max(0, finite(saved.elapsedSimSeconds, 0)),
+    elapsedSimSeconds: clamp(finite(saved.elapsedSimSeconds, 0), 0, MAX_SAVED_DAYS * 86400),
     totalDays,
     timeOfDayHours: ((finite(saved.timeOfDayHours, baseState.timeOfDayHours) % 24) + 24) % 24,
-    settings: { ...baseState.settings, ...(saved.settings ?? {}) },
+    settings: sanitizeSettings(saved.settings, baseState.settings),
     individuals: normalizedIndividuals,
     plants,
     content: sanitizeContent(saved.content, { totalDays, seed: baseState.seed }),
@@ -311,10 +350,10 @@ export function restorePersistentState(baseState, saved) {
 // deterministic version-2 specimen occupying the same layout slot, so the
 // original roster is what an old save comes back as.
 function restoreLegacyPlants(baseState, saved) {
-  return baseState.plants.map((fallback, index) => {
+  const restored = baseState.plants.map((fallback, index) => {
     const plant = saved.plants[index];
     if (!plant || typeof plant !== "object") return fallback;
-    const speciesId = typeof plant.speciesId === "string" && PLANT_SPECIES_BY_ID[plant.speciesId]
+    const speciesId = typeof plant.speciesId === "string" && Object.hasOwn(PLANT_SPECIES_BY_ID, plant.speciesId)
       ? plant.speciesId
       : fallback.speciesId;
     const species = PLANT_SPECIES_BY_ID[speciesId];
@@ -323,7 +362,7 @@ function restoreLegacyPlants(baseState, saved) {
       seed: finite(plant.seed, fallback.seed) >>> 0,
       speciesId,
       x: clamp(finite(plant.x, fallback.x), 0.35, baseState.cols - 0.35),
-      ageDays: Math.max(0, finite(plant.ageDays, fallback.ageDays)),
+      ageDays: savedAge(plant.ageDays, fallback.ageDays),
       matureHeight: clamp(
         finite(plant.matureHeight, finite(plant.maxHeight, fallback.matureHeight)),
         1.2,
@@ -338,6 +377,17 @@ function restoreLegacyPlants(baseState, saved) {
       secondaryPhase: finite(plant.secondaryPhase, fallback.secondaryPhase),
       paletteSlot: Math.round(clamp(finite(plant.paletteSlot, fallback.paletteSlot), 0, 2)),
     };
+  });
+  const reserved = new Set(restored.map((plant) => plant.seed));
+  const seen = new Set();
+  return restored.map((plant) => {
+    // A duplicate legacy seed gives two plants one target/persistence identity.
+    // Repair that slot without taking an identity reserved by a later record.
+    const repaired = seen.has(plant.seed)
+      ? baseState.plants.find((candidate) => !reserved.has(candidate.seed) && !seen.has(candidate.seed))
+      : plant;
+    seen.add(repaired.seed);
+    return repaired;
   });
 }
 
@@ -362,7 +412,7 @@ function restoreDynamicPlants(baseState, saved) {
     const seed = plant.seed >>> 0;
     if (seen.has(seed)) continue;
     const fallback = originals.get(seed) ?? null;
-    const speciesId = typeof plant.speciesId === "string" && PLANT_SPECIES_BY_ID[plant.speciesId]
+    const speciesId = typeof plant.speciesId === "string" && Object.hasOwn(PLANT_SPECIES_BY_ID, plant.speciesId)
       ? plant.speciesId
       : fallback?.speciesId;
     if (!speciesId) continue;
@@ -378,7 +428,7 @@ function restoreDynamicPlants(baseState, saved) {
       seed,
       speciesId,
       x: clamp(finite(plant.x, baseState.cols / 2), 0.35, baseState.cols - 0.35),
-      ageDays: Math.max(0, finite(plant.ageDays, 0)),
+      ageDays: savedAge(plant.ageDays),
       rows: baseState.rows,
       matureHeight: plant.matureHeight,
     });
@@ -387,7 +437,7 @@ function restoreDynamicPlants(baseState, saved) {
       seed,
       speciesId,
       x: clamp(finite(plant.x, base.x), 0.35, baseState.cols - 0.35),
-      ageDays: Math.max(0, finite(plant.ageDays, base.ageDays)),
+      ageDays: savedAge(plant.ageDays, base.ageDays),
       matureHeight: clamp(
         finite(plant.matureHeight, base.matureHeight),
         1.2,
@@ -427,8 +477,10 @@ export function advanceOffline(state, realSeconds) {
     ...advanced,
     elapsedSimSeconds: state.elapsedSimSeconds + seconds,
     timeOfDayHours: hour,
-    individuals: advanced.individuals.map((fish) => ({
+    reaction: null,
+    individuals: advanced.individuals.map(({ exhale, ...fish }) => ({
       ...fish,
+      forageDip: 0,
       drives: {
         hunger: clamp(fish.drives.hunger + days * 0.03, DRIVE_MINIMUM, DRIVE_MAXIMUM),
         energy: clamp(fish.drives.energy * 0.7 + circadianEnergy * 0.3, DRIVE_MINIMUM, DRIVE_MAXIMUM),
