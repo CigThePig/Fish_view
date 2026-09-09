@@ -1,0 +1,208 @@
+/*
+ * The Phase 0 interaction observation harness.
+ *
+ * These tests are about the instrument, not about the behaviour it measures.
+ * What a tap currently does to the cast is the thing Stage 2 is going to
+ * change, so pinning today's numbers here would only mean deleting them in
+ * Phase 1. What has to keep holding is that a pointer history is bounded and
+ * replayable, that a replay is exactly the production interaction path, and
+ * that an observation of an untouched aquarium reports nothing happening.
+ */
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  INTERACTION_SCENARIOS,
+  POINTER_HISTORY_LIMIT,
+  STOCKED_AQUARIUM_DAY,
+  applyPointerEvent,
+  createObservationAquarium,
+  decodePointerHistory,
+  drag,
+  encodePointerHistory,
+  hold,
+  observeInteraction,
+  pointerHistory,
+  prepareScenario,
+  repeatedTaps,
+  swipe,
+  tap,
+} from "../src/dev/interaction-observation.js";
+import { DISPLAY } from "../src/sim/config.js";
+import { applyTouch } from "../src/sim/state.js";
+
+// Settled far less than a measurement run settles for: these tests need a tank
+// with a cast in it, not a representative evening.
+function aquarium(options = {}) {
+  return createObservationAquarium({ seed: 5, days: STOCKED_AQUARIUM_DAY, settleSeconds: 4, ...options });
+}
+
+test("every gesture the plan asks for produces a sorted, bounded pointer history", () => {
+  const histories = {
+    tap: pointerHistory(tap(20, 9)),
+    hold: pointerHistory(hold(20, 9, { seconds: 1.6 })),
+    slowDrag: pointerHistory(drag([{ x: 10, y: 9 }, { x: 50, y: 7 }], { seconds: 3 })),
+    swipe: pointerHistory(swipe({ x: 10, y: 9 }, { x: 50, y: 7 }, { seconds: 0.3 })),
+    repeated: pointerHistory(repeatedTaps(20, 9, { count: 5 })),
+  };
+  for (const [name, history] of Object.entries(histories)) {
+    assert.ok(history.length > 0, `${name} produced no events`);
+    assert.ok(history.length <= POINTER_HISTORY_LIMIT, `${name} exceeded the event cap`);
+    assert.equal(history[0].type, "down", `${name} did not start with a press`);
+    assert.equal(history.at(-1).type, "up", `${name} did not end with a release`);
+    for (let index = 1; index < history.length; index += 1) {
+      assert.ok(history[index].seconds >= history[index - 1].seconds, `${name} is not in time order`);
+    }
+  }
+  // A slow drag and a fast swipe are the same path at different speeds, which
+  // is the distinction Phase 4 has to respond to.
+  assert.equal(histories.slowDrag.at(-1).seconds > histories.swipe.at(-1).seconds, true);
+});
+
+test("a pointer history is capped, and survives a round trip through text", () => {
+  assert.throws(
+    () => pointerHistory(drag([{ x: 4, y: 9 }, { x: 60, y: 9 }], { seconds: 12 })),
+    /exceeds the 64-event cap/,
+  );
+
+  const history = pointerHistory(hold(31.5, 8.25, { seconds: 1 }));
+  const encoded = encodePointerHistory(history);
+  assert.deepEqual(decodePointerHistory(encoded), history);
+  assert.equal(encodePointerHistory(decodePointerHistory(encoded)), encoded);
+});
+
+test("replaying a pointer event is the production interaction path, unchanged", () => {
+  const state = aquarium();
+
+  // A press is applyTouch on the mapped point and nothing else. This is the one
+  // seam Phase 1 replaces; if it ever stops matching, the harness has started
+  // measuring an aquarium the product does not have.
+  const press = applyPointerEvent(state, { type: "down", x: 33, y: 9.5, seconds: 0 });
+  assert.equal(press.delivered, true);
+  assert.deepEqual(press.state, applyTouch(state, 33, 9.5));
+
+  // Movement, hold duration and release carry no meaning today. The harness
+  // delivers them and records that the aquarium ignored them.
+  for (const type of ["move", "up"]) {
+    const result = applyPointerEvent(state, { type, x: 33, y: 9.5, seconds: 0.2 });
+    assert.equal(result.delivered, false);
+    assert.equal(result.reason, "inert-today");
+    assert.equal(result.state, state);
+  }
+
+  // The hidden developer corner is not part of the aquarium's interaction
+  // surface, and a scenario cannot accidentally tap through it.
+  const hotspot = applyPointerEvent(state, { type: "down", x: DISPLAY.cols - 1, y: 0.5, seconds: 0 });
+  assert.equal(hotspot.delivered, false);
+  assert.equal(hotspot.reason, "developer-hotspot");
+  assert.equal(hotspot.state, state);
+});
+
+test("an observation with no input reports an aquarium that was not touched", () => {
+  const observation = observeInteraction(aquarium(), { history: [], observeSeconds: 2 });
+
+  assert.equal(observation.pointer.delivered, 0);
+  assert.equal(observation.aquarium.respondingStrongly, 0);
+  assert.equal(observation.aquarium.respondingWeakly, 0);
+  assert.equal(observation.aquarium.unaffected, observation.fish.length);
+  assert.equal(observation.aquarium.plantsDisturbed, 0);
+  assert.equal(observation.aquarium.bubblesCreated, 0);
+  assert.equal(observation.aquarium.residentsAffected, 0);
+  assert.equal(observation.aquarium.schoolCentroidDisplacement, 0);
+  for (const frame of observation.timeline) assert.equal(frame.deviation, 0);
+  // Ordinary life still costs the renderer something, and the harness has to
+  // report that rather than a zero.
+  assert.ok(observation.render.averageDamagePercent > 0);
+  assert.equal(observation.render.fullRedraws, 0);
+});
+
+test("the same history replayed twice measures the same aquarium", () => {
+  const state = aquarium();
+  const history = pointerHistory(tap(33, 9.5, { at: 0.5 }));
+  const first = observeInteraction(state, { history, observeSeconds: 3 });
+  const second = observeInteraction(state, { history: decodePointerHistory(first.pointer.encoded), observeSeconds: 3 });
+
+  assert.deepEqual(second.fish, first.fish);
+  assert.deepEqual(second.aquarium, first.aquarium);
+  assert.deepEqual(second.render, first.render);
+  assert.deepEqual(second.moments, first.moments);
+
+  // A phone shows the same aquarium scaled, so the same world point delivered
+  // through a half-size viewport has to reach the same water.
+  const scaled = observeInteraction(state, { history, observeSeconds: 3, viewportScale: 0.5 });
+  assert.deepEqual(scaled.fish, first.fish);
+});
+
+test("an observed tap carries the per-fish measurements the phase gate asks for", () => {
+  const state = aquarium();
+  const observation = observeInteraction(state, {
+    history: pointerHistory(tap(33, 9.5, { at: 0.5 })),
+    observeSeconds: 4,
+  });
+
+  assert.equal(observation.fish.length, state.individuals.length);
+  for (const fish of observation.fish) {
+    assert.equal(typeof fish.id, "string");
+    for (const trait of ["boldness", "sociability", "activity", "preferredDepth", "curiosity"]) {
+      assert.ok(Number.isFinite(fish.traits[trait]), `${trait} is not measured`);
+    }
+    assert.ok(Number.isFinite(fish.glassAffinity));
+    assert.ok(Number.isFinite(fish.familiarity.touches));
+    assert.ok(Number.isFinite(fish.startDistance));
+    assert.ok(Number.isFinite(fish.closestDistance));
+    assert.ok(fish.distanceTravelled >= 0);
+    assert.ok(fish.peakSpeed >= fish.averageSpeed);
+    assert.ok(fish.peakAcceleration >= 0);
+    assert.ok(fish.peakPitch >= 0);
+    assert.ok(fish.turnCount >= 0);
+    assert.ok(fish.secondsNearStimulus >= 0);
+    assert.ok(["unaffected", "resumed", "changed", "replaced"].includes(fish.outcome));
+    assert.ok(fish.startActivity && fish.endingActivity);
+  }
+
+  // The whole-aquarium readings the plan lists, and the damage the interaction
+  // cost the incremental renderer.
+  const { aquarium: whole, render: cost } = observation;
+  assert.equal(whole.respondingStrongly + whole.respondingWeakly + whole.unaffected, observation.fish.length);
+  assert.ok(whole.schoolCentroidDisplacement >= 0);
+  assert.ok(cost.averageRectangles > 0);
+  assert.ok(cost.objects > 0 && cost.glyphs > 0);
+});
+
+test("the semantic moments run in order, inside the observation", () => {
+  const observation = observeInteraction(aquarium(), {
+    history: pointerHistory(tap(33, 9.5, { at: 0.5 })),
+    observeSeconds: 6,
+  });
+  const moments = observation.moments;
+  const names = moments.map((moment) => moment.moment);
+
+  assert.ok(names.includes("before"));
+  assert.ok(names.includes("first-response"));
+  assert.ok(names.includes("peak-response"));
+  assert.equal(names.at(-1), "aftermath");
+  for (let index = 1; index < moments.length; index += 1) {
+    assert.ok(moments[index].frame >= moments[index - 1].frame, "moments are out of order");
+    assert.ok(moments[index].frame <= observation.frames, "a moment is outside the observation");
+  }
+  // The frame before the press is the frame the aquarium had not answered yet.
+  assert.equal(moments[0].deviation, 0);
+});
+
+test("every scenario resolves against a real aquarium and taps inside the world", () => {
+  const state = aquarium();
+  for (const scenario of INTERACTION_SCENARIOS.filter((entry) => entry.context === "stocked")) {
+    const prepared = prepareScenario(scenario, () => state, { waitSeconds: 300 });
+    assert.ok(prepared.history, `${scenario.id} produced no pointer history`);
+    assert.ok(prepared.history.length <= POINTER_HISTORY_LIMIT);
+    for (const event of prepared.history) {
+      assert.ok(event.x >= 0 && event.x <= DISPLAY.cols, `${scenario.id} pressed outside the world`);
+      assert.ok(event.y >= 0 && event.y <= DISPLAY.rows, `${scenario.id} pressed outside the world`);
+    }
+    if (scenario.waitFor) {
+      assert.equal(prepared.precondition.reached, true, `${scenario.id} never saw ${scenario.waitFor}`);
+      assert.ok(scenario.waitFor.includes(prepared.precondition.activity));
+    }
+  }
+});

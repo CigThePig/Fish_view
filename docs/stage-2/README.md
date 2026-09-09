@@ -22,7 +22,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | # | Phase | State | Report |
 | --- | --- | --- | --- |
 | — | Repository preparation | Done | [baseline](baseline-2026-09-09.md) |
-| 0 | Interaction observation and baseline instrumentation | Not started | — |
+| 0 | Interaction observation and baseline instrumentation | Done | [phase 0](phase-0-interaction-observation.md) |
 | 1 | Stimulus and impulse architecture | Not started | — |
 | 2 | Attention, response roles, contextual tap | Not started | — |
 | 3 | Hold and persistent presence | Not started | — |
@@ -36,9 +36,11 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
 
-Phase 0 changes developer tooling only. It must not change production
-interaction semantics, and it has to exist before Phase 1 starts, because it is
-what proves Phase 1 preserved the visible result while replacing the mechanism.
+Phase 0 changed developer tooling only. It did not change production interaction
+semantics, and it had to exist before Phase 1 starts, because it is what proves
+Phase 1 preserved the visible result while replacing the mechanism. The
+instrument is `src/dev/interaction-observation.js`, driven by
+`npm run observe:interaction` and `npm run capture:interaction`.
 
 ## Evidence
 

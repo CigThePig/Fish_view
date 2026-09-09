@@ -97,6 +97,7 @@ plausible.
 | App | `src/app.js` | pointer events, frame loop, developer drawer |
 | Labs | `src/behavior-lab.js`, `src/sprite-sheet.js`, `src/plant-lab.js` | `behaviors.html`, `sprites.html`, `plants.html` |
 | Dev fixtures | `src/dev/behavior-showcase.js` | `SHOWCASE_SCENARIOS`, forced scenario states |
+| Interaction observation | `src/dev/interaction-observation.js` | pointer histories, controlled replay, per-fish and whole-aquarium measurements, semantic moments |
 
 Simulation state is treated as immutable: functions return a new state rather
 than mutating the one they were given. Biological time drives history and
@@ -172,9 +173,12 @@ npm run audit:render                      # incremental vs full render, pixel co
 npm run measure:feeding                   # substrate strike geometry per species and stage
 npm run measure:readability               # per-activity motion signatures and damage
 npm run measure:stage2-baseline           # tap synchronisation, damage headroom, save size
+npm run observe:interaction               # replay pointer histories; per-fish and whole-aquarium response
+npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap
 npm run measure:screen                    # panel legibility
 npm run measure:living                    # long observation summary
 npm run capture:behaviors -- --scenario playful-chase --scale 1 --gif
+npm run capture:interaction -- --scenario=open-water-tap --scale=1 --gif
 npm run capture:depth
 npm run capture:living
 npm run build:pages
