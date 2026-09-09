@@ -43,7 +43,15 @@ test("touch response is immediate, reproducible, and not probabilistic", () => {
   const first = applyTouch(state, 20, 9);
   const second = applyTouch(state, 20, 9);
   assert.deepEqual(first, second);
-  assert.deepEqual(first.reaction, { x: 20, y: 9, ageSeconds: 0, durationSeconds: 3.2 });
+  // A press is now two events rather than one global reaction: something to
+  // notice, and water that moved.
+  assert.equal(first.stimuli.length, 1);
+  assert.equal(first.impulses.length, 1);
+  assert.deepEqual(
+    { x: first.stimuli[0].x, y: first.stimuli[0].y, ageSeconds: first.stimuli[0].ageSeconds },
+    { x: 20, y: 9, ageSeconds: 0 },
+  );
+  assert.equal(first.impulses[0].source, "touch");
   assert.notDeepEqual(first.school[0], state.school[0]);
   assert.equal(first.individuals.reduce((sum, fish) => sum + fish.history.touches, 0), 1);
 });

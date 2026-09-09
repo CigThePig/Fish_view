@@ -24,7 +24,8 @@ test("returning to a suspended tab advances history and expires touch/strike sta
   const resumed = advanceOffline(touched, clock.resume(90 * 86400 * 1000));
   assert.equal(resumed.totalDays, base.totalDays + 90);
   assert.equal(resumed.timeOfDayHours, 12);
-  assert.equal(resumed.reaction, null);
+  assert.deepEqual([...resumed.stimuli], [], "a gesture cannot survive the device being off");
+  assert.deepEqual([...resumed.impulses], []);
   assert.equal(resumed.individuals[3].forageDip, 0);
   assert.equal(resumed.individuals.length, base.individuals.length, "a full tank cannot gain another fish");
   for (const fish of base.individuals) {

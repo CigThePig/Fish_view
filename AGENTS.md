@@ -89,6 +89,7 @@ plausible.
 | Choreography | `src/sim/fish-choreography.js`, `src/sim/choreography-tuning.js` | chase evasion, per-activity motion shaping |
 | Identity | `src/sim/fish-personality.js`, `src/sim/fish-roster.js`, `src/sim/fish-growth.js` | traits and growth derived from seeds |
 | Long horizon | `src/sim/aquarium-history.js` | arrivals, propagation, offline progression |
+| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring |
 | Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts |
 | Scene | `src/render/render.js` → `render(state)` | glyph scene: `objects`, `glyphs`, `background` |
 | Damage | `src/render/damage.js` → `calculateDamage(previous, next)` | dirty rectangles between two scenes |
@@ -105,20 +106,36 @@ growth; real time drives locomotion and activities. Keep that distinction.
 
 ### The interaction path as it stands today
 
-Stage 2 Phase 1 replaces this, so know what it does before you change it.
+Stage 2 Phase 2 changes what fish do with a touch, so know what this does before
+you change it.
 
 `src/app.js` handles primary `pointerdown`, maps the event through
 `aquariumPoint`, and — outside the developer hotspot — calls `applyTouch`.
-`applyTouch` in `src/sim/state.js` steers the whole school toward the point,
-forces **every** persistent fish into the `touch-react` activity, gives the
-nearest fish a small permanent boldness and sociability drift, and sets a single
-`state.reaction` that lives for 3.2 seconds. Pointer movement, hold and release
-have no gameplay meaning. Plants already bend near touch; a substrate touch
-already releases a small deterministic bubble burst; the renderer already draws
-an expanding ripple.
+`applyTouch` in `src/sim/state.js` registers **one stimulus and one impulse**
+(`src/sim/interaction-events.js`), then applies the response in the same frame:
+it steers the whole school at the stimulus, forces **every** persistent fish
+into the `touch-react` activity, and gives the nearest fish a small permanent
+boldness and sociability drift. Pointer movement, hold and release still have no
+meaning.
+
+The two event types are the Phase 1 architecture and the distinction is
+load-bearing:
+
+- a **stimulus** is something inhabitants can notice — position, intensity, a
+  perception radius, an age and a duration. Fish read it; nothing is pushed by
+  it. A tap's radius currently spans the aquarium, which is exactly why one tap
+  still reaches all fifteen fish, and exactly what Phase 2 narrows.
+- an **impulse** is water actually moving — position, strength, radius, envelope
+  and what it touched. Plants bend in it, a substrate impulse shakes bubbles
+  loose, the renderer draws its ripple. None of that needs a behaviour.
+
+Both are transient: capped at six each, coalesced when a press repeats within
+1.2 cells, dropped the frame they are spent, never serialised, and cleared by an
+offline gap. `tests/interaction-events.test.js` guards those rules.
 
 The measured consequence, and the thing Stage 2 exists to end: one tap puts all
 fifteen fish of a stocked aquarium into the same activity in the same tick.
+Reproduce it with `npm run observe:interaction`.
 
 ## Working agreement
 

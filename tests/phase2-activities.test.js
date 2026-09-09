@@ -4,6 +4,7 @@ import test from "node:test";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
 import { DRIVE_MAXIMUM } from "../src/sim/config.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
+import { createStimulus } from "../src/sim/interaction-events.js";
 import {
   ACTIVITIES,
   activityUtilities,
@@ -301,17 +302,23 @@ test("touch immediately overrides every major activity and remains deterministic
 test("glass affinity changes deterministic approach style without allowing refusal", () => {
   const base = stockedAquarium({ seed: 772 });
   const source = withBehavior(base.individuals[4], "explore");
+  const stimulus = createStimulus({
+    id: "touch:test",
+    x: source.x + 1.5,
+    y: source.y - 0.4,
+    radius: Math.hypot(base.cols, base.rows),
+  });
   const state = {
     ...base,
-    reaction: { x: source.x + 1.5, y: source.y - 0.4, ageSeconds: 0, durationSeconds: 3.2 },
+    stimuli: [stimulus],
     individuals: base.individuals.map((fish, index) => index === 4 ? source : fish),
   };
   const cautious = tickFishActivity(source, 4, state, 0.1, { affinities: affinities({ glass: 0.1 }) });
   const eager = tickFishActivity(source, 4, state, 0.1, { affinities: affinities({ glass: 0.95 }) });
   assert.equal(cautious.activity.current, ACTIVITIES.touchReact);
   assert.equal(eager.activity.current, ACTIVITIES.touchReact);
-  assert.ok(Math.hypot(cautious.target.x - state.reaction.x, cautious.target.y - state.reaction.y)
-    > Math.hypot(eager.target.x - state.reaction.x, eager.target.y - state.reaction.y));
+  assert.ok(Math.hypot(cautious.target.x - stimulus.x, cautious.target.y - stimulus.y)
+    > Math.hypot(eager.target.x - stimulus.x, eager.target.y - stimulus.y));
 });
 
 test("familiar energetic fish can select a brief bounded playful chase", () => {

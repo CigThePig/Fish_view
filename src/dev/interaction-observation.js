@@ -23,13 +23,13 @@
  * control run, ordinary life reads as a response.
  *
  * **The interaction path has one seam.** `applyPointerEvent` is the only place
- * that turns a pointer event into aquarium state. Today it does what
- * `src/app.js` does - a primary press outside the developer hotspot calls
- * `applyTouch`, and movement, hold duration and release mean nothing - so the
- * harness measures the real product rather than an idealised one. Phase 1
- * replaces the body of that one function, and every scenario, measurement and
- * capture here keeps working across the change. That is the point of building
- * it first.
+ * that turns a pointer event into aquarium state. It does what `src/app.js`
+ * does - a primary press outside the developer hotspot calls `applyTouch`, and
+ * movement, hold duration and release mean nothing - so the harness measures
+ * the real product rather than an idealised one. Phase 1 rebuilt what
+ * `applyTouch` does underneath, onto stimuli and impulses, and every scenario,
+ * measurement and capture here went on reading the same numbers. That is the
+ * point of having built it first.
  */
 
 import { aquariumPoint } from "../platform/aquarium-input.js";
@@ -214,13 +214,15 @@ export function pointerEventForWorldPoint(x, y, rect = displayRect()) {
 }
 
 /**
- * The one seam Phase 1 replaces.
+ * The one seam a gesture reaches the aquarium through.
  *
  * What the product does today, in full: a press outside the developer hotspot
- * steers the school, forces every persistent fish into `touch-react` and starts
- * a single 3.2-second reaction. Movement and release are inert - not ignored by
- * this harness, but genuinely meaningless to the aquarium - which is why a hold
- * and a swipe currently measure the same as the tap that began them.
+ * registers a stimulus and a water impulse (Phase 1), steers the school and
+ * forces every persistent fish into `touch-react` for the stimulus's 3.2
+ * seconds. Movement and release are inert - not ignored by this harness, but
+ * genuinely meaningless to the aquarium - which is why a hold and a swipe still
+ * measure the same as the tap that began them. Phase 2 changes what the fish do
+ * with the stimulus; Phases 3 and 4 give the rest of the gesture meaning here.
  */
 export function applyPointerEvent(state, event, { rect = displayRect() } = {}) {
   const point = aquariumPoint(pointerEventForWorldPoint(event.x, event.y, rect), rect);
@@ -815,6 +817,20 @@ export const INTERACTION_SCENARIOS = Object.freeze([
     waitFor: [ACTIVITIES.bubbleInvestigate],
     describe: "A tap beside a fish following a bubble it found by itself.",
     gesture: (point) => tap(point.x, point.y, { at: 1 }),
+  }),
+  // Phase 1 gave the aquarium room for more than one live disturbance. Two
+  // fingers, half a tank apart, is the smallest scenario that shows it: under
+  // the single global reaction the second press erased the first.
+  Object.freeze({
+    id: "two-point-tap",
+    label: "Two-point tap",
+    context: "stocked",
+    describe: "Two presses at once, half the tank between them.",
+    anchor: (state) => ({ x: state.cols * 0.28, y: midWaterY(state) }),
+    gesture: (point, state) => pointerHistory(
+      tap(point.x, point.y, { at: 1 }),
+      tap(state.cols * 0.72, point.y + 1.5, { at: 1 }),
+    ),
   }),
   Object.freeze({
     id: "open-water-hold",

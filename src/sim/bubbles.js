@@ -276,40 +276,40 @@ function fishExhaleRecords(state) {
   return records;
 }
 
+// A press on the sand knocks trapped air loose. It is an impulse effect - the
+// water was disturbed there - so it asks the impulse what it touched rather
+// than re-deriving it from a global reaction's coordinates.
 function touchBubbleRecords(state) {
-  const reaction = state.reaction;
-  if (!reaction) return [];
-  const substrateTouchY = state.rows - 5;
-  if (reaction.y < substrateTouchY - 0.01) return [];
-
-  const burstSeed = mix32(state.seed ^ Math.imul(Math.round(reaction.x * 64) + 1, 0x9e3779b1));
-  const count = 3 + Math.floor(sample01(burstSeed, 60) * 4);
-  const sourceY = waterBottom(state, reaction.x);
-  const current = environmentalCurrent(state.seed, state.elapsedRealSeconds);
   const records = [];
-  for (let index = 0; index < count; index += 1) {
-    const seed = mix32(burstSeed ^ Math.imul(index + 1, 0xc2b2ae35));
-    const ageSeconds = reaction.ageSeconds - index * sampleRange(seed, 61, 0.12, 0.24);
-    if (ageSeconds < 0 || ageSeconds > reaction.durationSeconds) continue;
-    const speed = sampleRange(seed, 62, 0.5, 0.76);
-    records.push({
-      id: `bubble:touch:${burstSeed}:${index}`,
-      seed,
-      kind: "touch",
-      phase: "rise",
-      sizeClass: sample01(seed, 65) < 0.74 ? "micro" : "normal",
-      speed,
-      progress: clamp(ageSeconds / reaction.durationSeconds, 0, 1),
-      distance: 1,
-      worldX: clamp(
-        reaction.x + sampleSigned(seed, 63) * 0.65
-          + current.primary * 0.12
-          + Math.sin(ageSeconds * sampleRange(seed, 64, 1.2, 2.2)) * 0.18,
-        0.4,
-        state.cols - 0.4,
-      ),
-      worldY: sourceY - ageSeconds * speed,
-    });
+  for (const impulse of state.impulses ?? []) {
+    if (impulse.contact !== "substrate") continue;
+    const count = 3 + Math.floor(sample01(impulse.seed, 60) * 4);
+    const sourceY = waterBottom(state, impulse.x);
+    const current = environmentalCurrent(state.seed, state.elapsedRealSeconds);
+    for (let index = 0; index < count; index += 1) {
+      const seed = mix32(impulse.seed ^ Math.imul(index + 1, 0xc2b2ae35));
+      const ageSeconds = impulse.ageSeconds - index * sampleRange(seed, 61, 0.12, 0.24);
+      if (ageSeconds < 0 || ageSeconds > impulse.durationSeconds) continue;
+      const speed = sampleRange(seed, 62, 0.5, 0.76);
+      records.push({
+        id: `bubble:touch:${impulse.seed}:${index}`,
+        seed,
+        kind: "touch",
+        phase: "rise",
+        sizeClass: sample01(seed, 65) < 0.74 ? "micro" : "normal",
+        speed,
+        progress: clamp(ageSeconds / impulse.durationSeconds, 0, 1),
+        distance: 1,
+        worldX: clamp(
+          impulse.x + sampleSigned(seed, 63) * 0.65
+            + current.primary * 0.12
+            + Math.sin(ageSeconds * sampleRange(seed, 64, 1.2, 2.2)) * 0.18,
+          0.4,
+          state.cols - 0.4,
+        ),
+        worldY: sourceY - ageSeconds * speed,
+      });
+    }
   }
   return records;
 }

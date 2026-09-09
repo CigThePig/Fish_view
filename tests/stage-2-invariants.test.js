@@ -75,7 +75,7 @@ test("a decade of aquarium and repeated interaction does not grow the save", () 
 
   // Transient interaction state is reconstructed, never restored: a reaction,
   // stimulus or impulse that survived a reload would replay an old gesture.
-  for (const key of ["reaction", "stimuli", "impulses", "pointer", "gestures"]) {
+  for (const key of ["reaction", "stimuli", "impulses", "interactionSequence", "pointer", "gestures"]) {
     assert.equal(key in payload, false, `${key} must not be persisted`);
   }
 });

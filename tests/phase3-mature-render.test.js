@@ -166,7 +166,8 @@ test("a rare bloom is a slow palette change, not a per-frame invalidation", () =
   const stateAt = (ageDays) => ({
     ...base,
     individuals: [],
-    reaction: null,
+    stimuli: [],
+    impulses: [],
     plants: [{ ...specimen, ageDays }],
   });
 

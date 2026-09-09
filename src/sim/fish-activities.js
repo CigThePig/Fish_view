@@ -6,6 +6,7 @@ import { sceneTuning } from "./choreography-tuning.js";
 import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import { fishShoals } from "./fish-roster.js";
+import { dominantStimulus, perceivesStimulus } from "./interaction-events.js";
 import {
   MAX_FISH_PITCH_DEGREES,
   forageActivity,
@@ -775,12 +776,13 @@ export function resolveActivityTarget(fish, index, state, activity, {
     });
   }
   if (activity.current === ACTIVITIES.touchReact) {
-    if (!state.reaction) return null;
-    const away = safeNormalize(fish.x - state.reaction.x, fish.y - state.reaction.y, fish.vx < 0 ? -1 : 1, 0);
+    const stimulus = dominantStimulus(state);
+    if (!stimulus) return null;
+    const away = safeNormalize(fish.x - stimulus.x, fish.y - stimulus.y, fish.vx < 0 ? -1 : 1, 0);
     const standoff = 0.2 + (1 - affinities.glass) * 0.82;
     return choreographed(state, activity.current, {
-      x: state.reaction.x + away.x * standoff,
-      y: state.reaction.y + away.y * standoff,
+      x: stimulus.x + away.x * standoff,
+      y: stimulus.y + away.y * standoff,
       speed: 0.56 + affinities.glass * 0.25,
       postureBias: 0,
       touchReact: true,
@@ -1178,15 +1180,21 @@ function naturalCompletion(fish, activity, target, dwell) {
 export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   const traits = context.traits ?? traitsFromSeed(fish.seed, fish.history);
   const affinities = context.affinities ?? affinitiesFromSeed(fish.seed);
-  if (state.reaction) {
+  // Today every fish that can perceive the stimulus answers it, and the radius
+  // of a tap covers the whole aquarium, so this is the global response the
+  // baseline measured. Phase 2 replaces the condition with a response role;
+  // the plumbing it needs - which stimulus, perceived by whom - is here.
+  const stimulus = dominantStimulus(state);
+  if (stimulus && perceivesStimulus(fish, stimulus)) {
     const previous = normalizedActivity(fish);
     const activity = previous.current === ACTIVITIES.touchReact
       ? { ...previous, ageRealSeconds: previous.ageRealSeconds + realDelta }
       : {
         ...createActivityState(ACTIVITIES.touchReact, previous.current),
         targetType: "touch",
-        targetX: state.reaction.x,
-        targetY: state.reaction.y,
+        targetId: stimulus.id,
+        targetX: stimulus.x,
+        targetY: stimulus.y,
       };
     return {
       activity,

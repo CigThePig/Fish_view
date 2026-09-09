@@ -19,6 +19,7 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
+import { createImpulse } from "../sim/interaction-events.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
@@ -830,33 +831,37 @@ function drawForageDebris(builder, state, palette, metrics) {
   });
 }
 
-function drawReaction(builder, reaction, palette, metrics) {
-  if (!reaction) return;
-  const progress = clamp(reaction.ageSeconds / reaction.durationSeconds, 0, 1);
-  const radius = 0.62 + smoothstep(progress) * 5.15;
-  const samples = 16;
-  const glyphs = [];
-  for (let index = 0; index < samples; index += 1) {
-    const angle = (index / samples) * TAU;
-    const char = progress < 0.3 ? "O" : progress < 0.68 ? "o" : index % 2 ? "." : "'";
+// The visible correlate of an impulse: the ring the water makes where it was
+// disturbed. One per live impulse, each a scene object of its own so the
+// renderer damages the water it actually rang and nothing else.
+function drawImpulseRipples(builder, state, palette, metrics) {
+  for (const impulse of state.impulses ?? []) {
+    const progress = clamp(impulse.ageSeconds / impulse.durationSeconds, 0, 1);
+    const radius = 0.62 + smoothstep(progress) * 5.15;
+    const samples = 16;
+    const glyphs = [];
+    for (let index = 0; index < samples; index += 1) {
+      const angle = (index / samples) * TAU;
+      const char = progress < 0.3 ? "O" : progress < 0.68 ? "o" : index % 2 ? "." : "'";
+      glyphs.push(positionedGlyph(metrics, {
+        char,
+        worldX: impulse.x + Math.cos(angle) * radius,
+        worldY: impulse.y + Math.sin(angle) * radius * 0.5,
+        fg: palette.ripple,
+        scaleX: 0.78,
+        scaleY: 0.78,
+      }));
+    }
     glyphs.push(positionedGlyph(metrics, {
-      char,
-      worldX: reaction.x + Math.cos(angle) * radius,
-      worldY: reaction.y + Math.sin(angle) * radius * 0.5,
+      char: progress < 0.5 ? "o" : ".",
+      worldX: impulse.x,
+      worldY: impulse.y,
       fg: palette.ripple,
-      scaleX: 0.78,
-      scaleY: 0.78,
+      scaleX: 0.72,
+      scaleY: 0.72,
     }));
+    addGlyphObject(builder, { id: `reaction:ripple:${impulse.id}`, layer: LAYERS.reaction, glyphs, padding: 2 });
   }
-  glyphs.push(positionedGlyph(metrics, {
-    char: progress < 0.5 ? "o" : ".",
-    worldX: reaction.x,
-    worldY: reaction.y,
-    fg: palette.ripple,
-    scaleX: 0.72,
-    scaleY: 0.72,
-  }));
-  addGlyphObject(builder, { id: "reaction:ripple", layer: LAYERS.reaction, glyphs, padding: 2 });
 }
 
 function drawSubstrate(builder, state, palette, metrics) {
@@ -913,7 +918,7 @@ export function render(state, { deformationStrength = 1 } = {}) {
   drawSchool(builder, state, palette, metrics);
   drawForageDebris(builder, state, palette, metrics);
   drawIndividuals(builder, state, palette, metrics, deformationStrength);
-  drawReaction(builder, state.reaction, palette, metrics);
+  drawImpulseRipples(builder, state, palette, metrics);
   drawSubstrate(builder, state, palette, metrics);
   return finalizeScene(builder);
 }
@@ -1061,9 +1066,9 @@ export function renderPlantLabScene(speciesId, {
         { x: 11.9, y: rootY - mature.matureHeight * 0.52, vx: 0.62, vy: 0 },
       ]
       : [],
-    reaction: disturbance === "touch"
-      ? { x: 9, y: rootY - mature.matureHeight * 0.35, ageSeconds: 0.9, durationSeconds: 3.2 }
-      : null,
+    impulses: disturbance === "touch"
+      ? [createImpulse({ id: "touch:lab", x: 9, y: rootY - mature.matureHeight * 0.35, ageSeconds: 0.9 })]
+      : [],
   };
   const palette = scenePalette(state);
   const builder = createSceneBuilder({

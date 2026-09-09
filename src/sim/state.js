@@ -16,6 +16,7 @@ import {
   sanitizeSettings,
 } from "./config.js";
 import { clamp, createIndividual, createIndividualFromSeed, createSchoolFish } from "./entities.js";
+import { createInteractionState, registerTouch } from "./interaction-events.js";
 import {
   ACTIVITIES,
   BEHAVIORS,
@@ -83,7 +84,9 @@ export function createAquariumState({
     // Bounded long-horizon bookkeeping. This is a processing cursor, not a
     // hidden user-facing statistic, and it cannot grow with aquarium age.
     content: createContentState(),
-    reaction: null,
+    // Transient interaction events. Never serialised, capped, and cleared by a
+    // reload or an offline gap - see src/sim/interaction-events.js.
+    ...createInteractionState(),
   };
 }
 
@@ -98,8 +101,16 @@ export function applyTouch(state, x, y) {
   let nearestIndex = 0;
   let nearestDistance = Number.POSITIVE_INFINITY;
 
+  // A press is two separate things: water that moves, and something the
+  // inhabitants can notice. Registering them is what makes the aquarium
+  // disturbed; the rest of this function is the perception response, applied in
+  // the frame the press arrives because a viewer must never wait a tick to be
+  // acknowledged.
+  const events = registerTouch(state, safeX, safeY);
+  const stimulus = events.stimulus;
+
   const school = state.school.map((fish) => {
-    const direction = normalizeVector(safeX - fish.x, safeY - fish.y);
+    const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     return {
       ...fish,
       vx: direction.x * state.settings.schoolSpeed * 1.18,
@@ -107,13 +118,17 @@ export function applyTouch(state, x, y) {
     };
   });
 
+  // Every persistent fish drops what it was doing and answers. That is the
+  // behaviour Stage 2 exists to end, and Phase 2 is where it ends: this phase
+  // moves the mechanism onto the event model without changing what a viewer
+  // sees, so that the change in Phase 2 is a change in one place.
   const individuals = state.individuals.map((fish, index) => {
-    const distance = Math.hypot(safeX - fish.x, safeY - fish.y);
+    const distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y);
     if (distance < nearestDistance) {
       nearestDistance = distance;
       nearestIndex = index;
     }
-    const direction = normalizeVector(safeX - fish.x, safeY - fish.y);
+    const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     const glassAffinity = affinitiesFromSeed(fish.seed).glass;
     return {
       ...fish,
@@ -128,8 +143,9 @@ export function applyTouch(state, x, y) {
       activity: {
         ...createActivityState(ACTIVITIES.touchReact, fish.activity?.current ?? fish.behavior.current),
         targetType: "touch",
-        targetX: safeX,
-        targetY: safeY,
+        targetId: stimulus.id,
+        targetX: stimulus.x,
+        targetY: stimulus.y,
       },
       visual: { ...fish.visual },
     };
@@ -150,12 +166,9 @@ export function applyTouch(state, x, y) {
     ...state,
     school,
     individuals,
-    reaction: {
-      x: safeX,
-      y: safeY,
-      ageSeconds: 0,
-      durationSeconds: 3.2,
-    },
+    stimuli: events.stimuli,
+    impulses: events.impulses,
+    interactionSequence: events.interactionSequence,
   };
 }
 
@@ -490,7 +503,10 @@ export function advanceOffline(state, realSeconds) {
     ...advanced,
     elapsedSimSeconds: state.elapsedSimSeconds + seconds,
     timeOfDayHours: hour,
-    reaction: null,
+    // A gesture cannot survive the device being off. The counter does, so ids
+    // stay unique across a resume.
+    stimuli: Object.freeze([]),
+    impulses: Object.freeze([]),
     individuals: advanced.individuals.map(({ exhale, ...fish }) => ({
       ...fish,
       forageDip: 0,

@@ -17,6 +17,7 @@ import {
 import { fishSpriteWidth, speciesCanBottomFeed } from "./fish-growth.js";
 import { fishShoals, schoolCountFor } from "./fish-roster.js";
 import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
+import { ageInteractionEvents, dominantStimulus, stimulusSalience } from "./interaction-events.js";
 import {
   BEHAVIORS,
   socialEngagement,
@@ -115,7 +116,12 @@ function tickSchool(state, realDelta, motionScale) {
   const centerY = top + (bottom - top) * (0.5 + Math.sin(state.elapsedRealSeconds / 94) * 0.055);
   const maxSpeed = state.settings.schoolSpeed * motionScale;
   const minimumSpeed = Math.max(0.24, maxSpeed * 0.42);
-  const reactionStrength = state.reaction ? 1.8 * (1 - state.reaction.ageSeconds / state.reaction.durationSeconds) : 0;
+  // The school is drawn to whatever the aquarium is currently attending to.
+  // With one tap that is the tap, exactly as before; the difference is that the
+  // school now asks what the most salient stimulus is rather than reading the
+  // one global reaction there used to be.
+  const stimulus = dominantStimulus(state);
+  const reactionStrength = 1.8 * stimulusSalience(stimulus);
 
   return source.map((fish, index) => {
     const journey = schoolJourney(state, index);
@@ -176,8 +182,8 @@ function tickSchool(state, realDelta, motionScale) {
     if (fish.y > bottom - 1.2) ay -= (fish.y - (bottom - 1.2)) * state.settings.boundary;
     ay += (centerY - fish.y) * state.settings.depthPreference * 0.09;
 
-    if (state.reaction && reactionStrength > 0) {
-      const toward = safeNormalize(state.reaction.x - fish.x, state.reaction.y - fish.y, index % 2 ? -1 : 1, 0);
+    if (stimulus && reactionStrength > 0) {
+      const toward = safeNormalize(stimulus.x - fish.x, stimulus.y - fish.y, index % 2 ? -1 : 1, 0);
       ax += toward.x * reactionStrength;
       ay += toward.y * reactionStrength;
     }
@@ -536,10 +542,9 @@ export function tick(state, dt) {
   const timeOfDayHours = (state.timeOfDayHours + simDelta / 3600) % 24;
   const daylight = daylightFactor(timeOfDayHours);
   const motionScale = 0.43 + daylight * 0.57;
-  const reaction = state.reaction
-    ? { ...state.reaction, ageSeconds: state.reaction.ageSeconds + realDelta }
-    : null;
-  const activeReaction = reaction && reaction.ageSeconds < reaction.durationSeconds ? reaction : null;
+  // Interaction events age on the real-time clock and are dropped the instant
+  // they are spent, so the transient lists never outlive the gesture.
+  const events = ageInteractionEvents(state, realDelta);
   // Long-horizon world state - aquarium age, plant growth, and every discrete
   // historical event - is owned by one shared resolver so live accelerated
   // simulation and offline catch-up cannot drift apart. It runs on the full
@@ -550,7 +555,7 @@ export function tick(state, dt) {
     elapsedRealSeconds: state.elapsedRealSeconds + realDelta,
     elapsedSimSeconds: state.elapsedSimSeconds + simDelta,
     timeOfDayHours,
-    reaction: activeReaction,
+    ...events,
   };
   const school = tickSchool(context, realDelta, motionScale);
   const activityContext = { ...context, school };

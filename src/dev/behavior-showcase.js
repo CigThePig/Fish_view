@@ -10,6 +10,7 @@ import { plantHeight } from "../sim/plants.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { speciesCanBottomFeed } from "../sim/fish-growth.js";
+import { createImpulse, createStimulus } from "../sim/interaction-events.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 import { substrateGrazeY, substrateSafeY, surfaceSafeY } from "../sim/fish-motion.js";
@@ -447,7 +448,8 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
     });
     state = {
       ...state,
-      reaction: { ...touch, ageSeconds: 0, durationSeconds: 3.2 },
+      stimuli: [createStimulus({ id: "touch:showcase", ...touch, radius: Math.hypot(state.cols, state.rows) })],
+      impulses: [createImpulse({ id: "touch:showcase", ...touch })],
     };
   } else if (scenario.id === ACTIVITIES.arrivalEnter) {
     const destination = { x: state.cols * 0.34, y: state.rows * 0.44 };

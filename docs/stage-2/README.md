@@ -23,7 +23,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | --- | --- | --- | --- |
 | — | Repository preparation | Done | [baseline](baseline-2026-09-09.md) |
 | 0 | Interaction observation and baseline instrumentation | Done | [phase 0](phase-0-interaction-observation.md) |
-| 1 | Stimulus and impulse architecture | Not started | — |
+| 1 | Stimulus and impulse architecture | Done | [phase 1](phase-1-stimulus-impulse.md) |
 | 2 | Attention, response roles, contextual tap | Not started | — |
 | 3 | Hold and persistent presence | Not started | — |
 | 4 | Drag, swipe and local water impulse | Not started | — |
@@ -36,11 +36,16 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
 
-Phase 0 changed developer tooling only. It did not change production interaction
-semantics, and it had to exist before Phase 1 starts, because it is what proves
-Phase 1 preserved the visible result while replacing the mechanism. The
-instrument is `src/dev/interaction-observation.js`, driven by
-`npm run observe:interaction` and `npm run capture:interaction`.
+Phase 1 replaced the single global `state.reaction` with bounded transient
+`stimuli` and `impulses` (`src/sim/interaction-events.js`) and routed the
+existing tap through them without changing what a viewer sees. Compare any later
+run against an earlier phase's evidence with
+`npm run observe:interaction -- --compare=<evidence.json>`.
+
+Phase 0 changed developer tooling only, and it is what made that claim
+checkable: the instrument is `src/dev/interaction-observation.js`, driven by
+`npm run observe:interaction` and `npm run capture:interaction`, and Phase 1's
+evidence is 42 of 42 of its scenarios reading identically across the rewrite.
 
 ## Evidence
 

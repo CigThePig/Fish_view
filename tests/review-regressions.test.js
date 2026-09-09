@@ -47,7 +47,8 @@ test("implicit terminal stems stay structural instead of becoming detached tip d
   const state = {
     ...stockedAquarium({ seed: 147, wallClockHours: 12 }),
     individuals: [],
-    reaction: null,
+    stimuli: [],
+    impulses: [],
   };
   const target = DISPLAY;
   const metrics = {

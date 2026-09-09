@@ -6,6 +6,7 @@ import {
 import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
 import { PLANT_ROOT_BURIAL_ROWS } from "./environment.js";
 import { plantGroundY, plantDepthScale } from "./habitat-depth.js";
+import { impulseStrength } from "./interaction-events.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 const TAU = Math.PI * 2;
@@ -328,17 +329,20 @@ export function createPlantFrameContext(state, {
   };
 }
 
-function touchDisturbance(plant, state) {
-  const reaction = state.reaction;
-  if (!reaction || reaction.durationSeconds <= 0) return 0;
-  const progress = clamp(reaction.ageSeconds / reaction.durationSeconds, 0, 1);
-  const distance = Math.abs(plant.x - reaction.x);
-  const radius = 7.5;
-  if (distance >= radius) return 0;
-  const outward = plant.x === reaction.x ? (plant.seed & 1 ? -1 : 1) : Math.sign(plant.x - reaction.x);
-  const spatial = 1 - distance / radius;
-  const envelope = Math.sin(progress * Math.PI) * (1 - progress * 0.45);
-  return outward * spatial * envelope * 0.32;
+// Plants bend in water that is moving, which is an impulse - they have no idea
+// anything is out there and no behaviour to run. The bend used to hard-code the
+// radius and the rise-and-fall envelope; both now belong to the event, so a
+// stronger or wider disturbance in a later phase bends them further without
+// touching this function.
+function impulseDisturbance(plant, state) {
+  let total = 0;
+  for (const impulse of state.impulses ?? []) {
+    const distance = Math.abs(plant.x - impulse.x);
+    if (distance >= impulse.radius) continue;
+    const outward = plant.x === impulse.x ? (plant.seed & 1 ? -1 : 1) : Math.sign(plant.x - impulse.x);
+    total += outward * (1 - distance / impulse.radius) * impulseStrength(impulse) * 0.32;
+  }
+  return total;
 }
 
 function fishDisturbance(plant, state, species) {
@@ -363,7 +367,7 @@ function fishDisturbance(plant, state, species) {
 function disturbanceForPlant(plant, state, species, frameContext, override) {
   if (Number.isFinite(override)) return clamp(override, -0.6, 0.6);
   if (!frameContext.interactions) return 0;
-  return clamp(touchDisturbance(plant, state) + fishDisturbance(plant, state, species), -0.42, 0.42);
+  return clamp(impulseDisturbance(plant, state) + fishDisturbance(plant, state, species), -0.42, 0.42);
 }
 
 export function posePlant(plant, state, {

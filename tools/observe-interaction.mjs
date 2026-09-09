@@ -16,7 +16,7 @@
 //   npm run observe:interaction
 //   npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap
 //   npm run observe:interaction -- --history="1:d:33:9.5 1.1:u:33:9.5" --scenario=none
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { auditOptions, importFrom, writeAudit } from "./audit-options.mjs";
@@ -35,6 +35,10 @@ const options = auditOptions({
   // the per-frame timelines, and with the per-fish table only for the first
   // seed. That is the file a phase report links to.
   evidence: "",
+  // An evidence file from an earlier phase. Every scenario this run shares with
+  // it is compared field for field, which is how a phase says whether it
+  // changed what a viewer sees or only how the aquarium is built.
+  compare: "",
 });
 
 const harness = await importFrom(options.root, "src/dev/interaction-observation.js");
@@ -207,6 +211,32 @@ if (taps.length) {
       + ` → ${aquarium.activitiesAfterInput} after`
       + `${aquarium.activitiesAfterInput === 1 ? "  (whole cast synchronised)" : ""}`);
   }
+}
+
+// Comparison against an earlier phase's evidence.
+if (options.compare) {
+  const baseline = JSON.parse(await readFile(path.resolve(options.compare), "utf8"));
+  const key = (entry) => `${entry.seed}:${entry.id}`;
+  const baselineByKey = new Map(baseline.scenarios.map((entry) => [key(entry), entry]));
+  const compared = ["anchor", "pointer", "aquarium", "render", "moments"];
+  const differing = [];
+  let identical = 0;
+  let unmatched = 0;
+  for (const entry of report.scenarios) {
+    const before = baselineByKey.get(key(entry));
+    if (!before) {
+      unmatched += 1;
+      continue;
+    }
+    const changed = compared.filter((field) => JSON.stringify(before[field] ?? null)
+      !== JSON.stringify(field === "moments" ? entry.moments ?? null : entry.observation?.[field] ?? entry[field] ?? null));
+    if (changed.length) differing.push(`${key(entry)}: ${changed.join(", ")}`);
+    else identical += 1;
+  }
+  console.log(`\nCompared against ${options.compare}`);
+  console.log(`${identical} scenario(s) identical, ${differing.length} changed`
+    + `${unmatched ? `, ${unmatched} not in the baseline` : ""}`);
+  for (const line of differing) console.log(`- ${line}`);
 }
 
 await writeAudit(options.output, "interaction-observation", report);
