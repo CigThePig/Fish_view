@@ -196,7 +196,7 @@ test("the authored feeding rotations fit the pitch ceiling between them", () => 
 
   // And a setting that does over-run is bounded where it is composed rather
   // than at the clamp, so the lab shows a capped strike instead of a silent one.
-  const base = stockedAquarium({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 7331, wallClockHours: 12 });
   const grazing = {
     ...base.individuals[4],
     y: substrateGrazeY(base.individuals[4], base, base.individuals[4].x, 4),
@@ -229,7 +229,7 @@ test("the authored feeding rotations fit the pitch ceiling between them", () => 
 });
 
 test("bottom feeding answers its rotation and distance tuning", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 7331, wallClockHours: 12 });
   const fish = base.individuals[4];
   const deeper = {
     ...base,
@@ -280,7 +280,7 @@ test("chase tuning moves both fish, not only the chaser", () => {
 });
 
 test("bubble inspection answers its own standoff tuning", () => {
-  let state = createShowcaseState({ orientation: "landscape", scenario: ACTIVITIES.bubbleInvestigate });
+  let state = createShowcaseState({ scenario: ACTIVITIES.bubbleInvestigate });
   let target = showcaseTarget(state, ACTIVITIES.bubbleInvestigate);
   for (let frame = 0; frame < 100 && target?.choreographyPhase !== "inspect"; frame += 1) {
     state = tickShowcase(state, 0.1, ACTIVITIES.bubbleInvestigate);
@@ -303,7 +303,7 @@ test("every phase profile shown by the editor occurs in its showcase", () => {
     const phaseKeys = steeringKeysFor(scenario.id).filter((key) => key.includes(":"));
     if (!phaseKeys.length) continue;
     const seen = new Set();
-    let state = createShowcaseState({ orientation: "landscape", scenario: scenario.id });
+    let state = createShowcaseState({ scenario: scenario.id });
     const frames = Math.ceil(scenario.loopSeconds / 0.1);
     for (let frame = 0; frame <= frames; frame += 1) {
       const target = showcaseTarget(state, scenario.id);
@@ -322,7 +322,7 @@ test("substrate showcase makes the full search-span range observable", () => {
     SCENE_FIELDS[ACTIVITIES.substrateSearch]
       .find((field) => field.key === "searchSpanColumns")[endpoint]
   ));
-  const initial = createShowcaseState({ orientation: "landscape", scenario: ACTIVITIES.substrateSearch });
+  const initial = createShowcaseState({ scenario: ACTIVITIES.substrateSearch });
   const withSpan = (state, searchSpanColumns) => ({
     ...state,
     choreographyTuning: { scene: { [ACTIVITIES.substrateSearch]: { searchSpanColumns } } },

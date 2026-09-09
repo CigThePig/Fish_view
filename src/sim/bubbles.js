@@ -35,12 +35,12 @@ function sizeClassForSeed(seed, salt) {
   return "jumbo";
 }
 
-export function bubbleEmitterCount(orientation) {
-  return orientation === "portrait" ? 3 : 5;
+export function bubbleEmitterCount() {
+  return 5;
 }
 
-function isolatedBubbleCount(orientation) {
-  return orientation === "portrait" ? 3 : 4;
+function isolatedBubbleCount() {
+  return 4;
 }
 
 export function bubbleWaterTop() {
@@ -53,7 +53,7 @@ function waterBottom(state, worldX) {
 
 function emitterX(state, emitterSeed, index) {
   if (index % 2 === 0 && state.plants?.length) {
-    const originalSeeds = initialPlantSeeds(state.seed, state.orientation);
+    const originalSeeds = initialPlantSeeds(state.seed);
     const plantIndex = Math.floor(sample01(emitterSeed, 7) * originalSeeds.length);
     const host = state.plants.find((plant) => plant.seed === originalSeeds[plantIndex]);
     if (host) return clamp(host.x + sampleSigned(emitterSeed, 8) * 0.62, 1, state.cols - 1);
@@ -62,14 +62,12 @@ function emitterX(state, emitterSeed, index) {
 }
 
 export function createBubbleEmitters(state) {
-  const count = bubbleEmitterCount(state.orientation);
+  const count = bubbleEmitterCount();
   return Array.from({ length: count }, (_, index) => {
     const seed = mix32(state.seed ^ Math.imul(index + 1, 0x6c8e9cf5));
     const x = emitterX(state, seed, index);
     const burstCount = 2 + Math.floor(sample01(seed, 10) * 4);
-    const period = state.orientation === "portrait"
-      ? sampleRange(seed, 11, 154, 218)
-      : sampleRange(seed, 11, 102, 158);
+    const period = sampleRange(seed, 11, 102, 158);
     return Object.freeze({
       id: index,
       seed,
@@ -117,9 +115,7 @@ function movingBubbleWorldRecord(state, {
   const top = bubbleWaterTop();
   const travel = Math.max(0.25, sourceY - top);
   const config = BUBBLE_SIZE_CLASSES[sizeClass];
-  const orientationMultiplier = state.orientation === "portrait" ? 1.16 : 1;
   const speed = sampleRange(seed, 21, config.speed[0], config.speed[1])
-    * orientationMultiplier
     * speedMultiplier
     * (1 + distance * NEAR_BUBBLE_SPEED);
   const ascentSeconds = travel / speed;
@@ -199,14 +195,12 @@ function streamBubbleRecords(state) {
 function isolatedBubbleRecords(state) {
   const records = [];
   const top = bubbleWaterTop();
-  for (let index = 0; index < isolatedBubbleCount(state.orientation); index += 1) {
+  for (let index = 0; index < isolatedBubbleCount(); index += 1) {
     const seed = mix32(state.seed ^ Math.imul(index + 1, 0x27d4eb2f));
     const sourceX = sampleRange(seed, 40, 1, state.cols - 1);
     const bottom = waterBottom(state, sourceX);
     const sourceY = top + (bottom - top) * sampleRange(seed, 41, 0.62, 0.96);
-    const period = state.orientation === "portrait"
-      ? sampleRange(seed, 42, 92, 148)
-      : sampleRange(seed, 42, 62, 112);
+    const period = sampleRange(seed, 42, 62, 112);
     const ageSeconds = positiveModulo(
       state.elapsedRealSeconds + sampleRange(seed, 43, 0, period),
       period,

@@ -12,22 +12,21 @@ import {
   plantRenderRecord,
 } from "../src/render/plants.js";
 import { scenePalette } from "../src/render/palette.js";
-import { orientationConfig } from "../src/sim/config.js";
+import { DISPLAY } from "../src/sim/config.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../src/sim/plants.js";
 import { createAquariumState } from "../src/sim/state.js";
 
 const EPSILON = 1e-6;
 
 function specimenRecord(speciesId, {
-  orientation = "landscape",
   size = "maximum",
   currentMultiplier = 0,
   seed = 901,
   ageDays = 200,
 } = {}) {
-  const target = orientationConfig(orientation);
+  const target = DISPLAY;
   const state = {
-    ...createAquariumState({ orientation, seed, wallClockHours: 12 }),
+    ...createAquariumState({ seed, wallClockHours: 12 }),
     elapsedRealSeconds: 6.3,
     individuals: [],
     reaction: null,
@@ -172,19 +171,19 @@ function topOfBranch(pose, rootChildIndex) {
     .reduce((top, point) => (point.y < top.y ? point : top));
 }
 
-test("every posed bone is inked end to end across sizes, orientations, and currents", () => {
+test("every posed bone is inked end to end across sizes and currents", () => {
   let sampledCases = 0;
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const size of ["minimum", "typical", "maximum"]) {
       for (const currentMultiplier of [0, 1, 1.85]) {
         for (const [index, species] of PLANT_SPECIES.entries()) {
           const { metrics, record } = specimenRecord(species.id, {
-            orientation,
             size,
             currentMultiplier,
             seed: 701 + index * 17,
           });
-          const label = `${species.id}/${orientation}/${size}/current-${currentMultiplier}`;
+          const label = `${species.id}/landscape/${size}/current-${currentMultiplier}`;
           sampledCases += validateContinuity(record, metrics, label).sampledSegments;
           assert.ok(record.glyphs.length >= record.pose.activeJointCount, `${label} lost visible structure`);
           assert.ok(record.glyphs.length <= MAX_RENDERED_PLANT_GLYPHS, `${label} exceeded render ceiling`);
@@ -198,14 +197,14 @@ test("every posed bone is inked end to end across sizes, orientations, and curre
 
 // The defect this replaces: a leaf, bead, lantern, or bell bone was treated as
 // a single decoration painted at the far end of its own bone, so a mature
-// portrait fan grass hung its blades 80px clear of the stem they grow from.
+// fan grass hung its blades 80px clear of the stem they grow from.
 test("leaf and ornament bones are strokes from the stem, not marks floating off it", () => {
   const ornamental = new Set(["leaf", "bell", "bead", "lantern", "tip"]);
   let checked = 0;
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const [index, species] of PLANT_SPECIES.entries()) {
       const { metrics, record } = specimenRecord(species.id, {
-        orientation,
         size: "maximum",
         seed: 601 + index * 13,
       });
@@ -222,18 +221,18 @@ test("leaf and ornament bones are strokes from the stem, not marks floating off 
         const attachmentGap = uninkedRun(record, point, metrics, raster, 0, 0.5);
         assert.ok(
           attachmentGap <= MAX_STRUCTURAL_GAP_PX + EPSILON,
-          `${species.id}/${orientation} ${point.role} ${point.index} detaches ${attachmentGap.toFixed(1)}px from its stem`,
+          `${species.id}/landscape ${point.role} ${point.index} detaches ${attachmentGap.toFixed(1)}px from its stem`,
         );
         assert.ok(
           uninkedRun(record, point, metrics, raster) <= MAX_STRUCTURAL_GAP_PX + EPSILON,
-          `${species.id}/${orientation} ${point.role} ${point.index} left its own bone bare`,
+          `${species.id}/landscape ${point.role} ${point.index} left its own bone bare`,
         );
 
         // A bone longer than one glyph must actually be subdivided.
         if (layout.segmentLengthPixels > layout.projectedCoveragePixels * 1.4) {
           assert.ok(
             layout.progresses.length > 1,
-            `${species.id}/${orientation} ${point.role} ${point.index} stayed a single mark on a long bone`,
+            `${species.id}/landscape ${point.role} ${point.index} stayed a single mark on a long bone`,
           );
         }
       }
@@ -243,7 +242,7 @@ test("leaf and ornament bones are strokes from the stem, not marks floating off 
 });
 
 test("authored ornament ink stays on the joint and is never repeated down the bone", () => {
-  const { record } = specimenRecord("lantern-plant", { orientation: "portrait", size: "maximum", seed: 321 });
+  const { record } = specimenRecord("lantern-plant", { size: "maximum", seed: 321 });
   const lanterns = record.pose.joints.filter((point) => point.role === "lantern");
   assert.ok(lanterns.length >= 2, "lantern plant lost its lanterns");
   assert.equal(
@@ -255,13 +254,11 @@ test("authored ornament ink stays on the joint and is never repeated down the bo
 
 test("growth samples only the posed portion of a developing bone", () => {
   const seedling = specimenRecord("tall-forkgrass", {
-    orientation: "landscape",
     size: "maximum",
     seed: 777,
     ageDays: 2,
   });
   const mature = specimenRecord("tall-forkgrass", {
-    orientation: "landscape",
     size: "maximum",
     seed: 777,
     ageDays: 200,
@@ -275,7 +272,6 @@ test("growth samples only the posed portion of a developing bone", () => {
 
 test("Tall forkgrass has a continuous grounded trunk while preserving its authored fork", () => {
   const { metrics, record } = specimenRecord("tall-forkgrass", {
-    orientation: "landscape",
     size: "maximum",
     seed: 147,
   });
@@ -296,7 +292,6 @@ test("Tall forkgrass has a continuous grounded trunk while preserving its author
 
 test("Split reed keeps two separately covered stems rooted in the same substrate region", () => {
   const { metrics, record } = specimenRecord("split-reed", {
-    orientation: "landscape",
     size: "maximum",
     seed: 83,
   });

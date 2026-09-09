@@ -18,12 +18,13 @@ function capture(state, name) {
   new CanvasSceneRenderer(canvas).draw(scene);
   frames.push({name,canvas});return canvas;
 }
-for (const orientation of ['landscape','portrait']) {
+{
+
   for (const [days,hour] of [[0,12],[180,12],[730,12],[730,22]]) {
-    let state=advanceAquariumHistory(createAquariumState({seed:options.seeds[0],orientation}),days);
+    let state=advanceAquariumHistory(createAquariumState({seed:options.seeds[0]}),days);
     state={...state,timeOfDayHours:hour};
     for(let i=0;i<350;i++)state=tick(state,.1);
-    capture(state,`${orientation}-${days}-${hour}`);
+    capture(state,`landscape-${days}-${hour}`);
   }
 }
 // The same snail and plant, with an adult held at either end of the depth
@@ -52,7 +53,6 @@ console.log(`Saved ${frames.length} native scenes and crossing details to ${opti
 if(options.compare) {
   for(const [name,cases] of [
     ['landscape-comparison',['landscape-0-12','landscape-180-12','landscape-730-22']],
-    ['portrait-comparison',['portrait-730-12']],
     ['crossings-comparison',['crossing-far-detail','crossing-near-detail']],
   ]) {
     const width=frames.find(f=>f.name===cases[0]).canvas.width;

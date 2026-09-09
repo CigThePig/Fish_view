@@ -33,8 +33,8 @@ function finiteMean(total, count) {
   return count ? total / count : null;
 }
 
-function measure(orientation, scenario) {
-  let state = createShowcaseState({ orientation, scenario: scenario.id });
+function measure(scenario) {
+  let state = createShowcaseState({ scenario: scenario.id });
   let previousScene = render(state);
   let lead = showcaseSubjects(state, scenario.id)[0];
   const startY = lead.fish.y;
@@ -121,7 +121,6 @@ function measure(orientation, scenario) {
   }
 
   return {
-    orientation,
     activity: scenario.id,
     phases: [...phases].join(","),
     averageSpeed: finiteMean(speedTotal, frameCount),
@@ -143,11 +142,12 @@ function measure(orientation, scenario) {
 }
 
 const rows = [];
-for (const orientation of ["landscape", "portrait"]) {
-  for (const scenario of SHOWCASE_SCENARIOS) rows.push(measure(orientation, scenario));
+{
+
+  for (const scenario of SHOWCASE_SCENARIOS) rows.push(measure(scenario));
 }
 
-console.log("orientation activity              avg/peak speed  avg/max pitch  vertical  turn/s  spacing  event             damage avg/max  full  ms");
+console.log("display     activity              avg/peak speed  avg/max pitch  vertical  turn/s  spacing  event             damage avg/max  full  ms");
 for (const row of rows) {
   const event = row.activity === "bubble-investigate"
     ? `bubble ${row.minimumBubbleDistance?.toFixed(2) ?? "—"}`
@@ -157,7 +157,7 @@ for (const row of rows) {
         ? `evade ${row.evasionFrames}`
         : row.phases;
   console.log([
-    row.orientation.padEnd(11),
+    "landscape".padEnd(11),
     row.activity.padEnd(21),
     `${row.averageSpeed.toFixed(2)}/${row.peakSpeed.toFixed(2)}`.padEnd(15),
     `${row.averageAbsPitch.toFixed(1)}/${row.peakAbsPitch.toFixed(1)}`.padEnd(14),
@@ -172,36 +172,37 @@ for (const row of rows) {
 }
 
 const failures = [];
-for (const orientation of ["landscape", "portrait"]) {
+{
+
   const sample = Object.fromEntries(rows
-    .filter((row) => row.orientation === orientation)
+    .filter((row) => true)
     .map((row) => [row.activity, row]));
   if (!(sample["bubble-investigate"].peakSpeed > sample.cruise.peakSpeed * 1.7)) {
-    failures.push(`${orientation}: bubble peak speed is not distinct from cruise`);
+    failures.push(`landscape: bubble peak speed is not distinct from cruise`);
   }
   if (!(sample["bubble-investigate"].peakAbsPitch > sample.cruise.peakAbsPitch + 15)) {
-    failures.push(`${orientation}: bubble pitch is not distinct from cruise`);
+    failures.push(`landscape: bubble pitch is not distinct from cruise`);
   }
   if (!(sample["playful-chase"].peakSpeed > sample["individual-follow"].peakSpeed * 1.15)) {
-    failures.push(`${orientation}: chase is not distinctly faster than individual follow`);
+    failures.push(`landscape: chase is not distinctly faster than individual follow`);
   }
   if (sample["playful-chase"].evasionFrames < 3) {
-    failures.push(`${orientation}: chased fish did not sustain an evasive response`);
+    failures.push(`landscape: chased fish did not sustain an evasive response`);
   }
   if (!(sample["open-water-rest"].averageSpeed < sample.cruise.averageSpeed * 0.55)) {
-    failures.push(`${orientation}: rest is not distinctly slower than cruise`);
+    failures.push(`landscape: rest is not distinctly slower than cruise`);
   }
   if (sample["substrate-search"].peckStarts < 1
     || sample["substrate-search"].peakAbsPitch < 18) {
-    failures.push(`${orientation}: substrate sequence did not reach a readable peck`);
+    failures.push(`landscape: substrate sequence did not reach a readable peck`);
   }
-  if (rows.some((row) => row.orientation === orientation && row.fullFrames > 0)) {
-    failures.push(`${orientation}: at least one choreography requested a full redraw`);
+  if (rows.some((row) => true && row.fullFrames > 0)) {
+    failures.push(`landscape: at least one choreography requested a full redraw`);
   }
 }
 
-function ordinaryWatch(orientation) {
-  let state = stocked(createAquariumState({ orientation, seed: 0xa51c0a7e, wallClockHours: 12 }));
+function ordinaryWatch() {
+  let state = stocked(createAquariumState({ seed: 0xa51c0a7e, wallClockHours: 12 }));
   const previousActivities = new Map(state.individuals.map((fish) => [fish.seed, fish.activity.current]));
   const previousPecks = new Map();
   const entries = {};
@@ -220,28 +221,28 @@ function ordinaryWatch(orientation) {
       previousPecks.set(fish.seed, peck);
     });
   }
-  return { orientation, entries, peckStarts };
+  return { entries, peckStarts };
 }
 
 console.log("\nOrdinary deterministic 10-minute watch");
-for (const watch of [ordinaryWatch("landscape"), ordinaryWatch("portrait")]) {
+for (const watch of [ordinaryWatch()]) {
   const ordered = Object.entries(watch.entries)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([activity, count]) => `${activity}:${count}`)
     .join(" ");
-  console.log(`${watch.orientation.padEnd(11)} ${ordered} pecks:${watch.peckStarts}`);
+  console.log(`${"landscape".padEnd(11)} ${ordered} pecks:${watch.peckStarts}`);
   const count = (activity) => watch.entries[activity] ?? 0;
-  if (count("bubble-investigate") < 1) failures.push(`${watch.orientation}: ordinary watch had no bubble pursuit`);
-  if (count("substrate-search") < 1 || watch.peckStarts < 1) failures.push(`${watch.orientation}: ordinary watch had no visible feeding`);
-  if (count("playful-chase") < 1) failures.push(`${watch.orientation}: ordinary watch had no playful chase`);
+  if (count("bubble-investigate") < 1) failures.push(`landscape: ordinary watch had no bubble pursuit`);
+  if (count("substrate-search") < 1 || watch.peckStarts < 1) failures.push(`landscape: ordinary watch had no visible feeding`);
+  if (count("playful-chase") < 1) failures.push(`landscape: ordinary watch had no playful chase`);
   if (count("companion-cruise") + count("individual-follow") + count("school-follow") < 1) {
-    failures.push(`${watch.orientation}: ordinary watch had no calm social activity`);
+    failures.push(`landscape: ordinary watch had no calm social activity`);
   }
   if (count("plant-investigate") + count("plant-weave") < 1) {
-    failures.push(`${watch.orientation}: ordinary watch had no plant investigation`);
+    failures.push(`landscape: ordinary watch had no plant investigation`);
   }
   if (count("open-water-rest") + count("plant-shelter") < 1) {
-    failures.push(`${watch.orientation}: ordinary watch had no rest activity`);
+    failures.push(`landscape: ordinary watch had no rest activity`);
   }
 }
 

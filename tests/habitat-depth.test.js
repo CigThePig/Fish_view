@@ -14,15 +14,16 @@ import { worldLayer } from '../src/render/depth.js';
 // These assertions describe the visible relationship, rather than reserving a
 // particular layer number for each type of creature.
 test('roots occupy the floor area, including different depths within one species', () => {
-  for(const orientation of ['landscape','portrait']) {
-    const state=advanceAquariumHistory(createAquariumState({seed:83,orientation}),730);
+  {
+
+    const state=advanceAquariumHistory(createAquariumState({seed:83}),730);
     const roots=state.plants.map(p=>plantGroundY(state,p));
     assert.ok(Math.max(...roots)-Math.min(...roots)>1.5,'roots collapsed onto a line');
     assert.ok(new Set(state.plants.map(p=>Math.floor(plantDepth(p)*4))).size===4);
     const same=Array.from({length:16},(_,seed)=>({...state.plants[0],seed}));
     assert.ok(Math.max(...same.map(p=>plantDepth(p)))-Math.min(...same.map(p=>plantDepth(p)))>0.4,
       'species still determines distance');
-    const restored=restorePersistentState(createAquariumState({seed:83,orientation}),serializePersistentState(state));
+    const restored=restorePersistentState(createAquariumState({seed:83}),serializePersistentState(state));
     assert.deepEqual(restored.plants.map(p=>plantGroundY(restored,p)),roots,'restore moved the roots');
   }
 });

@@ -45,13 +45,13 @@ function evolveMemory(individuals, frames = 1200, dt = 0.25) {
 
 test("new fish begin without fake learned relationships", () => {
   for (const count of [5, 6]) {
-    const state = stockedAquarium({ orientation: "landscape", seed: 91 });
+    const state = stockedAquarium({ seed: 91 });
     assert.ok(state.individuals.slice(0, count).every((fish) => fish.history.socialMemory.length === 0));
   }
 });
 
 test("familiarity grows from visible proximity and not from a distant shared state label", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 300 });
+  const base = stockedAquarium({ seed: 300 });
   const left = base.individuals[0];
   const right = base.individuals[1];
   const near = [
@@ -71,7 +71,7 @@ test("familiarity grows from visible proximity and not from a distant shared sta
 });
 
 test("social memory is hard-bounded, seed-addressed, and cannot remember self", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 512 });
+  const base = stockedAquarium({ seed: 512 });
   const eight = Array.from({ length: 8 }, (_, index) => {
     const source = base.individuals[index % base.individuals.length];
     return {
@@ -112,7 +112,7 @@ test("malformed, duplicate, and self relationships are clamped and rejected dete
 });
 
 test("a familiar fish wins companion selection over a merely compatible stranger", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 701 });
+  const base = stockedAquarium({ seed: 701 });
   const subject = {
     ...base.individuals[0],
     x: 20,
@@ -143,7 +143,7 @@ test("a familiar fish wins companion selection over a merely compatible stranger
 });
 
 test("learned memory survives persistence while Phase 1 saves start empty", () => {
-  const base = stockedAquarium({ orientation: "portrait", seed: 808 });
+  const base = stockedAquarium({ seed: 808 });
   const companionSeed = base.individuals[1].seed;
   const learned = {
     ...base,
@@ -165,7 +165,7 @@ test("learned memory survives persistence while Phase 1 saves start empty", () =
 });
 
 test("restore remains safe anywhere between one fish and the roster ceiling", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 990 });
+  const base = stockedAquarium({ seed: 990 });
   const saved = serializePersistentState(base);
   // An aquarium is a legitimate one fish, and any count on the way up.
   for (const count of [1, 5, MAX_INDIVIDUALS]) {
@@ -189,7 +189,7 @@ test("restore remains safe anywhere between one fish and the roster ceiling", ()
 });
 
 test("social need relief and sociability drift require actual physical engagement", () => {
-  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 404 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ seed: 404 }), { timeScale: 3600 });
   const left = base.individuals[0];
   const right = base.individuals[1];
   const make = (distance) => {
@@ -209,7 +209,7 @@ test("social need relief and sociability drift require actual physical engagemen
 });
 
 test("being near the school also provides truthful social relief", () => {
-  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 505 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ seed: 505 }), { timeScale: 3600 });
   // Company means school fish within reach, not the school's aggregate center,
   // which can sit in open water when the shoal is spread out.
   const densest = base.school.reduce((best, fish) => {
@@ -234,7 +234,7 @@ test("being near the school also provides truthful social relief", () => {
 });
 
 test("tick remains pure through nested activity targets and social-memory arrays", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 610 });
+  const base = stockedAquarium({ seed: 610 });
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => ({
@@ -260,7 +260,7 @@ test("tick remains pure through nested activity targets and social-memory arrays
 });
 
 test("accelerated Phase 2 simulations remain finite and bounded", () => {
-  let state = withSettings(stockedAquarium({ orientation: "portrait", seed: 1234 }), { timeScale: 604800 });
+  let state = withSettings(stockedAquarium({ seed: 1234 }), { timeScale: 604800 });
   for (let frame = 0; frame < 300; frame += 1) state = tick(state, 0.1);
   for (const fish of state.individuals) {
     assert.ok(Number.isFinite(fish.x) && Number.isFinite(fish.y));

@@ -5,7 +5,7 @@ import test from "node:test";
 import { createBubbleRenderRecords } from "../src/render/bubbles.js";
 import { scenePalette } from "../src/render/palette.js";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
-import { orientationConfig } from "../src/sim/config.js";
+import { DISPLAY } from "../src/sim/config.js";
 import {
   ACTIVITIES,
   activityUtilities,
@@ -14,7 +14,7 @@ import {
 import { createAquariumState } from "../src/sim/state.js";
 
 function metricsFor(state) {
-  const target = orientationConfig(state.orientation);
+  const target = DISPLAY;
   return {
     cellWidth: target.pixelWidth / state.cols,
     cellHeight: target.pixelHeight / state.rows,
@@ -22,8 +22,9 @@ function metricsFor(state) {
 }
 
 test("simulation and renderer share one exact bubble world position", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const base = createAquariumState({ orientation, seed: 551, wallClockHours: 12 });
+  {
+
+    const base = createAquariumState({ seed: 551, wallClockHours: 12 });
     for (const seconds of [0, 8.2, 31.7, 86.4, 143.1]) {
       const state = { ...base, elapsedRealSeconds: seconds };
       const world = createBubbleWorldRecords(state);
@@ -46,7 +47,7 @@ test("simulation and renderer share one exact bubble world position", () => {
 });
 
 test("bubble IDs are stable, bounded, and unique world identities", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 889, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 889, wallClockHours: 12 });
   for (let seconds = 0; seconds < 180; seconds += 2.5) {
     const records = createBubbleWorldRecords({ ...base, elapsedRealSeconds: seconds });
     const ids = records.map((record) => record.id);
@@ -58,7 +59,7 @@ test("bubble IDs are stable, bounded, and unique world identities", () => {
 });
 
 test("popping and fish-exhalation bubbles are not environmental investigation targets", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 991 });
+  const state = createAquariumState({ seed: 991 });
   const fish = {
     ...state.individuals[4],
     behavior: { current: "explore", previous: "cruise", blend: 1, ageSeconds: 10 },

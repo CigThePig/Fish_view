@@ -1,0 +1,39 @@
+{
+  "options": {
+    "root": ".",
+    "seeds": [
+      5,
+      83,
+      147
+    ],
+    "frames": 180,
+    "days": 420,
+    "output": ".audit-output"
+  },
+  "frames": 540,
+  "differences": 0,
+  "escapedBounds": 0,
+  "runs": [
+    {
+      "seed": 5,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "seed": 83,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    },
+    {
+      "seed": 147,
+      "differingFrames": 0,
+      "worstPixels": 0,
+      "first": null,
+      "escaped": null
+    }
+  ]
+}

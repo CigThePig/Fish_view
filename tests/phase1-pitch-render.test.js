@@ -200,7 +200,7 @@ test("pitch turns the drawing by a real angle and by the same angle in every asp
   const lab = renderSpriteScene(sprite, { staticPose: true });
   const modes = [
     { name: "landscape", cellWidth: 800 / 66, cellHeight: 480 / 20 },
-    { name: "portrait", cellWidth: 480 / 40, cellHeight: 800 / 33 },
+    { name: "landscape", cellWidth: 480 / 40, cellHeight: 800 / 33 },
     { name: "lab", cellWidth: lab.width / lab.logicalWidth, cellHeight: lab.height / lab.logicalHeight },
   ];
   const magnitudes = [];
@@ -384,8 +384,9 @@ test("the pitched opaque body is the level body, rotated", () => {
 });
 
 test("production fish pitch does not change depth scale or layer", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const base = stockedAquarium({ orientation, seed: 331, wallClockHours: 12 });
+  {
+
+    const base = stockedAquarium({ seed: 331, wallClockHours: 12 });
     const atPitch = (pitch) => render({
       ...base,
       individuals: base.individuals.map((fish) => ({
@@ -408,7 +409,7 @@ test("production fish pitch does not change depth scale or layer", () => {
 });
 
 test("active forage pecks emit one deterministic debris object and approach emits none", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 444, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 444, wallClockHours: 12 });
   let index = -1;
   let activeFish = null;
   let quietFish = null;
@@ -466,17 +467,13 @@ test("active forage pecks emit one deterministic debris object and approach emit
 });
 
 // What one 10 fps frame of a *mature* aquarium is allowed to repaint. The two
-// tanks are the same number of cells but not the same shape: a portrait tank is
-// thirty-three rows tall, so a full roster of fifteen grown individuals plus the
-// school spreads over far more scanlines than the same cast does across a wide
-// landscape one, and the damage rectangles merge into taller bands. The budget
-// is per orientation because the cost genuinely is, and it is measured against
-// the fullest tank the calendar can produce rather than against a new one.
-const FRAME_DAMAGE_BUDGET = Object.freeze({ landscape: 0.45, portrait: 0.6 });
+// The canonical panel retains its established 45% ordinary-frame budget.
+const FRAME_DAMAGE_BUDGET = 0.45;
 
 test("representative pitched and forage frames stay inside the existing ordinary damage regression", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    let state = stockedAquarium({ orientation, seed: 5, wallClockHours: 12 });
+  {
+
+    let state = stockedAquarium({ seed: 5, wallClockHours: 12 });
     for (let frame = 0; frame < 100; frame += 1) state = tick(state, 0.1);
     const fish = state.individuals[3];
     const forager = {
@@ -495,8 +492,8 @@ test("representative pitched and forage frames stay inside the existing ordinary
     assert.equal(damage.full, false);
     assert.ok(damage.rects.length > 0);
     assert.ok(
-      damage.area < damage.total * FRAME_DAMAGE_BUDGET[orientation],
-      `${orientation} pitched/forage damaged ${(damage.area / damage.total * 100).toFixed(1)}%`,
+      damage.area < damage.total * FRAME_DAMAGE_BUDGET,
+      `landscape pitched/forage damaged ${(damage.area / damage.total * 100).toFixed(1)}%`,
     );
   }
 });

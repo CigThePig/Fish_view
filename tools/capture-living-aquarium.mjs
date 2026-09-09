@@ -10,20 +10,21 @@ import { livingWorldRecords, schoolJourney } from '../src/sim/living-world.js';
 const output = '.audit-output/living';
 await mkdir(output, { recursive: true });
 const summary = [];
-for (const orientation of ['landscape', 'portrait']) {
+{
+
   const tiles = [];
   for (const [days, hour] of [[0,12], [30,12], [180,12], [730,12], [1460,12], [730,22]]) {
-    let state = advanceAquariumHistory(createAquariumState({ seed: 83, orientation }), days);
+    let state = advanceAquariumHistory(createAquariumState({ seed: 83 }), days);
     state = { ...state, timeOfDayHours: hour };
     for (let i = 0; i < 350; i++) state = tick(state, 0.1);
     const scene = render(state);
     const canvas = createCanvas(scene.width, scene.height);
     const renderer = new CanvasSceneRenderer(canvas);
     renderer.draw(scene);
-    const name = `${orientation}-${days}-${hour}.png`;
+    const name = `landscape-${days}-${hour}.png`;
     await writeFile(`${output}/${name}`, canvas.toBuffer('image/png'));
     tiles.push({canvas, label: `${days} days / ${hour}:00`});
-    summary.push({orientation, days, hour, glyphs: scene.glyphs.length,
+    summary.push({days, hour, glyphs: scene.glyphs.length,
       objects: scene.objects.length, living: scene.metadata.livingWorld});
   }
   const w = tiles[0].canvas.width, h = tiles[0].canvas.height;
@@ -35,11 +36,12 @@ for (const orientation of ['landscape', 'portrait']) {
     ctx.fillStyle='#cddcd3';ctx.font='18px sans-serif';ctx.fillText(tiles[i].label,x+14,y+25);
     ctx.drawImage(tiles[i].canvas,x,y+36);
   }
-  await writeFile(`${output}/${orientation}-ages.png`, sheet.toBuffer('image/png'));
+  await writeFile(`${output}/landscape-ages.png`, sheet.toBuffer('image/png'));
 }
 // An unforced two-minute observation: does the new encounter actually happen?
-for (const orientation of ['landscape','portrait']) {
-  let state = createAquariumState({ seed:83, orientation });
+{
+
+  let state = createAquariumState({ seed:83 });
   const activities = {}; let encounters=0; let maxStep=0;
   const centers=[];
   for(let frame=0;frame<1800;frame++) {
@@ -52,7 +54,7 @@ for (const orientation of ['landscape','portrait']) {
     if(frame%100===0)centers.push({seconds:frame/10,x:state.school.reduce((s,f)=>s+f.x,0)/state.school.length,
       y:state.school.reduce((s,f)=>s+f.y,0)/state.school.length,split:schoolJourney(state,0).split});
   }
-  summary.push({orientation, observationSeconds:180, encounters, activities, maxSchoolStep:maxStep, centers,
+  summary.push({observationSeconds:180, encounters, activities, maxSchoolStep:maxStep, centers,
     creatureCount:livingWorldRecords(state).length});
 }
 await writeFile(`${output}/summary.json`,JSON.stringify(summary,null,2));

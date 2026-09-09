@@ -20,8 +20,9 @@ function run(state, count, dt = 0.1) {
 }
 
 test("new individuals start with bounded level pitch state", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const state = createAquariumState({ orientation, seed: 912 });
+  {
+
+    const state = createAquariumState({ seed: 912 });
     for (const fish of state.individuals) {
       assert.equal(fish.visual.pitch, 0);
       assert.equal(fish.visual.targetPitch, 0);
@@ -41,7 +42,7 @@ test("trajectory pitch has a dead zone, readable sign, and hard bound", () => {
 });
 
 test("visual pitch is deterministic, smooth, and remains real-time under accelerated biology", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 220, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 220, wallClockHours: 12 });
   const diving = {
     ...base,
     reaction: { x: base.individuals[0].x + 1, y: base.individuals[0].y + 8, ageSeconds: 0, durationSeconds: 3.2 },
@@ -70,7 +71,7 @@ test("visual pitch is deterministic, smooth, and remains real-time under acceler
 });
 
 test("horizontal turn state remains valid while pitch changes", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 71, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 71, wallClockHours: 12 });
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => index === 4
@@ -91,7 +92,7 @@ test("horizontal turn state remains valid while pitch changes", () => {
 });
 
 test("old saves without pitch fields restore safely at level", () => {
-  const base = createAquariumState({ orientation: "portrait", seed: 904 });
+  const base = createAquariumState({ seed: 904 });
   const saved = serializePersistentState(run(base, 12));
   for (const fish of saved.individuals) {
     delete fish.visual.pitch;
@@ -112,7 +113,7 @@ test("old saves without pitch fields restore safely at level", () => {
 });
 
 test("the permanent mid-water cast cannot select or receive successful forage", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 17, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 17, wallClockHours: 12 });
   assert.deepEqual(
     base.individuals.slice(0, 6).map((_, index) => forageEligible(index)),
     [false, false, false, true, true, true],
@@ -136,7 +137,7 @@ test("the permanent mid-water cast cannot select or receive successful forage", 
 });
 
 test("permanent mid-water cast keeps its clearance-adjusted ceiling during long runs", () => {
-  let state = createAquariumState({ orientation: "landscape", seed: 0, wallClockHours: 12 });
+  let state = createAquariumState({ seed: 0, wallClockHours: 12 });
   for (let frame = 0; frame < 4000; frame += 1) {
     state = tick(state, 0.1);
     for (const fish of state.individuals.slice(0, 3)) {
@@ -152,7 +153,7 @@ test("permanent mid-water cast keeps its clearance-adjusted ceiling during long 
 });
 
 test("hunger relief begins only after a forage fish reaches the real substrate search zone", () => {
-  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 501, wallClockHours: 12 }), { timeScale: 3600 });
+  const base = withSettings(stockedAquarium({ seed: 501, wallClockHours: 12 }), { timeScale: 3600 });
   const index = 3;
   const source = base.individuals[index];
   const onFloor = {
@@ -178,7 +179,7 @@ test("hunger relief begins only after a forage fish reaches the real substrate s
 });
 
 test("fish clearance follows the deterministic terrain and moving surface helpers", () => {
-  const state = stockedAquarium({ orientation: "landscape", seed: 91, wallClockHours: 12 });
+  const state = stockedAquarium({ seed: 91, wallClockHours: 12 });
   const fish = state.individuals[4];
   const xs = Array.from({ length: 20 }, (_, index) => 2 + index * 2.7);
   const terrain = xs.map((x) => substrateSurfaceY(state, x));
@@ -192,7 +193,7 @@ test("fish clearance follows the deterministic terrain and moving surface helper
 });
 
 test("accelerated simulation keeps pitch and forage state finite and bounded", () => {
-  let state = withSettings(createAquariumState({ orientation: "portrait", seed: 700 }), { timeScale: 604800 });
+  let state = withSettings(createAquariumState({ seed: 700 }), { timeScale: 604800 });
   for (let frame = 0; frame < 120; frame += 1) state = tick(state, 0.1);
   for (const fish of state.individuals) {
     assert.ok(Number.isFinite(fish.x) && Number.isFinite(fish.y));

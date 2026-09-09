@@ -19,8 +19,8 @@ import {
 import { posePlant } from "../src/sim/plants.js";
 import { createAquariumState } from "../src/sim/state.js";
 
-function matureState(orientation, seed = 77) {
-  const state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+function matureState(seed = 77) {
+  const state = createAquariumState({ seed, wallClockHours: 12 });
   return {
     ...state,
     plants: state.plants.map((plant) => ({ ...plant, ageDays: 200 })),
@@ -29,7 +29,7 @@ function matureState(orientation, seed = 77) {
 
 test("the compact substrate uses a bounded deterministic terrain profile", () => {
   assert.equal(SUBSTRATE_ROWS, 3);
-  const state = matureState("landscape", 91);
+  const state = matureState(91);
   const baseline = state.rows - SUBSTRATE_ROWS;
   const first = Array.from({ length: 133 }, (_, index) => substrateSurfaceY(state, index * 0.5));
   const second = Array.from({ length: 133 }, (_, index) => substrateSurfaceY(state, index * 0.5));
@@ -45,7 +45,7 @@ test("the compact substrate uses a bounded deterministic terrain profile", () =>
 });
 
 test("the visible water surface is a real boundary with air above it", () => {
-  const state = matureState("landscape", 33);
+  const state = matureState(33);
   const palette = scenePalette(state);
   const scene = render(state);
   const expectedSurface = SURFACE_Y_ROWS * (scene.height / scene.logicalHeight);
@@ -57,7 +57,7 @@ test("the visible water surface is a real boundary with air above it", () => {
 });
 
 test("the water surface is a travelling swell rather than a ruled line", () => {
-  const state = matureState("landscape", 33);
+  const state = matureState(33);
   const at = (seconds, worldX) => surfaceWaveOffset({ ...state, elapsedRealSeconds: seconds }, worldX);
   const profile = (seconds) => Array.from({ length: 265 }, (_, index) => at(seconds, index * 0.25));
 
@@ -96,15 +96,16 @@ test("the water surface is a travelling swell rather than a ruled line", () => {
 });
 
 test("the painted surface re-cuts the water band along that swell", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const state = { ...matureState(orientation, 21), elapsedRealSeconds: 6.4 };
+  {
+
+    const state = { ...matureState(21), elapsedRealSeconds: 6.4 };
     const scene = render(state);
     const palette = scenePalette(state);
     const metrics = sceneMetrics(scene);
     const spans = scene.objects
       .filter((object) => object.id.startsWith("surface:"))
       .flatMap((object) => object.fill.map((span) => ({ ...span, bounds: object.bounds })));
-    assert.ok(spans.length > 0, orientation + " painted no surface");
+    assert.ok(spans.length > 0, "landscape" + " painted no surface");
 
     const tops = new Set();
     const covered = new Uint8Array(scene.width);
@@ -127,24 +128,23 @@ test("the painted surface re-cuts the water band along that swell", () => {
     }
     // The whole width is re-cut. A gap between neighbouring columns would show
     // as a notch of the old straight band edge.
-    assert.ok(covered.every((column) => column === 1), orientation + " left a gap in the surface");
-    assert.ok(tops.size > 3, orientation + " painted a straight waterline");
+    assert.ok(covered.every((column) => column === 1), "landscape" + " left a gap in the surface");
+    assert.ok(tops.size > 3, "landscape" + " painted a straight waterline");
 
     // Air is uncovered in the troughs and water carried up over the crests,
     // which is what stops the boundary reading as a band edge.
     const colors = new Set(spans.map((span) => span.color));
-    assert.ok(colors.has(palette.airBg), orientation + " never opened a trough");
-    assert.ok(colors.has(palette.waterBands[0]), orientation + " never raised a crest");
+    assert.ok(colors.has(palette.airBg), "landscape" + " never opened a trough");
+    assert.ok(colors.has(palette.waterBands[0]), "landscape" + " never raised a crest");
   }
 });
 
 test("aquarium plants share the terrain height and visually reach the floor", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const state = matureState(orientation, 147);
+  {
+
+    const state = matureState(147);
     const palette = scenePalette(state);
-    const dimensions = orientation === "landscape"
-      ? { width: 800, height: 480, logicalWidth: state.cols, logicalHeight: state.rows }
-      : { width: 480, height: 800, logicalWidth: state.cols, logicalHeight: state.rows };
+    const dimensions = { width: 800, height: 480, logicalWidth: state.cols, logicalHeight: state.rows };
     const metrics = sceneMetrics(dimensions);
     const { records } = createPlantRenderRecords(state, palette, metrics, { still: true, interactions: false });
 

@@ -25,17 +25,18 @@ import {
 
 const SEED = 0xa51c0a7e;
 
-function base(orientation = "landscape", seed = SEED) {
-  return createAquariumState({ orientation, seed });
+function base(seed = SEED) {
+  return createAquariumState({ seed });
 }
 
-function roundTrip(state, orientation = state.orientation, seed = state.seed) {
-  return restorePersistentState(base(orientation, seed), serializePersistentState(state));
+function roundTrip(state, seed = state.seed) {
+  return restorePersistentState(base(seed), serializePersistentState(state));
 }
 
 test("a grown roster of propagated and rare plants survives save and restore", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const original = base(orientation);
+  {
+
+    const original = base();
     const originalSeeds = new Set(original.plants.map((plant) => plant.seed));
     const grown = advanceAquariumHistory(original, 500);
     const added = grown.plants.filter((plant) => !originalSeeds.has(plant.seed));
@@ -45,9 +46,9 @@ test("a grown roster of propagated and rare plants survives save and restore", (
 
     const restored = roundTrip(grown);
     // The whole persistent roster comes back - restoration no longer truncates
-    // a garden to the orientation's original habitat layout.
+    // a garden to the original habitat layout.
     assert.equal(restored.plants.length, grown.plants.length);
-    assert.ok(restored.plants.length > plantCountFor(orientation));
+    assert.ok(restored.plants.length > plantCountFor());
     assert.deepEqual(restored.plants, grown.plants);
     assert.deepEqual(restored.individuals.map((fish) => fish.seed), grown.individuals.map((fish) => fish.seed));
     assert.deepEqual(restored.content, grown.content);
@@ -55,14 +56,15 @@ test("a grown roster of propagated and rare plants survives save and restore", (
     // And it keeps growing from there rather than restarting its history.
     const continued = advanceAquariumHistory(restored, 400);
     assert.ok(continued.plants.length >= restored.plants.length);
-    assert.ok(continued.plants.length <= plantCapFor(orientation));
+    assert.ok(continued.plants.length <= plantCapFor());
   }
 });
 
 test("the original habitat roster is preserved exactly across the upgrade", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [SEED, 818, 991]) {
-      const original = base(orientation, seed);
+      const original = base(seed);
       const evolved = {
         ...original,
         plants: original.plants.map((plant, index) => ({ ...plant, ageDays: plant.ageDays + index + 3.5 })),
@@ -91,8 +93,8 @@ test("dynamic plant identity is the stable seed, not the array position", () => 
 });
 
 test("corrupt saved plant data is sanitized without crashing or growing unbounded", () => {
-  const orientation = "landscape";
-  const original = base(orientation);
+
+  const original = base();
   const grown = advanceAquariumHistory(original, 300);
   const saved = serializePersistentState(grown);
   const good = saved.plants[0];
@@ -128,7 +130,7 @@ test("corrupt saved plant data is sanitized without crashing or growing unbounde
   };
 
   const restored = restorePersistentState(original, corrupt);
-  assert.ok(restored.plants.length <= plantCapFor(orientation), "a corrupt save grew an unbounded roster");
+  assert.ok(restored.plants.length <= plantCapFor(), "a corrupt save grew an unbounded roster");
   assert.equal(new Set(restored.plants.map((plant) => plant.seed)).size, restored.plants.length);
   for (const plant of restored.plants) {
     assert.ok(PLANT_SPECIES_BY_ID[plant.speciesId], `invalid species ${plant.speciesId} survived restore`);
@@ -172,8 +174,8 @@ test("missing plant motion traits are re-derived from the plant's own seed", () 
 });
 
 test("a pre-Phase-3 save restores safely and starts its history from where it is", () => {
-  const orientation = "landscape";
-  const original = base(orientation);
+
+  const original = base();
   // A save written by an older build: a real cast with learned history, an
   // aquarium age, and no content record at all.
   const aged = advanceAquariumHistory(original, 180);
@@ -238,14 +240,14 @@ test("a pre-Phase-3 save restores safely and starts its history from where it is
   // And the aquarium keeps developing from there.
   const later = advanceAquariumHistory(restored, 400);
   assert.ok(later.plants.length > restored.plants.length, "a migrated save stopped growing");
-  assert.ok(later.plants.length <= plantCapFor(orientation));
+  assert.ok(later.plants.length <= plantCapFor());
   assert.ok(later.individuals.length > restored.individuals.length, "a migrated save stopped stocking");
   assert.equal(later.individuals.length, MAX_INDIVIDUALS);
   assert.ok(later.individuals.every((fish) => fish.history.socialMemory.length <= MAX_SOCIAL_MEMORY));
 });
 
 test("a version 1 save still restores to the original habitat roster", () => {
-  const original = base("landscape", 818);
+  const original = base(818);
   const saved = serializePersistentState(original);
   const legacy = {
     ...saved,
@@ -266,8 +268,8 @@ test("a version 1 save still restores to the original habitat roster", () => {
 });
 
 test("offline catch-up delivers every milestone crossed while the device was off", () => {
-  const orientation = "landscape";
-  const original = base(orientation);
+
+  const original = base();
   const schedule = contentSchedule(SEED);
   const lastMilestone = Math.max(...schedule.map((milestone) => milestone.day));
 

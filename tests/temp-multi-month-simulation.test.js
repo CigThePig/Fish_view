@@ -47,7 +47,6 @@ const SCENARIOS = [
     // ~180 sim days at an hour of biology per real second: the long, fine
     // grained run where drives, behaviour switching and drift all accumulate.
     name: "6 months at 1h/s (fine steps)",
-    orientation: "landscape",
     seed: 0xa51c0a7e,
     wallClockHours: 12,
     timeScale: 3600,
@@ -60,7 +59,6 @@ const SCENARIOS = [
     // Same span reached in day-sized leaps: exercises the coarse-delta path
     // where a single tick advances hours of hunger/energy at once.
     name: "6 months at 1d/s (coarse steps)",
-    orientation: "portrait",
     seed: 987654,
     wallClockHours: 3.5,
     timeScale: DAY_SECONDS,
@@ -73,7 +71,6 @@ const SCENARIOS = [
     // The maximum configurable time scale with the maximum accepted frame
     // delta: ~1.75 sim days per tick, the worst case the clamps must survive.
     name: "6 months at max timeScale",
-    orientation: "landscape",
     seed: 31337,
     wallClockHours: 21,
     timeScale: 604800,
@@ -147,7 +144,7 @@ function observe(observation, state, previous, scenario) {
   if (state.individuals.length > MAX_INDIVIDUALS) {
     observation.violations.push(`${scenario.name}: cast grew to ${state.individuals.length} individuals`);
   }
-  if (state.plants.length > plantCapFor(state.orientation)) {
+  if (state.plants.length > plantCapFor()) {
     observation.violations.push(`${scenario.name}: garden grew to ${state.plants.length} plants`);
   }
   if (castSeeds.size !== state.individuals.length) {
@@ -249,7 +246,6 @@ function observe(observation, state, previous, scenario) {
 
 function runScenario(scenario) {
   const base = createAquariumState({
-    orientation: scenario.orientation,
     seed: scenario.seed,
     wallClockHours: scenario.wallClockHours,
   });
@@ -275,7 +271,6 @@ function runScenario(scenario) {
   const scene = render(state);
   const restored = restorePersistentState(
     createAquariumState({
-      orientation: scenario.orientation,
       seed: scenario.seed,
       wallClockHours: scenario.wallClockHours,
     }),
@@ -309,7 +304,7 @@ function runScenario(scenario) {
     arrivalOrder: observation.arrivalOrder,
     maxIndividuals: observation.maxIndividuals,
     maxPlants: observation.maxPlants,
-    plantCap: plantCapFor(scenario.orientation),
+    plantCap: plantCapFor(),
     startFishSeeds,
     finalFishSeeds: state.individuals.map((fish) => fish.seed),
     finalPlantSeeds: state.plants.map((plant) => plant.seed),

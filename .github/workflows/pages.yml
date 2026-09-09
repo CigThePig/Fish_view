@@ -1,4 +1,4 @@
-name: Verify and deploy Phase 0
+name: Verify and deploy Fish View
 
 on:
   push:

@@ -175,7 +175,7 @@ export function drawBubbles(builder, state, palette, metrics, layer) {
     });
   }
   builder.metadata.bubbles = {
-    emitters: bubbleEmitterCount(state.orientation),
+    emitters: bubbleEmitterCount(),
     active: records.length,
     stream: records.filter((record) => record.kind === "stream").length,
     isolated: records.filter((record) => record.kind === "isolated").length,

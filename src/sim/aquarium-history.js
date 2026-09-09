@@ -120,8 +120,7 @@ let scheduleCache = null;
 // The complete one-time milestone schedule for an aquarium seed. Dates are
 // derived, never stored: "store identity and learned history, derive fixed
 // characteristics" is the same rule affinities and pair compatibility follow.
-// It is deliberately independent of orientation, so a portrait and a landscape
-// view of one seed are the same aquarium with the same history.
+// The seed identifies one canonical aquarium and its history.
 export function contentSchedule(seed) {
   const base = seed >>> 0;
   if (scheduleCache?.seed === base) return scheduleCache.milestones;
@@ -416,7 +415,7 @@ function emergenceHosts(context, milestone, species) {
 }
 
 function resolveRareEmergence(context, milestone) {
-  const cap = plantCapFor(context.orientation);
+  const cap = plantCapFor();
   if (context.plants.length >= cap) return;
   if (context.plants.some((plant) => (plant.seed >>> 0) === (milestone.plantSeed >>> 0))) return;
   const seed = uniquePlantSeed(context.plants, milestone.plantSeed);
@@ -464,7 +463,7 @@ function propagationParent(context, epochSeed) {
 }
 
 function resolvePropagationEpoch(context, epoch) {
-  const cap = plantCapFor(context.orientation);
+  const cap = plantCapFor();
   if (context.plants.length >= cap) return;
   const epochSeed = eventSeed(context.seed, FAMILY.propagation, epoch);
   if (sample01(epochSeed, 1) >= PROPAGATION_EPOCH_CHANCE) return;
@@ -572,7 +571,6 @@ export function advanceAquariumHistory(state, deltaDays) {
 
   const context = {
     seed: state.seed,
-    orientation: state.orientation,
     cols: state.cols,
     rows: state.rows,
     plants: state.plants,
@@ -630,9 +628,9 @@ export function historyDiagnostics(state) {
     ageDays: state.totalDays,
     content,
     plantCount: state.plants.length,
-    plantCap: plantCapFor(state.orientation),
+    plantCap: plantCapFor(),
     grownPlantCount: (() => {
-      const original = new Set(initialPlantSeeds(state.seed, state.orientation));
+      const original = new Set(initialPlantSeeds(state.seed));
       return state.plants.filter((plant) => !original.has(plant.seed >>> 0)).length;
     })(),
     individualCount: state.individuals.length,

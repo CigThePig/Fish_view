@@ -397,7 +397,7 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
   } else if (scenario.id === ACTIVITIES.surfaceInvestigate) {
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
       x: state.cols * 0.48,
-      y: state.rows * (state.orientation === "portrait" ? 0.38 : 0.57),
+      y: state.rows * (0.57),
       vx: 0.12,
       vy: -0.12,
       behavior: "explore",
@@ -469,12 +469,11 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
 export const SHOWCASE_AQUARIUM_DAY = ROSTER_COMPLETE_DAY + 200;
 
 export function createShowcaseState({
-  orientation = "landscape",
   scenario = "cruise",
   seed = SHOWCASE_DEFAULT_SEED,
 } = {}) {
   const initial = advanceAquariumHistory(
-    createAquariumState({ orientation, seed, wallClockHours: 12 }),
+    createAquariumState({ seed, wallClockHours: 12 }),
     SHOWCASE_AQUARIUM_DAY,
   );
   return configureScenario(initial, scenario);
@@ -485,7 +484,7 @@ export function tickShowcase(state, realDelta, scenarioId) {
   const subjectIndices = scenario.subjects;
   let next = state;
   if (subjectIndices.some((index) => !next.individuals[index])) {
-    next = createShowcaseState({ orientation: state.orientation, scenario: scenario.id, seed: state.seed });
+    next = createShowcaseState({ scenario: scenario.id, seed: state.seed });
   }
   return tick(next, realDelta);
 }
@@ -507,7 +506,7 @@ export function showcaseTarget(state, scenarioId) {
 
 export function resetShowcase(state, scenarioId) {
   return createShowcaseState({
-    orientation: state.orientation,
+
     scenario: scenarioId,
     seed: state.seed,
   });

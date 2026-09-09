@@ -1,0 +1,130 @@
+{
+  "options": {
+    "root": ".",
+    "seeds": [
+      5,
+      29,
+      83,
+      147,
+      192,
+      818,
+      1234,
+      1369948382
+    ],
+    "seconds": 600,
+    "dt": 0.1,
+    "timeScale": 1,
+    "days": 0,
+    "tuning": "defaults",
+    "output": ".audit-output"
+  },
+  "ticks": 48000,
+  "fishSamples": 48000,
+  "failures": 0,
+  "examples": [],
+  "runs": [
+    {
+      "seed": 5,
+      "entries": {
+        "open-water-rest": 1,
+        "school-follow": 5
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.06312910867231203,
+      "maxSwimmingStep": 0.06312910867231203,
+      "maxUnexplainedStep": 0.048373001175982006,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 29,
+      "entries": {
+        "cruise": 4
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.028123157869153204,
+      "maxSwimmingStep": 0.028123157869153204,
+      "maxUnexplainedStep": 8.875278983966339e-16,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 83,
+      "entries": {
+        "cruise": 4
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.017073329757527844,
+      "maxSwimmingStep": 0.017073329757527844,
+      "maxUnexplainedStep": 8.881784197001252e-16,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 147,
+      "entries": {
+        "bubble-investigate": 2,
+        "drifting-inspect": 1,
+        "open-water-wander": 2,
+        "school-follow": 5
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.0717912873337685,
+      "maxSwimmingStep": 0.0717912873337685,
+      "maxUnexplainedStep": 0.04759940464666522,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 192,
+      "entries": {
+        "school-follow": 6,
+        "open-water-rest": 3
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.05675784775031012,
+      "maxSwimmingStep": 0.05675784775031012,
+      "maxUnexplainedStep": 0.046230897031741734,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 818,
+      "entries": {
+        "school-follow": 5
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.06744196683771264,
+      "maxSwimmingStep": 0.06744196683771264,
+      "maxUnexplainedStep": 0.018660108433278512,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 1234,
+      "entries": {
+        "school-follow": 6,
+        "open-water-rest": 3
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.06892268154233783,
+      "maxSwimmingStep": 0.06892268154233783,
+      "maxUnexplainedStep": 0.11224138356147975,
+      "maxExitStep": 0
+    },
+    {
+      "seed": 1369948382,
+      "entries": {
+        "school-follow": 7,
+        "open-water-rest": 2
+      },
+      "contacts": 0,
+      "exits": 0,
+      "maxVerticalStep": 0.05436675019341841,
+      "maxSwimmingStep": 0.05436675019341841,
+      "maxUnexplainedStep": 0.04259080875061636,
+      "maxExitStep": 0
+    }
+  ]
+}

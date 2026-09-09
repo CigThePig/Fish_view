@@ -12,15 +12,15 @@ const { MAX_FISH_PITCH_DEGREES } = await importFrom(options.root, "src/sim/fish-
 const { MAX_INDIVIDUALS, SETTING_LIMITS } = await importFrom(options.root, "src/sim/config.js");
 const report = { options, ticks: 0, fishSamples: 0, failures: 0, examples: [], runs: [] };
 
-for (const orientation of ["landscape", "portrait"]) for (const seed of options.seeds) {
+for (const seed of options.seeds) {
   const settings = { timeScale: options.timeScale };
   if (options.tuning === "extremes") {
     for (const [index, [key, limits]] of Object.entries(SETTING_LIMITS).entries()) {
       if (key !== "timeScale") settings[key] = limits[(seed >>> index) & 1];
     }
   }
-  let state = advanceAquariumHistory(createAquariumState({ orientation, seed, settings }), options.days);
-  const run = { orientation, seed, entries: {}, contacts: 0, exits: 0,
+  let state = advanceAquariumHistory(createAquariumState({ seed, settings }), options.days);
+  const run = { seed, entries: {}, contacts: 0, exits: 0,
     maxVerticalStep: 0, maxSwimmingStep: 0, maxUnexplainedStep: 0, maxExitStep: 0 };
   for (let frame = 0; frame < Math.ceil(options.seconds / options.dt); frame++) {
     // Reactions interrupt whatever activity is in progress; this is deliberately
@@ -35,12 +35,12 @@ for (const orientation of ["landscape", "portrait"]) for (const seed of options.
     const plantSeeds = new Set(state.plants.map((plant) => plant.seed));
     const fail = (message, index = null) => {
       report.failures++;
-      if (report.examples.length < 20) report.examples.push({ orientation, seed, frame, index, message,
+      if (report.examples.length < 20) report.examples.push({ seed, frame, index, message,
         before: index === null ? null : previous.individuals[index],
         after: index === null ? null : state.individuals[index] });
     };
     if (fishSeeds.size !== state.individuals.length || fishSeeds.size > MAX_INDIVIDUALS) fail("invalid cast identity/count");
-    if (plantSeeds.size !== state.plants.length || plantSeeds.size > (orientation === "portrait" ? 22 : 30)) fail("invalid plant identity/count");
+    if (plantSeeds.size !== state.plants.length || plantSeeds.size > (30)) fail("invalid plant identity/count");
     for (const fish of state.school) {
       if (![fish.x, fish.y, fish.vx, fish.vy].every(Number.isFinite)) fail("non-finite school motion");
     }

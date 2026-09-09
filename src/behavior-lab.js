@@ -32,7 +32,7 @@ const query = new URLSearchParams(globalThis.location.search);
 const canvas = document.querySelector("#behavior-canvas");
 const renderer = new CanvasSceneRenderer(canvas);
 const behaviorSelect = document.querySelector("#behavior-select");
-const orientationSelect = document.querySelector("#orientation-select");
+
 const groupsHost = document.querySelector("#tuning-groups");
 const summaryOutput = document.querySelector("#tuning-summary");
 const titleOutput = document.querySelector("#tuning-title");
@@ -47,13 +47,12 @@ for (const scenario of SHOWCASE_SCENARIOS) {
 }
 
 let scenarioId = showcaseScenario(query.get("activity")).id;
-let orientation = query.get("orientation") === "portrait" ? "portrait" : "landscape";
+
 const requestedSeed = query.get("seed");
 // No ?seed= means the scene the capture and readability tools grade, so the
 // deployed lab and the QA artifacts stay the same aquarium.
 const seed = requestedSeed ? hashSeed(requestedSeed) : SHOWCASE_DEFAULT_SEED;
 behaviorSelect.value = scenarioId;
-orientationSelect.value = orientation;
 
 // Only the fields a person has actually moved. Everything else resolves from
 // the authored tables, so a reset is a delete rather than a re-copy of the
@@ -310,8 +309,8 @@ async function copyText(text, label) {
 
 function restart() {
   scenarioId = showcaseScenario(behaviorSelect.value).id;
-  orientation = orientationSelect.value === "portrait" ? "portrait" : "landscape";
-  state = createShowcaseState({ orientation, scenario: scenarioId, seed });
+
+  state = createShowcaseState({ scenario: scenarioId, seed });
   applyTuning();
   sequenceSeconds = 0;
   renderer.draw(render(state));
@@ -360,7 +359,7 @@ function reselect() {
 }
 
 behaviorSelect.addEventListener("change", reselect);
-orientationSelect.addEventListener("change", reselect);
+
 document.querySelector("#restart-showcase").addEventListener("click", restart);
 
 document.querySelector("#tuning-reset").addEventListener("click", () => {

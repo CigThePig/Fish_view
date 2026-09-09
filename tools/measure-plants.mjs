@@ -8,8 +8,8 @@ const DAMAGE_REGRESSION_SEEDS = [5, 83, 147];
 const FRAMES = 200;
 const DT = 0.1;
 
-function matureState(orientation, seed) {
-  const state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+function matureState(seed) {
+  const state = createAquariumState({ seed, wallClockHours: 12 });
   return {
     ...state,
     plants: state.plants.map((plant) => ({ ...plant, ageDays: 200 })),
@@ -24,9 +24,9 @@ function summarize(values) {
   };
 }
 
-function regressionDamagePercent(orientation) {
+function regressionDamagePercent() {
   return DAMAGE_REGRESSION_SEEDS.map((seed) => {
-    let state = matureState(orientation, seed);
+    let state = matureState(seed);
     for (let frame = 0; frame < 20; frame += 1) state = tick(state, DT);
     const before = render(state);
     const damage = calculateDamage(before, render(tick(state, DT)));
@@ -39,7 +39,7 @@ function regressionDamagePercent(orientation) {
   });
 }
 
-function measureOrientation(orientation) {
+function measureAquarium() {
   const glyphTotals = [];
   const maximumPlantGlyphs = [];
   const damageFractions = [];
@@ -47,7 +47,7 @@ function measureOrientation(orientation) {
   let fullRedraws = 0;
 
   for (const seed of SEEDS) {
-    let state = matureState(orientation, seed);
+    let state = matureState(seed);
     let scene = render(state);
     glyphTotals.push(scene.metadata.plants.glyphs);
     maximumPlantGlyphs.push(scene.metadata.plants.maximumGlyphs);
@@ -64,7 +64,6 @@ function measureOrientation(orientation) {
   }
 
   return {
-    orientation,
     seeds: SEEDS,
     framesPerSeed: FRAMES,
     plantGlyphs: summarize(glyphTotals),
@@ -75,11 +74,11 @@ function measureOrientation(orientation) {
     },
     dirtyRectangles: summarize(dirtyRectangles),
     fullRedraws,
-    regressionDamageSample: regressionDamagePercent(orientation),
+    regressionDamageSample: regressionDamagePercent(),
   };
 }
 
 console.log(JSON.stringify({
   sample: "mature aquarium at 10 fps",
-  measurements: [measureOrientation("landscape"), measureOrientation("portrait")],
+  measurements: [measureAquarium(), measureAquarium()],
 }, null, 2));

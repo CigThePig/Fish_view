@@ -12,7 +12,7 @@ import {
   INITIAL_INDIVIDUAL_COUNT,
   MAX_INDIVIDUALS,
   WATERLINE_ROWS,
-  orientationConfig,
+  DISPLAY,
   sanitizeSettings,
 } from "./config.js";
 import { clamp, createIndividual, createIndividualFromSeed, createSchoolFish } from "./entities.js";
@@ -38,12 +38,11 @@ import { hashSeed, mix32 } from "./prng.js";
 export const PERSISTENCE_VERSION = 2;
 
 export function createAquariumState({
-  orientation = "landscape",
   seed = DEFAULT_SEED,
   wallClockHours = 12,
   settings = {},
 } = {}) {
-  const dimensions = orientationConfig(orientation);
+  const dimensions = DISPLAY;
   const numericSeed = typeof seed === "number" ? seed >>> 0 : hashSeed(seed);
   const mergedSettings = sanitizeSettings(settings);
   // A quarter of the school it will grow into. `schoolCount` is the size the
@@ -63,15 +62,14 @@ export function createAquariumState({
     const bottom = index < 3 ? WATERLINE_ROWS + (floor - WATERLINE_ROWS) * 0.68 : floor;
     return { ...fish, x, y: clamp(fish.y, top, Math.max(top, bottom)) };
   });
-  const plants = Array.from({ length: plantCountFor(orientation) }, (_, index) =>
-    createPlant(numericSeed, index, dimensions.cols, dimensions.rows, orientation),
+  const plants = Array.from({ length: plantCountFor() }, (_, index) =>
+    createPlant(numericSeed, index, dimensions.cols, dimensions.rows),
   );
 
   return {
     version: 2,
     seed: numericSeed,
     rngState: mix32(numericSeed ^ 0x27d4eb2f),
-    orientation,
     cols: dimensions.cols,
     rows: dimensions.rows,
     elapsedRealSeconds: 0,
@@ -172,7 +170,6 @@ export function serializePersistentState(state) {
   return {
     persistenceVersion: PERSISTENCE_VERSION,
     seed: state.seed,
-    orientation: state.orientation,
     rngState: state.rngState,
     elapsedSimSeconds: state.elapsedSimSeconds,
     totalDays: state.totalDays,
@@ -244,7 +241,7 @@ function validBehavior(value, fallback = "cruise") {
 
 export function restorePersistentState(baseState, saved) {
   if (!saved || (saved.persistenceVersion !== 1 && saved.persistenceVersion !== PERSISTENCE_VERSION)) return baseState;
-  if (saved.seed !== baseState.seed || saved.orientation !== baseState.orientation) return baseState;
+  if (saved.seed !== baseState.seed || (saved.orientation !== undefined && saved.orientation !== "landscape")) return baseState;
   if (!Array.isArray(saved.individuals) || !Array.isArray(saved.plants)) return baseState;
 
   // Ages are reconstructed against the save's own aquarium age, so read it
@@ -408,7 +405,7 @@ function restoreLegacyPlants(baseState, saved) {
 }
 
 // A Phase 3 garden grows, so restoration can no longer rebuild it from the
-// orientation's original habitat roster: doing that would silently delete every
+// original habitat roster: doing that would silently delete every
 // propagated shoot and every delayed rare plant on the next reload. A plant's
 // identity is its stable seed, never its array position, so the saved roster is
 // what comes back - validated field by field, deduplicated by seed, and capped.
@@ -417,7 +414,7 @@ function restoreLegacyPlants(baseState, saved) {
 // garden byte-identical across the upgrade.
 function restoreDynamicPlants(baseState, saved) {
   const originals = new Map(baseState.plants.map((plant) => [plant.seed >>> 0, plant]));
-  const cap = plantCapFor(baseState.orientation);
+  const cap = plantCapFor();
   const seen = new Set();
   const plants = [];
 

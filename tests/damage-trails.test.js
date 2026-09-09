@@ -116,8 +116,8 @@ function firstDifference(left, right, width) {
   return null;
 }
 
-function paintFrames(orientation, seed, frames, decorate) {
-  let state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+function paintFrames(seed, frames, decorate) {
+  let state = createAquariumState({ seed, wallClockHours: 12 });
   for (let warm = 0; warm < 40; warm += 1) state = tick(state, 0.1);
 
   const first = render(decorate(state, 0));
@@ -141,22 +141,24 @@ function paintFrames(orientation, seed, frames, decorate) {
     assert.equal(
       difference,
       null,
-      `${orientation}/${seed} frame ${frame} left a trail at ${difference?.x},${difference?.y}`,
+      `landscape/${seed} frame ${frame} left a trail at ${difference?.x},${difference?.y}`,
     );
   }
 }
 
 test("incremental repaint matches a full repaint while fish swim level", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    paintFrames(orientation, 5, 24, (state) => state);
+  {
+
+    paintFrames(5, 24, (state) => state);
   }
 });
 
 test("incremental repaint matches a full repaint through a full pitch sweep", () => {
   // Sweeping the pitch continuously is the case rotation makes dangerous: the
   // ink inside every cell moves while the cell's own rounded anchor may not.
-  for (const orientation of ["landscape", "portrait"]) {
-    paintFrames(orientation, 83, 40, (state, frame) => ({
+  {
+
+    paintFrames(83, 40, (state, frame) => ({
       ...state,
       individuals: state.individuals.map((fish, index) => {
         const pitch = Math.sin((frame + index * 3) * 0.21) * 32;
@@ -170,8 +172,9 @@ test("incremental repaint matches a full repaint while pitched fish also turn", 
   // Pitch, turn compression and the swim wave all moving at once: the body
   // silhouette, the glyph anchors and the rotation index change together, and
   // every one of them has to reach the signature.
-  for (const orientation of ["landscape", "portrait"]) {
-    paintFrames(orientation, 192, 40, (state, frame) => ({
+  {
+
+    paintFrames(192, 40, (state, frame) => ({
       ...state,
       individuals: state.individuals.map((fish, index) => {
         const pitch = Math.cos((frame + index * 5) * 0.17) * 30;

@@ -9,7 +9,7 @@
  * be no worse than. A tree without growth measures the same scenarios with the
  * fish it has, so `main` and this branch are directly comparable.
  *
- * Scenarios, both orientations, 200 frames at 10 fps after a 40-frame settle:
+ * Scenarios, the canonical aquarium, 200 frames at 10 fps after a 40-frame settle:
  *
  *   day-0    the aquarium as it is handed over
  *   day-120  after the second arrival, most of the cast finished
@@ -42,8 +42,8 @@ function fishFillMaximum(scene) {
   return Math.max(0, ...fishObjects(scene).map((object) => object.fill.length));
 }
 
-function prepare(orientation, seed, days) {
-  let state = createAquariumState({ orientation, seed, wallClockHours: 12 });
+function prepare(seed, days) {
+  let state = createAquariumState({ seed, wallClockHours: 12 });
   // Production intentionally caps a single offline gap at 365 days. Applying
   // 420 in one call labelled a 365-day fixture as day 420.
   for (let remaining = days; remaining > 0; remaining -= 365) {
@@ -54,7 +54,7 @@ function prepare(orientation, seed, days) {
   return state;
 }
 
-function runSequence(orientation, days) {
+function runSequence(days) {
   let damaged = 0;
   let maximumDamage = 0;
   let dirtyRectangles = 0;
@@ -66,7 +66,7 @@ function runSequence(orientation, days) {
   let frames = 0;
 
   for (const seed of SEEDS) {
-    let state = prepare(orientation, seed, days);
+    let state = prepare(seed, days);
     let previous = render(state);
     fish = Math.max(fish, state.individuals.length);
     maximumFills = Math.max(maximumFills, fishFillMaximum(previous));
@@ -89,7 +89,6 @@ function runSequence(orientation, days) {
   }
 
   return {
-    orientation,
     days,
     fish,
     averageDamagePercent: (damaged / frames) * 100,
@@ -102,11 +101,12 @@ function runSequence(orientation, days) {
   };
 }
 
-for (const orientation of ["landscape", "portrait"]) {
+{
+
   for (const days of DAYS) {
-    const row = runSequence(orientation, days);
+    const row = runSequence(days);
     console.log([
-      row.orientation.padEnd(9),
+      "landscape".padEnd(9),
       `day=${String(row.days).padStart(3)}`,
       `fish=${row.fish}`,
       `avg=${row.averageDamagePercent.toFixed(2)}%`,

@@ -4,7 +4,7 @@ import {
   CELL_HEIGHT,
   CELL_WIDTH,
   INDIVIDUAL_VISUAL_SCALE_MAX,
-  orientationConfig,
+  DISPLAY,
   PITCH_CLEARANCE_FRACTION,
 } from "./config.js";
 import { groundY } from "./habitat-depth.js";
@@ -366,7 +366,7 @@ export function mouthLeadColumns(fish, pitchDegrees, visualScale = 1) {
 export function fishMouthPosition(fish, state, index, pitchDegrees = fish.visual?.pitch ?? 0) {
   const mouth = spriteMouthOffset(spriteFor(fish));
   const pose = turnPose(fish);
-  const dimensions = orientationConfig(state.orientation);
+  const dimensions = DISPLAY;
   const aspect = (dimensions.pixelHeight / dimensions.rows) / (dimensions.pixelWidth / dimensions.cols);
   const angle = clamp(pitchDegrees, -MAX_FISH_PITCH_DEGREES, MAX_FISH_PITCH_DEGREES)
     * pose.widthScale * Math.PI / 180;

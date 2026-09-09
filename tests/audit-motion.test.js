@@ -9,18 +9,18 @@ import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
 
 test("initial poses respect the same surface envelope as swimming", () => {
-  for (const orientation of ["landscape", "portrait"]) for (const seed of [5, 29, 83, 147, 192]) {
-    const state = stockedAquarium({ orientation, seed });
+  for (const seed of [5, 29, 83, 147, 192]) {
+    const state = stockedAquarium({ seed });
     for (const fish of state.individuals) {
-      assert.ok(fish.y >= surfaceSafeY(fish, state), `${orientation}/${seed} starts in the air`);
+      assert.ok(fish.y >= surfaceSafeY(fish, state), `landscape/${seed} starts in the air`);
       assert.ok(fish.y <= substrateSafeY(fish, state));
     }
   }
 });
 
 test("leaving a meal and interrupting a deep strike return smoothly to open water", () => {
-  for (const orientation of ["landscape", "portrait"]) for (const touch of [false, true]) {
-    let state = stockedAquarium({ orientation, seed: 83 });
+  for (const touch of [false, true]) {
+    let state = stockedAquarium({ seed: 83 });
     const index = 3;
     const fish = {
       ...state.individuals[index], ageDays: 500, x: state.cols / 2, vx: 0.04, vy: 0,
@@ -38,7 +38,7 @@ test("leaving a meal and interrupting a deep strike return smoothly to open wate
       const prior = state.individuals[index];
       state = tick(state, 0.1);
       const next = state.individuals[index];
-      assert.ok(Math.abs(next.y - prior.y) < 0.23, `${orientation}/${touch} jumped ${next.y - prior.y} rows`);
+      assert.ok(Math.abs(next.y - prior.y) < 0.23, `landscape/${touch} jumped ${next.y - prior.y} rows`);
       if (next.activity.current !== "substrate-search") exited = true;
     }
     assert.ok(exited);

@@ -60,10 +60,6 @@ function parseList(value, allowed, allValue = "all") {
 
 function parseOptions(argumentsList) {
   const scenarioIds = SHOWCASE_SCENARIOS.map((scenario) => scenario.id);
-  const orientations = parseList(
-    optionValue(argumentsList, "--orientation", "both"),
-    ["landscape", "portrait"],
-  );
   const scenarios = parseList(
     optionValue(argumentsList, "--scenario", "all"),
     scenarioIds,
@@ -73,7 +69,6 @@ function parseOptions(argumentsList) {
     throw new Error("--scale must be between 0.2 and 1");
   }
   return {
-    orientations,
     scenarios,
     scale,
     gif: hasFlag(argumentsList, "--gif"),
@@ -127,8 +122,8 @@ function normalizeSnapshotTimes(times, loopSeconds) {
   return selected.sort((left, right) => left - right);
 }
 
-function semanticSnapshotTimes(orientation, scenario) {
-  let state = createShowcaseState({ orientation, scenario: scenario.id });
+function semanticSnapshotTimes(scenario) {
+  let state = createShowcaseState({ scenario: scenario.id });
   const timeline = [];
   const frameCount = Math.ceil(scenario.loopSeconds / STEP_SECONDS);
   for (let frame = 0; frame <= frameCount; frame += 1) {
@@ -218,11 +213,9 @@ function addGifFrame({ source, frameCanvas, frameContext, encoder, width, height
   encoder.addFrame(rgba, width, height, { delay: STEP_SECONDS * 1000 });
 }
 
-async function captureOrientation(canvasModule, options, orientation) {
+async function captureAquarium(canvasModule, options) {
   const { createCanvas, GifEncoder } = canvasModule;
-  const native = orientation === "portrait"
-    ? { width: 480, height: 800 }
-    : { width: 800, height: 480 };
+  const native = { width: 800, height: 480 };
   const frame = {
     width: Math.round(native.width * options.scale),
     height: Math.round(native.height * options.scale),
@@ -241,9 +234,9 @@ async function captureOrientation(canvasModule, options, orientation) {
   for (const [row, scenario] of options.scenarios.entries()) {
     const source = createCanvas(native.width, native.height);
     const renderer = new CanvasSceneRenderer(source);
-    let state = createShowcaseState({ orientation, scenario: scenario.id });
+    let state = createShowcaseState({ scenario: scenario.id });
     renderer.draw(render(state));
-    const times = semanticSnapshotTimes(orientation, scenario);
+    const times = semanticSnapshotTimes(scenario);
     let captureIndex = 0;
     let elapsed = 0;
     const rowSnapshots = [];
@@ -256,7 +249,7 @@ async function captureOrientation(canvasModule, options, orientation) {
 
     drawLabel(
       sheetContext,
-      `${scenario.label}  \u2014  ${orientation}`,
+      `${scenario.label}  \u2014  landscape`,
       0,
       row * rowHeight,
       sheet.width,
@@ -303,15 +296,15 @@ async function captureOrientation(canvasModule, options, orientation) {
     }
 
     if (encoder) {
-      const gifPath = path.join(options.output, `${orientation}-${scenario.id}.gif`);
+      const gifPath = path.join(options.output, `landscape-${scenario.id}.gif`);
       await writeFile(gifPath, encoder.finish());
     }
     manifest.push({ activity: scenario.id, loopSeconds: scenario.loopSeconds, snapshots: rowSnapshots });
   }
 
-  const sheetPath = path.join(options.output, `${orientation}-behavior-contact-sheet.png`);
+  const sheetPath = path.join(options.output, `landscape-behavior-contact-sheet.png`);
   await writeFile(sheetPath, sheet.toBuffer("image/png"));
-  return { orientation, contactSheet: path.basename(sheetPath), scenarios: manifest };
+  return { contactSheet: path.basename(sheetPath), scenarios: manifest };
 }
 
 const options = parseOptions(process.argv.slice(2));
@@ -323,8 +316,9 @@ const manifest = {
   scale: options.scale,
   captures: [],
 };
-for (const orientation of options.orientations) {
-  manifest.captures.push(await captureOrientation(canvasModule, options, orientation));
+{
+
+  manifest.captures.push(await captureAquarium(canvasModule, options));
 }
 await writeFile(
   path.join(options.output, "behavior-capture-manifest.json"),
@@ -333,4 +327,4 @@ await writeFile(
 
 console.log(`Wrote deterministic behaviour captures to ${options.output}`);
 for (const capture of manifest.captures) console.log(`- ${capture.contactSheet}`);
-if (options.gif) console.log(`- ${options.scenarios.length * options.orientations.length} animated GIF(s)`);
+if (options.gif) console.log(`- ${options.scenarios.length} animated GIF(s)`);

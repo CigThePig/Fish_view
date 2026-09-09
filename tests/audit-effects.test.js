@@ -49,8 +49,8 @@ function sampleForageDiagnostics(diagnostics, fish, state) {
 }
 
 test("plant propagation and storage order cannot move an existing bubble emitter", () => {
-  for (const orientation of ["landscape", "portrait"]) for (const seed of [5, 29, 83, 147]) {
-    const initial = createAquariumState({ seed, orientation });
+  for (const seed of [5, 29, 83, 147]) {
+    const initial = createAquariumState({ seed });
     const grown = advanceAquariumHistory(initial, 420);
     assert.ok(grown.plants.length > initial.plants.length);
     const before = createBubbleEmitters(initial);
@@ -60,8 +60,9 @@ test("plant propagation and storage order cannot move an existing bubble emitter
 });
 
 test("shared mouth origins match drawn mouth anchors through growth, pitch and turning", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const base = stockedAquarium({ orientation, seed: 5 });
+  {
+
+    const base = stockedAquarium({ seed: 5 });
     for (const species of individualSprites) for (const sprite of growthStagesFor(species.id)) {
       for (const facing of [-1, 1]) for (const progress of [0.3, 0.7, 1]) {
         const fish = {

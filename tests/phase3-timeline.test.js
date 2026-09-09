@@ -95,29 +95,12 @@ test("one-time milestone schedules are deterministic, ordered, and inside their 
   }
 });
 
-test("history is one aquarium per seed, not one per orientation or UI toggle", () => {
-  for (const seed of SEEDS.slice(0, 24)) {
-    const landscape = createAquariumState({ orientation: "landscape", seed });
-    const portrait = createAquariumState({ orientation: "portrait", seed });
-    // Compare mode advances two orientations of the same aquarium. Neither may
-    // reroll a date, a species, or an arrival identity.
-    assert.deepEqual(contentSchedule(landscape.seed), contentSchedule(portrait.seed));
-
-    const grownLandscape = advanceOffline(landscape, 120 * 86400);
-    const grownPortrait = advanceOffline(portrait, 120 * 86400);
-    assert.deepEqual(
-      grownLandscape.individuals.map((fish) => fish.seed),
-      grownPortrait.individuals.map((fish) => fish.seed),
-      "the same aquarium received different fish in the two orientations",
-    );
-    assert.deepEqual(grownLandscape.content.milestones, grownPortrait.content.milestones);
-  }
-});
 
 test("history advancement is step-size invariant", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [3, 91, 2024, 0xa51c0a7e]) {
-      const base = createAquariumState({ orientation, seed });
+      const base = createAquariumState({ seed });
       const fine = advanceInSteps(base, 180, 1);
       const medium = advanceInSteps(base, 180, 7);
       const coarse = advanceAquariumHistory(base, 180);
@@ -128,7 +111,7 @@ test("history advancement is step-size invariant", () => {
         assert.deepEqual(
           { ...projection, plants: projection.plants.map(({ ageDays: _age, ...rest }) => rest) },
           { ...reference, plants: reference.plants.map(({ ageDays: _age, ...rest }) => rest) },
-          `${name} advancement produced a different ${orientation} aquarium at day 180`,
+          `${name} advancement produced a different landscape aquarium at day 180`,
         );
         // Ages accumulate in floating point, so they are compared with a
         // tolerance rather than for bit equality. Nothing downstream reads them
@@ -149,7 +132,7 @@ test("advancement is chronological rather than evaluated against the final age",
   // jump and may take part in a later epoch. Evaluating every propagation
   // opportunity against the end-state age would instead let a plant reproduce
   // before it had actually matured.
-  const base = createAquariumState({ orientation: "landscape", seed: 4242 });
+  const base = createAquariumState({ seed: 4242 });
   const single = advanceAquariumHistory(base, 300);
   const stepped = advanceInSteps(base, 300, 3);
   assert.deepEqual(
@@ -168,7 +151,7 @@ test("advancement is chronological rather than evaluated against the final age",
 test("crossed boundaries resolve exactly once at any frame granularity", () => {
   const targets = [30, 90, 180, 365];
   for (const target of targets) {
-    const base = createAquariumState({ orientation: "landscape", seed: 55 });
+    const base = createAquariumState({ seed: 55 });
     const reference = advanceAquariumHistory(base, target);
     // A single frame at maximum debug acceleration skips several calendar
     // boundaries; every one of them still has to resolve.
@@ -184,7 +167,7 @@ test("crossed boundaries resolve exactly once at any frame granularity", () => {
 });
 
 test("resolving the same interval twice adds nothing", () => {
-  let state = advanceAquariumHistory(createAquariumState({ orientation: "portrait", seed: 808 }), 200);
+  let state = advanceAquariumHistory(createAquariumState({ seed: 808 }), 200);
   const before = historyProjection(state);
   for (let repeat = 0; repeat < 5; repeat += 1) state = advanceAquariumHistory(state, 0);
   const after = historyProjection(state);
@@ -196,11 +179,11 @@ test("resolving the same interval twice adds nothing", () => {
 test("live accelerated ticks cross the same boundaries as offline advancement", () => {
   const seed = 20260831;
   let live = withSettings(
-    createAquariumState({ orientation: "landscape", seed, wallClockHours: 12 }),
+    createAquariumState({ seed, wallClockHours: 12 }),
     { timeScale: 86400 },
   );
   for (let frame = 0; frame < 900; frame += 1) live = tick(live, 0.1);
-  const offline = advanceOffline(createAquariumState({ orientation: "landscape", seed, wallClockHours: 12 }), 90 * 86400);
+  const offline = advanceOffline(createAquariumState({ seed, wallClockHours: 12 }), 90 * 86400);
 
   assert.ok(Math.abs(live.totalDays - offline.totalDays) < 1e-6);
   // Positions and transient activity legitimately differ; the persistent
@@ -218,13 +201,14 @@ test("live accelerated ticks cross the same boundaries as offline advancement", 
 });
 
 test("long-horizon content stays bounded for years without an event log", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [11, 4096, 0xa51c0a7e]) {
-      let state = createAquariumState({ orientation, seed });
+      let state = createAquariumState({ seed });
       for (const day of [30, 90, 180, 365, 730]) {
         state = advanceAquariumHistory(state, day - state.totalDays);
         assert.ok(state.individuals.length <= MAX_INDIVIDUALS, `cast exceeded its ceiling at day ${day}`);
-        assert.ok(state.plants.length <= plantCapFor(orientation), `garden exceeded its cap at day ${day}`);
+        assert.ok(state.plants.length <= plantCapFor(), `garden exceeded its cap at day ${day}`);
         assert.equal(new Set(state.plants.map((plant) => plant.seed)).size, state.plants.length);
         assert.equal(new Set(state.individuals.map((fish) => fish.seed)).size, state.individuals.length);
         assert.ok(state.plants.every((plant) => Number.isFinite(plant.x) && Number.isFinite(plant.ageDays)));
@@ -236,7 +220,7 @@ test("long-horizon content stays bounded for years without an event log", () => 
         assert.ok(state.content.milestones < 2 ** contentSchedule(seed).length);
       }
       // Nothing disappears through age.
-      const original = createAquariumState({ orientation, seed });
+      const original = createAquariumState({ seed });
       for (const plant of original.plants) {
         assert.ok(state.plants.some((candidate) => candidate.seed === plant.seed));
       }
@@ -268,14 +252,14 @@ test("corrupt historical bookkeeping is clamped rather than trusted", () => {
 
   // A cursor left absurdly far in the past must not loop millions of epochs or
   // spawn thousands of plants.
-  const base = createAquariumState({ orientation: "landscape", seed });
+  const base = createAquariumState({ seed });
   const started = Date.now();
   const advanced = advanceAquariumHistory(
     { ...base, totalDays: 500, content: { version: CONTENT_VERSION, propagationEpoch: 0, milestones: 0 } },
     10,
   );
   assert.ok(Date.now() - started < 4000, "a stale cursor made advancement expensive");
-  assert.ok(advanced.plants.length <= plantCapFor("landscape"));
+  assert.ok(advanced.plants.length <= plantCapFor());
   assert.ok(advanced.individuals.length <= MAX_INDIVIDUALS);
 });
 
@@ -289,10 +273,10 @@ test("a fresh content cursor and a migrated one describe the same bookkeeping sh
 });
 
 test("developer diagnostics describe history without the aquarium showing it", () => {
-  const state = advanceOffline(createAquariumState({ orientation: "landscape", seed: 909 }), 120 * 86400);
+  const state = advanceOffline(createAquariumState({ seed: 909 }), 120 * 86400);
   const diagnostics = historyDiagnostics(state);
   assert.equal(diagnostics.individualCap, MAX_INDIVIDUALS);
-  assert.equal(diagnostics.plantCap, plantCapFor("landscape"));
+  assert.equal(diagnostics.plantCap, plantCapFor());
   assert.equal(diagnostics.milestones.length, contentSchedule(909).length);
   assert.ok(diagnostics.milestones.every((milestone) => Number.isFinite(milestone.day)));
   assert.equal(diagnostics.arrivedSeeds.length, state.individuals.length - INITIAL_INDIVIDUAL_COUNT);
