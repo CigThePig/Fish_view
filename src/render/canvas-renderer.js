@@ -1,6 +1,6 @@
-import { glyphPixelRects } from "./glyph-raster.js?v=true-rotation-20260902";
+import { glyphPixelRects } from "./glyph-raster.js?v=horizontal-20260909";
 import { calculateDamage, coalesceDamage, rectanglesOverlap } from "./damage.js";
-import { glyphBounds } from "./scene.js?v=true-rotation-20260902";
+import { glyphBounds } from "./scene.js?v=horizontal-20260909";
 
 function drawBackground(context, scene, region) {
   const background = scene.background;

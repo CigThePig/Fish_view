@@ -97,3 +97,32 @@ test('a canonical save takes precedence over an obsolete landscape save', t => {
   data.set('fish-view:phase-0:83:landscape',JSON.stringify({savedAtMs:0,state:{...serializePersistentState(base),orientation:'landscape',totalDays:90}}));
   assert.equal(loadPersistedState(base,1000).totalDays,0);
 });
+
+test('Pages gives every stylesheet and module a new shared asset namespace', async t => {
+  const { mkdtemp, rm, readdir } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { buildPages } = await import('../tools/build-pages.mjs');
+  const output = await mkdtemp(path.join(tmpdir(), 'fish-pages-'));
+  t.after(() => rm(output, {recursive:true,force:true}));
+  const built = await buildPages({output});
+  for (const page of ['index.html','plants.html','sprites.html','behaviors.html']) {
+    const html = await readFile(path.join(output,page),'utf8');
+    const urls = [...html.matchAll(/(?:href|src)="([^"]+\.(?:css|js))"/g)].map(match=>match[1]);
+    assert.ok(urls.length>=2);
+    for(const url of urls) {
+      assert.ok(url.startsWith(`${built.assets}/`));
+      assert.ok((await readFile(path.join(output,url))).length>0);
+    }
+    assert.doesNotMatch(html,/true-rotation-20260902|living-skeletal-plants-20260830/);
+  }
+  const src = path.join(output,built.assets,'src');
+  for(const file of (await readdir(src,{recursive:true})).filter(file=>file.endsWith('.js'))) {
+    const code = await readFile(path.join(src,file),'utf8');
+    for(const match of code.matchAll(/(?:from\s+|import\s*\()\s*["'](\.[^"']+\.js)(?:\?[^"']*)?["']/g)) {
+      const dependency = path.resolve(path.dirname(path.join(src,file)),match[1]);
+      assert.ok(dependency.startsWith(src+path.sep));
+      assert.ok((await readFile(dependency)).length>0);
+    }
+  }
+});

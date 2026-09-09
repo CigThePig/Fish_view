@@ -65,3 +65,15 @@ Compared this implementation with baseline commit `29a8497`, using seeds 5, 83 a
 ## Limits
 
 Browser validation uses Chromium with real iframe viewports, not physical Android/iOS devices or an ESP32-S3. Safe-area fitting is implemented but hardware insets were not emulated. ESP32 firmware compilation is not available in this web-reference repository.
+
+## PR #33 automated-review fixes
+
+All five review findings were verified and fixed before deployment:
+
+1. Scoped the fixed viewport stage and document overflow lock to the aquarium page. The plant grid and sprite roster are static-flow mains again. Browser checks on the production build measured scroll heights of 4,319 px and 2,218 px, respectively, and confirmed scrolling.
+2. Removed the duplicate plant benchmark invocation. Its five-seed, 200-frame-per-seed run emits one record, with zero full redraws.
+3. Restored shared `canvas { image-rendering: pixelated }` for all labs. Verified computed styles and visually inspected plant, sprite and behavior canvases.
+4. Made the aquarium keyboard-focusable; Enter/Space opens the drawer and Escape/Close returns focus. Repeated keydown does not reopen it. No normal visible control was added. Covered in the actual-entry-point test and exercised in the production-built browser page.
+5. Updated existing source module query versions and added a content-fingerprinted Pages asset namespace for the entire stylesheet/module graph. A new entry point cannot import an old cached configuration or simulation module. The build regression verifies all four entry pages and every relative module dependency; all four production-built pages were opened successfully beneath a non-root base path.
+
+Full suite after review fixes: **319 passed, 0 failed**. Focused review regression run: eight tests passed, including build-graph and keyboard checks. The workflow now runs `npm run build:pages` to produce the same verified artifact.

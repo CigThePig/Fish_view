@@ -17,7 +17,8 @@
     "capture:depth": "node tools/capture-habitat-depth.mjs",
     "capture:living": "node tools/capture-living-aquarium.mjs",
     "measure:living": "node tools/measure-living-aquarium.mjs",
-    "dev": "node tools/serve.mjs"
+    "dev": "node tools/serve.mjs",
+    "build:pages": "node tools/build-pages.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.100"

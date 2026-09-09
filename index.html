@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="aquarium-page">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,7 +10,7 @@
   </head>
   <body>
     <main id="aquarium-stage" aria-label="Fish View">
-      <canvas id="aquarium-canvas" width="800" height="480" aria-label="ASCII aquarium. Touch the water and the fish will approach."></canvas>
+      <canvas id="aquarium-canvas" tabindex="0" aria-controls="debug-panel" aria-expanded="false" aria-keyshortcuts="Enter Space" width="800" height="480" aria-label="ASCII aquarium. Touch the water and the fish will approach. Press Enter or Space for developer controls."></canvas>
     </main>
 
     <aside class="debug-panel" id="debug-panel" hidden>
@@ -103,6 +103,6 @@
       </section>
     </aside>
 
-    <script type="module" src="src/app.js?v=true-rotation-20260902"></script>
+    <script type="module" src="src/app.js?v=horizontal-20260909"></script>
   </body>
 </html>

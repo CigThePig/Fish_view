@@ -2,8 +2,8 @@ import { driftwoodPath, habitatState, livingWorldRecords } from '../sim/living-w
 import { groundY, meadowDepth, woodDepth } from '../sim/habitat-depth.js';
 import { worldLayer, laneForDepth } from './depth.js';
 import { sample01, sampleRange } from '../sim/prng.js';
-import { mixColor } from './palette.js?v=visual-depth-20260830';
-import { addGlyphObject, positionedGlyph } from './scene.js?v=true-rotation-20260902';
+import { mixColor } from './palette.js?v=horizontal-20260909';
+import { addGlyphObject, positionedGlyph } from './scene.js?v=horizontal-20260909';
 
 export function drawLivingWorld(builder, state, palette, metrics) {
   const habitat = habitatState(state);

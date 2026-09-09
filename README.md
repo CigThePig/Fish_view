@@ -22,7 +22,9 @@ Tap the aquarium's **upper-right corner three times within three seconds**. Ther
 
 The rolling window counts completed primary-pointer taps of at most 600 ms, with at most 12 CSS pixels of movement. Two taps do nothing. Outside taps, cancellation, dragging or holding reset the sequence. The corner is reserved from fish reactions. Normal touches elsewhere still reach the aquarium immediately.
 
-Close the drawer with **Close** or **Escape**. It scrolls independently on mobile. Settings, time acceleration, time of day, renderer metrics, personality, growth, history, reset, optional browser fullscreen and links to all three labs remain available. Browser fullscreen is optional; viewport fitting never depends on it.
+For keyboard access, Tab to the aquarium and press **Enter** or **Space**. The normal page still shows no button or hint.
+
+Close the drawer with **Close** or **Escape**. Focus returns to the aquarium. It scrolls independently on mobile. Settings, time acceleration, time of day, renderer metrics, personality, growth, history, reset, optional browser fullscreen and links to all three labs remain available. Browser fullscreen is optional; viewport fitting never depends on it.
 
 - `behaviors.html`: behavior choreography, tuning, deterministic scenarios and diagnostics.
 - `sprites.html`: fish artwork, body geometry and motion.
@@ -44,6 +46,7 @@ Requires Node 20 or later.
 npm ci
 npm start
 npm test
+npm run build:pages
 npm run audit:simulation
 npm run audit:persistence -- --cases=200
 npm run audit:render
@@ -55,7 +58,7 @@ npm run capture:living
 
 Open `http://localhost:4173`. The viewport inspection harness at `tools/viewport-lab.html` embeds the real app at representative device sizes without adding production routes or changing world coordinates.
 
-GitHub Pages stages the same root HTML, CSS and source tree. All module, stylesheet and lab links are relative, including under `/Fish_view/`. The main-branch Pages workflow runs the tests before publishing. There is no separate Pages implementation.
+GitHub Pages stages the same application with `tools/build-pages.mjs`. The build places every stylesheet and the entire module tree under one content-fingerprinted asset directory, preventing new pages from importing old cached dependencies. All module, stylesheet and lab links are relative, including under `/Fish_view/`. The main-branch Pages workflow runs the tests before publishing. There is no separate Pages implementation.
 
 ## Simulation and artwork
 

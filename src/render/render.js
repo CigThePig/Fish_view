@@ -22,10 +22,10 @@ import { spriteForFish } from "../sim/fish-growth.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
-import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
-import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=true-rotation-20260902";
-import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
+import { pitchGlyphSpin } from "./fish-pitch.js?v=horizontal-20260909";
+import { fishBodyFill } from "./fish-body.js?v=horizontal-20260909";
+import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=horizontal-20260909";
+import { drawBubbles } from "./bubbles.js?v=horizontal-20260909";
 import {
   worldLayer,
   depthScale,
@@ -33,21 +33,21 @@ import {
   schoolDepthScale,
   scatteredDepth,
   spreadDepth,
-} from "./depth.js?v=visual-depth-20260830";
-import { bodyFillForDepth, mixColor, MASK_SYMBOLS, scenePalette } from "./palette.js?v=visual-depth-20260830";
+} from "./depth.js?v=horizontal-20260909";
+import { bodyFillForDepth, mixColor, MASK_SYMBOLS, scenePalette } from "./palette.js?v=horizontal-20260909";
 import {
   addPlantRecord,
   createPlantRenderRecords,
   plantRenderRecord,
   skeletonLinesForRecord,
-} from "./plants.js?v=visual-depth-20260830";
+} from "./plants.js?v=horizontal-20260909";
 import {
   addGlyphObject,
   createSceneBuilder,
   finalizeScene,
   positionedGlyph,
   sceneMetrics,
-} from "./scene.js?v=true-rotation-20260902";
+} from "./scene.js?v=horizontal-20260909";
 
 const TAU = Math.PI * 2;
 const BODY_MOTION_BY_ACTIVITY = Object.freeze({

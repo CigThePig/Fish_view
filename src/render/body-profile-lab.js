@@ -1,6 +1,6 @@
-import { DEFAULT_BODY_PROFILE, bodyProfileForId } from "./body-profiles.js?v=true-rotation-20260902";
-import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
-import { glyphBounds } from "./scene.js?v=true-rotation-20260902";
+import { DEFAULT_BODY_PROFILE, bodyProfileForId } from "./body-profiles.js?v=horizontal-20260909";
+import { fishBodyFill } from "./fish-body.js?v=horizontal-20260909";
+import { glyphBounds } from "./scene.js?v=horizontal-20260909";
 
 // The editor side of the Typographic Motion Lab.
 //

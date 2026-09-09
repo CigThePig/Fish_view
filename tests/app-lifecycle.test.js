@@ -97,6 +97,15 @@ test("the application resumes one aquarium after suspension and displays restore
     assert.equal(panel.hidden,true,'a hold counted as a tap');
     pointer('pointercancel',x,y);
   }
+  canvas.listeners.get('keydown')({key:'Enter', repeat:true, preventDefault(){}});
+  assert.equal(panel.hidden,true);
+  canvas.listeners.get('keydown')({key:'Enter', repeat:false, preventDefault(){}});
+  assert.equal(panel.hidden,false);
+  document.listeners.get('keydown')({key:'Escape'});
+  assert.equal(panel.hidden,true);
+  canvas.listeners.get('keydown')({key:' ', repeat:false, preventDefault(){}});
+  assert.equal(panel.hidden,false);
+  nodes.get('#debug-close').listeners.get('click')();
   // Clear touch bookkeeping before the existing offline lifecycle assertions.
   nodes.get("#reset-simulation").listeners.get("click")();
     const hiddenAt = now;

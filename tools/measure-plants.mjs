@@ -80,5 +80,5 @@ function measureAquarium() {
 
 console.log(JSON.stringify({
   sample: "mature aquarium at 10 fps",
-  measurements: [measureAquarium(), measureAquarium()],
+  measurements: [measureAquarium()],
 }, null, 2));

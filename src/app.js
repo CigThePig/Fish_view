@@ -1,6 +1,6 @@
 import { DeveloperGesture, aquariumPoint } from "./platform/aquarium-input.js";
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=true-rotation-20260902";
-import { render } from "./render/render.js?v=true-rotation-20260902";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=horizontal-20260909";
+import { render } from "./render/render.js?v=horizontal-20260909";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { VisibilityClock } from "./platform/visibility-clock.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
@@ -219,8 +219,16 @@ document.addEventListener("pointerdown", (event) => {
 function setDebugOpen(open) {
   gesture.reset();
   debugPanel.hidden = !open;
+  canvas.setAttribute("aria-expanded", String(open));
   if (open) { syncControls(); document.querySelector("#debug-close").focus(); }
+  else canvas.focus({ preventScroll: true });
 }
+canvas.addEventListener("keydown", (event) => {
+  if (!event.repeat && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    setDebugOpen(true);
+  }
+});
 document.querySelector("#debug-close").addEventListener("click", () => setDebugOpen(false));
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") setDebugOpen(false); });
 

@@ -1,9 +1,9 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=true-rotation-20260902";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=horizontal-20260909";
 import {
   applyBodyProfileToSpriteScene,
   bodyProfileForSprite,
-} from "./render/body-profile-lab.js?v=true-rotation-20260902";
-import { individualSprites, renderSpriteScene } from "./render/render.js?v=true-rotation-20260902";
+} from "./render/body-profile-lab.js?v=horizontal-20260909";
+import { individualSprites, renderSpriteScene } from "./render/render.js?v=horizontal-20260909";
 import { growthStagesFor, spriteDimensions } from "./art/sprites.js";
 
 const TAU = Math.PI * 2;
