@@ -20,6 +20,7 @@ import {
   observeInteraction,
   prepareScenario,
 } from "../src/dev/interaction-observation.js";
+import { DISPLAY } from "../src/sim/config.js";
 import { CanvasSceneRenderer } from "../src/render/canvas-renderer.js";
 
 const DEFAULT_SCALE = 0.5;
@@ -71,11 +72,52 @@ function parseOptions(argumentsList) {
     scenarios,
     scale,
     seed,
+    // Draws each fish's response role over the frame. The aquarium itself never
+    // shows a label; this is a developer overlay, and it is the only way a
+    // still frame can say *why* two fish are doing different things.
+    annotate: argumentsList.includes("--roles"),
     seconds: Number(optionValue(argumentsList, "--seconds", 12)),
     gif: argumentsList.includes("--gif"),
     output: path.resolve(optionValue(argumentsList, "--output", DEFAULT_OUTPUT)),
     name: optionValue(argumentsList, "--name", "interaction"),
   };
+}
+
+// One colour per response role, warm for the fish that come and cool for the
+// ones that stay, so a frame reads at a glance.
+const ROLE_MARKS = Object.freeze({
+  investigate: { mark: "I", color: "#ffd166" },
+  approach: { mark: "A", color: "#f4a261" },
+  delayed: { mark: "D", color: "#e76f51" },
+  watch: { mark: "W", color: "#8ecae6" },
+  wary: { mark: "y", color: "#a2a8d3" },
+  acknowledge: { mark: "\u00b7", color: "#7f9c96" },
+});
+
+function annotateRoles(context, state, scale) {
+  const toPixels = (x, y) => [
+    x / DISPLAY.cols * DISPLAY.pixelWidth * scale,
+    y / DISPLAY.rows * DISPLAY.pixelHeight * scale,
+  ];
+  context.textBaseline = "middle";
+  context.textAlign = "center";
+  context.font = `700 ${Math.max(10, Math.round(16 * scale))}px sans-serif`;
+  for (const stimulus of state.stimuli ?? []) {
+    const [x, y] = toPixels(stimulus.x, stimulus.y);
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = Math.max(1, scale);
+    context.beginPath();
+    context.arc(x, y, Math.max(3, 7 * scale), 0, Math.PI * 2);
+    context.stroke();
+  }
+  for (const fish of state.individuals ?? []) {
+    const role = fish.attention?.role;
+    if (!role || !ROLE_MARKS[role]) continue;
+    const [x, y] = toPixels(fish.x, fish.y);
+    context.fillStyle = ROLE_MARKS[role].color;
+    context.fillText(ROLE_MARKS[role].mark, x, y - Math.max(8, 16 * scale));
+  }
+  context.textAlign = "left";
 }
 
 function drawLabel(context, text, x, y, width, height, { strong = false } = {}) {
@@ -195,7 +237,7 @@ for (const [row, entry] of rows.entries()) {
   observeInteraction(prepared.state, {
     history: prepared.history,
     observeSeconds: scenario.observeSeconds ?? options.seconds,
-    onFrame: ({ frame: index, scene }) => {
+    onFrame: ({ frame: index, scene, state }) => {
       renderer.draw(scene);
       if (encoder) {
         frameContext.drawImage(source, 0, 0, frame.width, frame.height);
@@ -213,6 +255,12 @@ for (const [row, entry] of rows.entries()) {
       const y = row * rowHeight + headerHeight;
       drawLabel(sheetContext, momentLabel(slot.column), x, y, frame.width, frameLabelHeight);
       sheetContext.drawImage(source, 0, 0, NATIVE.width, NATIVE.height, x, y + frameLabelHeight, frame.width, frame.height);
+      if (options.annotate) {
+        sheetContext.save();
+        sheetContext.translate(x, y + frameLabelHeight);
+        annotateRoles(sheetContext, state, options.scale);
+        sheetContext.restore();
+      }
     },
   });
 

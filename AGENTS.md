@@ -90,6 +90,7 @@ plausible.
 | Identity | `src/sim/fish-personality.js`, `src/sim/fish-roster.js`, `src/sim/fish-growth.js` | traits and growth derived from seeds |
 | Long horizon | `src/sim/aquarium-history.js` | arrivals, propagation, offline progression |
 | Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring |
+| Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, what a press landed on |
 | Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts |
 | Scene | `src/render/render.js` → `render(state)` | glyph scene: `objects`, `glyphs`, `background` |
 | Damage | `src/render/damage.js` → `calculateDamage(previous, next)` | dirty rectangles between two scenes |
@@ -106,25 +107,23 @@ growth; real time drives locomotion and activities. Keep that distinction.
 
 ### The interaction path as it stands today
 
-Stage 2 Phase 2 changes what fish do with a touch, so know what this does before
-you change it.
+Stage 2 Phase 3 gives a held press meaning, so know what this does before you
+change it.
 
 `src/app.js` handles primary `pointerdown`, maps the event through
 `aquariumPoint`, and — outside the developer hotspot — calls `applyTouch`.
-`applyTouch` in `src/sim/state.js` registers **one stimulus and one impulse**
-(`src/sim/interaction-events.js`), then applies the response in the same frame:
-it steers the whole school at the stimulus, forces **every** persistent fish
-into the `touch-react` activity, and gives the nearest fish a small permanent
-boldness and sociability drift. Pointer movement, hold and release still have no
-meaning.
+`applyTouch` in `src/sim/state.js` classifies what the press landed on,
+registers **one stimulus and one impulse**
+(`src/sim/interaction-events.js`), assigns every fish a **response role**
+(`src/sim/attention.js`), and turns only the fish that are actually going
+somewhere. Pointer movement, hold duration and release still have no meaning.
 
 The two event types are the Phase 1 architecture and the distinction is
 load-bearing:
 
 - a **stimulus** is something inhabitants can notice — position, intensity, a
-  perception radius, an age and a duration. Fish read it; nothing is pushed by
-  it. A tap's radius currently spans the aquarium, which is exactly why one tap
-  still reaches all fifteen fish, and exactly what Phase 2 narrows.
+  30-cell perception radius, what it landed on, an age and a duration. Fish read
+  it; nothing is pushed by it.
 - an **impulse** is water actually moving — position, strength, radius, envelope
   and what it touched. Plants bend in it, a substrate impulse shakes bubbles
   loose, the renderer draws its ripple. None of that needs a behaviour.
@@ -133,9 +132,27 @@ Both are transient: capped at six each, coalesced when a press repeats within
 1.2 cells, dropped the frame they are spent, never serialised, and cleared by an
 offline gap. `tests/interaction-events.test.js` guards those rules.
 
-The measured consequence, and the thing Stage 2 exists to end: one tap puts all
-fifteen fish of a stocked aquarium into the same activity in the same tick.
-Reproduce it with `npm run observe:interaction`.
+The Phase 2 response model sits on top:
+
+- Each fish gets one of six roles — investigate, approach, delayed, watch, wary,
+  acknowledge — scored deterministically from distance, glass affinity, the
+  affinity matching the press's context, boldness, curiosity, energy, whether a
+  trusted companion is going, body suitability, and how absorbed it is in what
+  it is doing. At most **two primary, two secondary and one delayed** are ever
+  pulled off their activity; everyone else answers inside the motion they were
+  already making.
+- **Something always answers**: the most interested fish that perceived the
+  press investigates whatever its score, and if none perceived it, the nearest
+  one does.
+- A response **recovers** rather than being cancelled: the fish resumes the
+  activity it put down, on a per-fish seeded beat.
+- The record is one transient object per fish, never persisted.
+  `tests/attention-roles.test.js` guards the vocabulary, the caps, the
+  guarantee and the recovery.
+
+One tap now leaves seven to ten activities standing where it used to leave one.
+Reproduce it with `npm run observe:interaction`, or look at it with
+`npm run capture:interaction -- --roles`.
 
 ## Working agreement
 
@@ -196,6 +213,7 @@ npm run measure:screen                    # panel legibility
 npm run measure:living                    # long observation summary
 npm run capture:behaviors -- --scenario playful-chase --scale 1 --gif
 npm run capture:interaction -- --scenario=open-water-tap --scale=1 --gif
+npm run capture:interaction -- --scenario=rest-tap --roles     # response roles drawn over the frame
 npm run capture:depth
 npm run capture:living
 npm run build:pages

@@ -120,8 +120,11 @@ function tickSchool(state, realDelta, motionScale) {
   // With one tap that is the tap, exactly as before; the difference is that the
   // school now asks what the most salient stimulus is rather than reading the
   // one global reaction there used to be.
+  // The school drifts toward a disturbance near it and carries on past one at
+  // the far end of the tank. Before Phase 2 every tap pulled the whole school
+  // wherever it fell, which is most of what made one press look like a summons.
   const stimulus = dominantStimulus(state);
-  const reactionStrength = 1.8 * stimulusSalience(stimulus);
+  const reactionStrength = 1.35 * stimulusSalience(stimulus);
 
   return source.map((fish, index) => {
     const journey = schoolJourney(state, index);
@@ -183,9 +186,12 @@ function tickSchool(state, realDelta, motionScale) {
     ay += (centerY - fish.y) * state.settings.depthPreference * 0.09;
 
     if (stimulus && reactionStrength > 0) {
-      const toward = safeNormalize(stimulus.x - fish.x, stimulus.y - fish.y, index % 2 ? -1 : 1, 0);
-      ax += toward.x * reactionStrength;
-      ay += toward.y * reactionStrength;
+      const reach = clamp(1 - Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y) / stimulus.radius, 0, 1);
+      if (reach > 0) {
+        const toward = safeNormalize(stimulus.x - fish.x, stimulus.y - fish.y, index % 2 ? -1 : 1, 0);
+        ax += toward.x * reactionStrength * reach;
+        ay += toward.y * reactionStrength * reach;
+      }
     }
 
     const velocity = limitVelocity(
@@ -418,7 +424,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     bubbles,
     school,
   });
-  const { target } = activityFrame;
+  const { target, attention } = activityFrame;
   const hungerRelief = target?.forageSearching
     ? deltaHours * 0.018 * (1 + (target.peck ?? 0) * 0.35)
     : 0;
@@ -530,6 +536,9 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     history,
     behavior,
     activity,
+    // The response this fish is giving to the last disturbance it noticed.
+    // Transient, one per fish, never serialised.
+    attention,
     visual: finalVisual,
   };
 }

@@ -118,12 +118,18 @@ test("persistence stores individuals and plants but not the identity-free school
   assert.ok(saved.individuals.every((fish) => !("activity" in fish)));
   const restored = restorePersistentState(base, saved);
   for (let index = 0; index < restored.individuals.length; index += 1) {
-    const { activity: restoredActivity, ...restoredPersistent } = restored.individuals[index];
-    const { activity: evolvedActivity, ...evolvedPersistent } = evolved.individuals[index];
+    const { activity: restoredActivity, attention: restoredAttention, ...restoredPersistent }
+      = restored.individuals[index];
+    const { activity: evolvedActivity, attention: evolvedAttention, ...evolvedPersistent }
+      = evolved.individuals[index];
     assert.deepEqual(restoredPersistent, evolvedPersistent);
     assert.equal(restoredActivity.current, evolvedPersistent.behavior.current);
     assert.equal(restoredActivity.targetType, null);
     assert.equal(evolvedActivity.current, "touch-react");
+    // A response role is a thing the fish is doing right now, not something it
+    // is: a reload starts the fish quiet.
+    assert.equal(restoredAttention ?? null, null);
+    assert.equal(evolvedAttention.role, "investigate");
   }
   assert.deepEqual(restored.plants, evolved.plants);
   assert.deepEqual(restored.school, base.school);

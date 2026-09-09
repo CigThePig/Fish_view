@@ -36,6 +36,7 @@ import { aquariumPoint } from "../platform/aquarium-input.js";
 import { calculateDamage } from "../render/damage.js";
 import { render } from "../render/render.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
+import { RESPONSE_ROLE_LIST } from "../sim/attention.js";
 import { createBubbleWorldRecords } from "../sim/bubbles.js";
 import { DISPLAY, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { clamp, traitsFromSeed } from "../sim/entities.js";
@@ -362,6 +363,10 @@ function createFishRecord(fish, stimulus) {
       companions: fish.history?.socialMemory?.length ?? 0,
     },
     startActivity: fish.activity?.current ?? null,
+    // The response role the aquarium gave this fish, and the one it was still
+    // playing when the observation ended. Phase 2's whole claim is that these
+    // differ from fish to fish.
+    role: null,
     activityAfterInput: null,
     responseLatencySeconds: null,
     startDistance: stimulus ? round(Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y), 2) : null,
@@ -505,6 +510,7 @@ export function observeInteraction(baseState, {
         if (distance <= NEAR_STIMULUS_RADIUS_CELLS) record.secondsNearStimulus += stepSeconds;
         if (record.activityAfterInput === null && frame === stimulusFrame) {
           record.activityAfterInput = fish.activity?.current ?? null;
+          record.role = fish.attention?.role ?? "none";
         }
       }
 
@@ -617,6 +623,12 @@ export function observeInteraction(baseState, {
       respondingWeakly: fish.filter((one) => one.peakDeviation > DEVIATION_EPSILON_CELLS
         && one.peakDeviation <= STRONG_RESPONSE_CELLS).length,
       unaffected: fish.filter((one) => one.peakDeviation <= DEVIATION_EPSILON_CELLS).length,
+      roles: Object.fromEntries(RESPONSE_ROLE_LIST
+        .concat("none")
+        .map((role) => [role, fish.filter((one) => one.role === role).length])
+        .filter(([, count]) => count > 0)),
+      distinctRoles: new Set(fish.map((one) => one.role).filter(Boolean)).size,
+      interrupted: fish.filter((one) => one.activityAfterInput === "touch-react").length,
       activitiesBefore: new Set(fish.map((one) => one.startActivity)).size,
       activitiesAfterInput: new Set(fish.map((one) => one.activityAfterInput ?? one.startActivity)).size,
       activitiesAtEnd: new Set(fish.map((one) => one.endingActivity)).size,

@@ -10,6 +10,7 @@ import { plantHeight } from "../sim/plants.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { speciesCanBottomFeed } from "../sim/fish-growth.js";
+import { RESPONSE_ROLES, createAttention } from "../sim/attention.js";
 import { createImpulse, createStimulus } from "../sim/interaction-events.js";
 import { createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
@@ -436,6 +437,11 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
     });
   } else if (scenario.id === ACTIVITIES.touchReact) {
     const touch = { x: center.x + 2.2, y: center.y - 0.5 };
+    const stimulus = createStimulus({
+      id: "touch:showcase",
+      ...touch,
+      radius: Math.hypot(state.cols, state.rows),
+    });
     individuals[SUBJECT_INDEX] = posedFish(subject, state, {
       x: center.x - 2.1,
       y: center.y + 0.6,
@@ -446,9 +452,16 @@ function configureScenario(initial, scenarioId, { preserveAge = false } = {}) {
       target: { targetType: "touch", targetX: touch.x, targetY: touch.y },
       preserveAge,
     });
+    // The lab poses the response as well as the event: since Phase 2 a fish
+    // answers a disturbance because it was given a role, not because a
+    // disturbance exists, so a showcase without one shows a fish ignoring it.
+    individuals[SUBJECT_INDEX] = {
+      ...individuals[SUBJECT_INDEX],
+      attention: createAttention(individuals[SUBJECT_INDEX], stimulus, RESPONSE_ROLES.investigate),
+    };
     state = {
       ...state,
-      stimuli: [createStimulus({ id: "touch:showcase", ...touch, radius: Math.hypot(state.cols, state.rows) })],
+      stimuli: [stimulus],
       impulses: [createImpulse({ id: "touch:showcase", ...touch })],
     };
   } else if (scenario.id === ACTIVITIES.arrivalEnter) {

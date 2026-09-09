@@ -25,6 +25,7 @@ import {
   registerTouch,
   stimulusSalience,
 } from "../src/sim/interaction-events.js";
+import { assignAttention } from "../src/sim/attention.js";
 import { createPlantFrameContext, posePlant } from "../src/sim/plants.js";
 import { ACTIVITIES, tickFishActivity } from "../src/sim/fish-activities.js";
 import {
@@ -78,12 +79,20 @@ test("perception and disturbance are separate channels", () => {
   const fish = base.individuals[4];
   const at = { x: plant.x, y: 9 };
 
-  // A stimulus with no impulse: the fish answers it, the plant never knows.
+  // A stimulus with no impulse: a fish answers it, the plant never knows.
+  const stimulus = createStimulus({ id: "touch:test", ...at, radius: Math.hypot(base.cols, base.rows) });
+  const attention = assignAttention({ ...base, stimuli: [stimulus] }, stimulus, {});
+  const responder = attention.findIndex((record) => record?.role === "investigate");
   const noticed = {
     ...base,
-    stimuli: [createStimulus({ id: "touch:test", ...at, radius: Math.hypot(base.cols, base.rows) })],
+    stimuli: [stimulus],
+    individuals: base.individuals.map((one, index) => ({ ...one, attention: attention[index] })),
   };
-  assert.equal(tickFishActivity(fish, 4, noticed, 0.1).activity.current, ACTIVITIES.touchReact);
+  assert.ok(responder >= 0, "nothing was assigned to answer the stimulus");
+  assert.equal(
+    tickFishActivity(noticed.individuals[responder], responder, noticed, 0.1).activity.current,
+    ACTIVITIES.touchReact,
+  );
   assert.equal(
     posePlant(plant, noticed, { frameContext: createPlantFrameContext(noticed) }).disturbance,
     0,

@@ -32,6 +32,7 @@
  * for months, and an interaction list that grows is a leak with a nice name.
  */
 
+import { TOUCH_FLOOR_ROWS } from "./config.js";
 import { mix32 } from "./prng.js";
 
 function clamp(value, minimum, maximum) {
@@ -51,6 +52,14 @@ export const TOUCH_SECONDS = 3.2;
 // same 7.5 cells; it belongs to the event, not to the plants.
 export const TOUCH_IMPULSE_RADIUS_CELLS = 7.5;
 
+// How far a tap carries as something to notice: about half the tank. Phase 1
+// set this to the whole aquarium, which is why one tap reached all fifteen
+// fish; Phase 2 gives it a distance, so a press in one corner is a local event
+// and the fish at the far end are simply somewhere else. A fish beyond it gets
+// no response role at all - except for the guarantee in src/sim/attention.js,
+// which hands the nearest fish the event when nobody else caught it.
+export const TOUCH_STIMULUS_RADIUS_CELLS = 30;
+
 // A second press this close to a live one of the same kind is the same gesture
 // continuing, not a new event: it refreshes the one that is there instead of
 // spending another slot. It is also what keeps a child drumming on the glass
@@ -62,10 +71,6 @@ export const COALESCE_RADIUS_CELLS = 1.2;
 // wrapping counter gives both: ids repeat only after 65 536 interactions, by
 // which time every event that carried an earlier one has been gone for hours.
 const SEQUENCE_MODULO = 0x10000;
-
-// The lowest row a press can reach - `applyTouch` clamps to it - so a press
-// there is a press on the sand. Sand contact is what releases a bubble burst.
-const SUBSTRATE_CONTACT_MARGIN_ROWS = 5;
 
 export function createInteractionState() {
   return { stimuli: Object.freeze([]), impulses: Object.freeze([]), interactionSequence: 0 };
@@ -128,13 +133,17 @@ export function createStimulus({
   x,
   y,
   intensity = 1,
-  radius = TOUCH_IMPULSE_RADIUS_CELLS,
+  radius = TOUCH_STIMULUS_RADIUS_CELLS,
   ageSeconds = 0,
   durationSeconds = TOUCH_SECONDS,
+  // What the press landed on - see src/sim/interaction-context.js. It shapes
+  // who finds the event interesting, and it is deliberately not the same
+  // question as what the water physically touched.
+  context = "open-water",
   // Which press this was, for ordering events that are otherwise equal.
   sequence = 0,
 }) {
-  return Object.freeze({ id, source, x, y, intensity, radius, ageSeconds, durationSeconds, sequence });
+  return Object.freeze({ id, source, x, y, intensity, radius, ageSeconds, durationSeconds, context, sequence });
 }
 
 /** Water actually being disturbed. */
@@ -154,17 +163,14 @@ export function createImpulse({
   return Object.freeze({ id, source, x, y, strength, radius, ageSeconds, durationSeconds, contact, seed, sequence });
 }
 
-function touchStimulus(state, x, y, sequence) {
+function touchStimulus(state, x, y, sequence, context) {
   return createStimulus({
     id: `touch:${sequence}`,
     sequence,
     x,
     y,
-    // A tap is currently perceived by every fish in the tank however far away it
-    // is, which is precisely the behaviour Phase 2 ends. Saying so as a radius
-    // that spans the aquarium keeps the mechanism honest: the phase that gives
-    // fish an attention range shrinks this number, it does not invent a concept.
-    radius: Math.hypot(state.cols, state.rows),
+    context,
+    radius: TOUCH_STIMULUS_RADIUS_CELLS,
   });
 }
 
@@ -176,7 +182,7 @@ function touchImpulse(state, x, y, sequence) {
     y,
     // What the disturbance reached. A press on the sand lifts a bubble burst
     // out of it; Phase 5 gives "surface" the same kind of meaning.
-    contact: y >= state.rows - SUBSTRATE_CONTACT_MARGIN_ROWS - 0.01 ? "substrate" : "water",
+    contact: y >= state.rows - TOUCH_FLOOR_ROWS - 0.01 ? "substrate" : "water",
     // Effects that need their own deterministic variation - the bubble burst is
     // the only one today - derive it from here. It comes from the aquarium seed
     // and the position rather than from the sequence number, so touching the
@@ -217,9 +223,9 @@ function admit(list, event, maximum, amplitude) {
  * applies the immediate response - a press has to be answered in the frame it
  * arrives, never on the next tick.
  */
-export function registerTouch(state, x, y) {
+export function registerTouch(state, x, y, context = "open-water") {
   const sequence = ((state.interactionSequence ?? 0) + 1) % SEQUENCE_MODULO;
-  const stimulus = touchStimulus(state, x, y, sequence);
+  const stimulus = touchStimulus(state, x, y, sequence, context);
   const impulse = touchImpulse(state, x, y, sequence);
   return {
     stimulus,

@@ -6,6 +6,13 @@ import { DRIVE_MAXIMUM } from "../src/sim/config.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
 import { createStimulus } from "../src/sim/interaction-events.js";
 import {
+  MAX_INVESTIGATORS,
+  MAX_SECONDARY,
+  RESPONSE_ROLES,
+  assignAttention,
+  attentionInvestigates,
+} from "../src/sim/attention.js";
+import {
   ACTIVITIES,
   activityUtilities,
   createActivityState,
@@ -266,7 +273,7 @@ test("completed plant visits return to open water before choosing vegetation aga
   }
 });
 
-test("touch immediately overrides every major activity and remains deterministic", () => {
+test("a touch assigns response roles instead of overriding every activity", () => {
   const base = stockedAquarium({ seed: 771 });
   const kinds = [
     ACTIVITIES.bubbleInvestigate,
@@ -281,7 +288,7 @@ test("touch immediately overrides every major activity and remains deterministic
     individuals: base.individuals.map((fish, index) => ({
       ...fish,
       activity: {
-        ...createActivityState(kinds[index]),
+        ...createActivityState(kinds[index % kinds.length]),
         targetType: index === 0 ? "bubble" : index === 1 || index === 3 ? "plant" : index === 2 ? "fish" : "school",
         targetId: index === 2 ? base.individuals[0].seed : 1234,
       },
@@ -289,13 +296,39 @@ test("touch immediately overrides every major activity and remains deterministic
   };
   const first = applyTouch(prepared, 30, 8);
   const second = applyTouch(prepared, 30, 8);
-  assert.deepEqual(first, second);
+  assert.deepEqual(first, second, "the same press on the same aquarium produced two different casts");
+
+  const roles = first.individuals.map((fish) => fish.attention?.role ?? null);
+  const investigating = first.individuals.filter((fish) => attentionInvestigates(fish.attention));
+  const interrupted = first.individuals.filter((fish) => fish.activity.current === ACTIVITIES.touchReact);
+
+  // The Stage 2 headline: one press is answered, and it is not answered by
+  // everybody.
+  assert.ok(roles.includes(RESPONSE_ROLES.investigate), "nothing went to look");
+  assert.ok(investigating.length <= MAX_INVESTIGATORS + MAX_SECONDARY);
+  assert.ok(interrupted.length < first.individuals.length / 2,
+    `${interrupted.length} of ${first.individuals.length} fish were pulled off what they were doing`);
+  // This fixture parks the cast in two clusters 28-35 cells from the press, so
+  // the honest answer here is one investigator and a lot of distant fish
+  // carrying on. The full role mix is exercised on a settled aquarium in
+  // tests/attention-roles.test.js.
+  assert.ok(new Set(roles.filter(Boolean)).size >= 2, "every fish answered the same way");
+  assert.ok(roles.includes(null), "a fish on the far side of the tank still noticed a local press");
+
   for (let index = 0; index < first.individuals.length; index += 1) {
     const before = prepared.individuals[index];
     const fish = first.individuals[index];
-    assert.equal(fish.activity.current, ACTIVITIES.touchReact);
-    assert.equal(fish.activity.targetType, "touch");
-    assert.ok(fish.vx * (30 - before.x) + fish.vy * (8 - before.y) > 0);
+    if (attentionInvestigates(fish.attention)) {
+      assert.equal(fish.activity.current, ACTIVITIES.touchReact);
+      assert.equal(fish.activity.targetType, "touch");
+      assert.ok(fish.vx * (30 - before.x) + fish.vy * (8 - before.y) > 0, "a responder did not set off toward the press");
+    } else {
+      // Everyone else keeps the activity and the heading they had. What they do
+      // about the press is shaped into that motion on the following frames.
+      assert.equal(fish.activity.current, before.activity.current);
+      assert.equal(fish.vx, before.vx);
+      assert.equal(fish.vy, before.vy);
+    }
   }
 });
 
@@ -313,8 +346,11 @@ test("glass affinity changes deterministic approach style without allowing refus
     stimuli: [stimulus],
     individuals: base.individuals.map((fish, index) => index === 4 ? source : fish),
   };
-  const cautious = tickFishActivity(source, 4, state, 0.1, { affinities: affinities({ glass: 0.1 }) });
-  const eager = tickFishActivity(source, 4, state, 0.1, { affinities: affinities({ glass: 0.95 }) });
+  // Both fish are going to look; only the style of the approach differs.
+  const attention = { ...assignAttention(state, stimulus, {})[4], role: RESPONSE_ROLES.investigate };
+  const responding = { ...source, attention };
+  const cautious = tickFishActivity(responding, 4, state, 0.1, { affinities: affinities({ glass: 0.1 }) });
+  const eager = tickFishActivity(responding, 4, state, 0.1, { affinities: affinities({ glass: 0.95 }) });
   assert.equal(cautious.activity.current, ACTIVITIES.touchReact);
   assert.equal(eager.activity.current, ACTIVITIES.touchReact);
   assert.ok(Math.hypot(cautious.target.x - stimulus.x, cautious.target.y - stimulus.y)

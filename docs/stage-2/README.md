@@ -24,7 +24,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | — | Repository preparation | Done | [baseline](baseline-2026-09-09.md) |
 | 0 | Interaction observation and baseline instrumentation | Done | [phase 0](phase-0-interaction-observation.md) |
 | 1 | Stimulus and impulse architecture | Done | [phase 1](phase-1-stimulus-impulse.md) |
-| 2 | Attention, response roles, contextual tap | Not started | — |
+| 2 | Attention, response roles, contextual tap | Done | [phase 2](phase-2-attention-and-roles.md) |
 | 3 | Hold and persistent presence | Not started | — |
 | 4 | Drag, swipe and local water impulse | Not started | — |
 | 5 | Environmental interaction and causal chains | Not started | — |
@@ -35,6 +35,10 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+Phase 2 ended the global response: a press now hands each fish a deterministic
+response role (`src/sim/attention.js`), and one tap leaves seven to ten
+activities standing where it used to leave one.
 
 Phase 1 replaced the single global `state.reaction` with bounded transient
 `stimuli` and `impulses` (`src/sim/interaction-events.js`) and routed the

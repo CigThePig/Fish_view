@@ -82,6 +82,7 @@ console.log([
   pad("weak", 5, true),
   pad("none", 5, true),
   pad("activities", 12),
+  pad("roles", 24),
   pad("lat", 5, true),
   pad("school", 13),
   pad("env p/b/r", 10),
@@ -113,6 +114,8 @@ for (const seed of options.seeds) {
       pad(aquarium.respondingWeakly, 5, true),
       pad(aquarium.unaffected, 5, true),
       pad(`${aquarium.activitiesBefore}>${aquarium.activitiesAfterInput}>${aquarium.activitiesAtEnd}`, 12),
+      pad(Object.entries(aquarium.roles ?? {})
+        .map(([role, count]) => `${role.slice(0, 3)}${count}`).join(" "), 24),
       pad(latencies.length ? Math.min(...latencies).toFixed(1) : "—", 5, true),
       pad(`${aquarium.schoolCentroidDisplacement.toFixed(2)}/${aquarium.schoolSpreadChange.toFixed(2)}`, 13),
       pad(`${aquarium.plantsDisturbed}/${aquarium.bubblesCreated}/${aquarium.residentsAffected}`, 10),
@@ -146,6 +149,7 @@ if (detail) {
     pad("bold/curi", 10),
     pad("glass", 6, true),
     pad("start activity", 20),
+    pad("role", 12),
     pad("after input", 14),
     pad("lat", 5, true),
     pad("start>near", 11, true),
@@ -164,6 +168,7 @@ if (detail) {
       pad(`${fish.traits.boldness.toFixed(2)}/${fish.traits.curiosity.toFixed(2)}`, 10),
       pad(fish.glassAffinity.toFixed(2), 6, true),
       pad(fish.startActivity, 20),
+      pad(fish.role ?? "—", 12),
       pad(fish.activityAfterInput ?? "—", 14),
       pad(fish.responseLatencySeconds ?? "—", 5, true),
       pad(`${fish.startDistance}>${fish.closestDistance}`, 11, true),
@@ -246,7 +251,7 @@ await writeAudit(options.output, "interaction-observation", report);
 // that says what each one is. The evidence file is meant to be committed.
 const FISH_COLUMNS = Object.freeze([
   "id", "boldness", "sociability", "activity", "preferredDepth", "curiosity",
-  "glassAffinity", "touches", "startActivity", "activityAfterInput",
+  "glassAffinity", "touches", "startActivity", "role", "activityAfterInput",
   "responseLatencySeconds", "startDistance", "closestDistance", "distanceTravelled",
   "averageSpeed", "peakSpeed", "peakAcceleration", "peakPitch", "turnDegrees",
   "turnCount", "secondsNearStimulus", "endingActivity", "outcome",
@@ -256,7 +261,7 @@ function fishRow(fish) {
   return [
     fish.id, fish.traits.boldness, fish.traits.sociability, fish.traits.activity,
     fish.traits.preferredDepth, fish.traits.curiosity, fish.glassAffinity,
-    fish.familiarity.touches, fish.startActivity, fish.activityAfterInput,
+    fish.familiarity.touches, fish.startActivity, fish.role, fish.activityAfterInput,
     fish.responseLatencySeconds, fish.startDistance, fish.closestDistance,
     fish.distanceTravelled, fish.averageSpeed, fish.peakSpeed, fish.peakAcceleration,
     fish.peakPitch, fish.turnDegrees, fish.turnCount, fish.secondsNearStimulus,
