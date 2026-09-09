@@ -26,7 +26,8 @@ import { spriteDimensions } from "../src/art/sprites.js";
 import { spriteForFish } from "../src/sim/fish-growth.js";
 import { STIMULUS_CONTEXTS, classifyStimulusContext } from "../src/sim/interaction-context.js";
 import { createStimulus } from "../src/sim/interaction-events.js";
-import { ACTIVITIES, activityCommitment } from "../src/sim/fish-activities.js";
+import { ACTIVITIES, activityCommitment, tickFishActivity } from "../src/sim/fish-activities.js";
+import { advanceAquariumHistory } from "../src/sim/aquarium-history.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 import { STOCKED_AQUARIUM_DAY, createObservationAquarium } from "../src/dev/interaction-observation.js";
@@ -305,6 +306,61 @@ test("responders let go at different times", () => {
   }
   assert.equal(released.size, responders.length, "a responder never finished");
   assert.ok(new Set(released.values()).size > 1, "every responder let go on the same frame");
+});
+
+test("a shy fish actually puts water between itself and the press", () => {
+  const base = settled(5);
+  let leaning = 0;
+  let closing = 0;
+  for (let x = 5; x < 62; x += 7) {
+    for (const y of [5, 9.5, 14]) {
+      const touched = applyTouch(base, x, y);
+      touched.individuals.forEach((fish, index) => {
+        const attention = fish.attention;
+        if (attention?.role !== RESPONSE_ROLES.wary) return;
+        const target = tickFishActivity(fish, index, touched, 0.1, {}).target;
+        if (!target) return;
+        // A fish with its mouth in the sand keeps its strike geometry on
+        // purpose; its answer is the pause and the lifted nose.
+        if (target.forageSearching || target.forageGrazing) return;
+        const toTarget = { x: target.x - fish.x, y: target.y - fish.y };
+        const toPress = { x: attention.x - fish.x, y: attention.y - fish.y };
+        const length = Math.hypot(toTarget.x, toTarget.y) * Math.hypot(toPress.x, toPress.y);
+        if (length < 1e-6) return;
+        leaning += 1;
+        if ((toTarget.x * toPress.x + toTarget.y * toPress.y) / length > 0.001) closing += 1;
+      });
+    }
+  }
+  assert.ok(leaning > 20, "not enough shy responders to judge");
+  // Leaning away means not still swimming toward it. A fixed turn off a heading
+  // that pointed at the press left a third of them closing on it, which read as
+  // a slightly slower watch rather than a fish keeping its distance.
+  assert.equal(closing, 0, `${closing} of ${leaning} shy responders were still closing on the press`);
+});
+
+test("a fish arriving for the first time is never taken off its entry", () => {
+  for (const seed of [5, 147, 1234]) {
+    // Day 14 is the first arrival: a second fish swimming into the aquarium.
+    const arriving = advanceAquariumHistory(createAquariumState({ seed }), 14);
+    const index = arriving.individuals.findIndex((fish) => fish.activity?.current === ACTIVITIES.arrivalEnter);
+    assert.ok(index >= 0, `seed ${seed}: expected an arrival in progress`);
+
+    const newcomer = arriving.individuals[index];
+    const touched = applyTouch(arriving, newcomer.x + 1.5, newcomer.y);
+    const answered = touched.individuals[index];
+
+    // It may notice the press. It may not be pulled out of an entry that
+    // happens once in its life - not even by the guarantee that something
+    // always answers, which finds another fish instead.
+    assert.equal(answered.activity.current, ACTIVITIES.arrivalEnter);
+    assert.equal(attentionInvestigates(answered.attention), false);
+    if (answered.attention) assert.ok(isPassiveRole(answered.attention.role));
+    assert.ok(
+      touched.individuals.some((fish, other) => other !== index && attentionInvestigates(fish.attention)),
+      `seed ${seed}: nothing answered the press`,
+    );
+  }
 });
 
 test("attention is transient: bounded, one per fish, and never carried over", () => {

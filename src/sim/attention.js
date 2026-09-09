@@ -76,6 +76,13 @@ const APPROACH_THRESHOLD = 0.5;
 // over does, so the bar for it is lower.
 const COMMITMENT_HESITATES = 0.55;
 const DELAYED_THRESHOLD = 0.44;
+// A commitment of one means the fish is not available to be interrupted at all.
+// Today that is a fish swimming into the aquarium for the first time: an
+// arrival happens once in a fish's life, and no press may overwrite it - not
+// even the press that is guaranteed an answer, which finds another fish
+// instead. Such a fish can still notice a disturbance; it simply never leaves
+// its entry for one.
+const UNAVAILABLE_COMMITMENT = 1;
 // A fish this close to the disturbance responds to it visibly even if it is not
 // interested; further away, a low-interest fish simply carries on.
 const WATCH_RADIUS_CELLS = 16;
@@ -230,19 +237,20 @@ export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } =
     candidate.interest = attentionInterest(candidate.fish, stimulus, candidate);
   }
 
-  // The first responder is guaranteed: the most interested fish that noticed,
-  // or - if the disturbance was too far from everyone - the nearest one, who
-  // catches it anyway. A press is never ignored by the whole aquarium.
+  // The first responder is guaranteed: the most interested fish that noticed
+  // and is free to answer, or - if the disturbance was too far from everyone -
+  // the nearest free fish, who catches it anyway. A press is never ignored by
+  // the whole aquarium, and it never costs a fish something it cannot repeat.
+  const available = (candidate) => candidate.commitment < UNAVAILABLE_COMMITMENT;
   const ordered = rank(perceiving);
-  const first = ordered[0]
-    ?? [...candidates].sort((left, right) => left.distance - right.distance
+  const first = ordered.find(available)
+    ?? candidates.filter(available).sort((left, right) => left.distance - right.distance
       || left.fish.seed - right.fish.seed)[0];
-  if (!first) return candidates.map(() => null);
-  first.role = RESPONSE_ROLES.investigate;
+  if (first) first.role = RESPONSE_ROLES.investigate;
 
   // A fish whose most trusted companion is already going is more likely to go
   // too. This is the second pass, so the bonus can depend on the first.
-  const investigators = new Set([first.fish.seed]);
+  const investigators = new Set(first ? [first.fish.seed] : []);
   for (const candidate of ordered) {
     if (candidate.role) continue;
     if (companionSeed(candidate.fish) !== null && investigators.has(companionSeed(candidate.fish))) {
@@ -250,7 +258,7 @@ export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } =
     }
   }
 
-  let primary = 1;
+  let primary = first ? 1 : 0;
   let secondary = 0;
   let delayed = 0;
   for (const candidate of rank(ordered)) {
@@ -258,7 +266,12 @@ export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } =
     const { interest, commitment } = candidate;
     // An absorbed fish never sets off mid-mouthful. It either finishes and then
     // goes, or it watches from where it is - it does not become a second
-    // investigator, whatever its interest.
+    // investigator, whatever its interest. A fish that is not available at all
+    // only ever watches.
+    if (!available(candidate)) {
+      candidate.role = passiveRole(candidate.fish, candidate.distance, candidate.traits, candidate.affinities);
+      continue;
+    }
     if (commitment >= COMMITMENT_HESITATES) {
       if (interest >= DELAYED_THRESHOLD && delayed < MAX_DELAYED) {
         candidate.role = RESPONSE_ROLES.delayed;
@@ -361,8 +374,20 @@ export function shapeTargetForAttention(target, fish, attention) {
   if (reach < 0.001) return shaped;
   const bearing = Math.atan2(offsetY, offsetX);
   const stimulusBearing = Math.atan2(attention.y - fish.y, attention.x - fish.x);
-  const wanted = away ? stimulusBearing + Math.PI : stimulusBearing;
-  const rotation = clamp(angleDifference(bearing, wanted), -turn, turn);
+  let rotation;
+  if (away) {
+    // Leaning away has to put water between the fish and the disturbance. A
+    // fixed turn off a heading that pointed at the press still points at the
+    // press - which made a third of shy responders read as a slightly slower
+    // watch - so the turn is whatever it takes to stop closing, and then a
+    // little further. It is bounded: a quarter turn plus the lean, at most.
+    const toward = angleDifference(stimulusBearing, bearing);
+    const side = toward === 0 ? (fish.seed & 1 ? 1 : -1) : Math.sign(toward);
+    const stopClosing = Math.max(0, Math.PI / 2 - Math.abs(toward));
+    rotation = side * (stopClosing * envelope + turn);
+  } else {
+    rotation = clamp(angleDifference(bearing, stimulusBearing), -turn, turn);
+  }
   return {
     ...shaped,
     x: fish.x + Math.cos(bearing + rotation) * reach,

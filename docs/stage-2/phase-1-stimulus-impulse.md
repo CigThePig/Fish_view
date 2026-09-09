@@ -48,8 +48,8 @@ perceiving something and being pushed by it are no longer the same event.
   now says whether it changed what a viewer sees or only how the aquarium is
   built.
 - `src/dev/interaction-observation.js` — one new scenario, `two-point-tap`: two
-  presses in the same frame, half a tank apart. It exists because the old model
-  could not represent it.
+  presses 0.4 s apart, half a tank apart. It exists because the old model could
+  not represent two live disturbances at all.
 
 **Tests:** `tests/interaction-events.test.js` (nine), plus the fixtures in seven
 existing test files updated from `reaction` to the event model, and
@@ -106,14 +106,19 @@ aquarium frames — regenerates **byte-identical** after the replacement
 (`md5 8cfbd99d…`). That is the result this phase wanted: an architectural change
 a viewer cannot see.
 
-One thing is newly possible, and it is visible. Two presses at once used to mean
-one ripple, because the second reaction replaced the first. Now both
-disturbances live:
+One thing is newly possible, and it is visible. A second press used to erase the
+first: one reaction object, one ripple, wherever you pressed. Now both
+disturbances live out their three seconds side by side:
 
-![Two simultaneous presses](../assets/stage-2/phase-1/two-point-tap-contact-sheet.png)
+![Two presses in quick succession](../assets/stage-2/phase-1/two-point-tap-contact-sheet.png)
 
 Two rings, two bends in the plants near them, one aquarium. The fish still all
 answer the same press — ending that is Phase 2's job, not this phase's.
+
+The gesture is one finger pressing twice, 0.4 s apart, because one finger is all
+the product listens to: `src/app.js` answers the primary pointer only, so a
+second finger placed while the first is down reaches nothing. The harness models
+that filter, and records it as its own scenario since Phase 2.
 
 ## Evidence
 
@@ -130,19 +135,23 @@ answer the same press — ending that is Phase 2's job, not this phase's.
 
 The one intentional difference, measured by replaying the identical pointer
 history against the old code and the new (`--root=` at commit `ad195fd`, two
-presses in the same frame, half a tank apart):
+presses 0.4 s apart, half a tank apart):
 
 | | Old (single reaction) | New (events) |
 | --- | ---: | ---: |
 | Plants disturbed | 9 | 10 |
-| Peak scene glyphs | 1 194 | 1 212 |
-| Average damage | 52.20 % | 52.24 % |
-| Rectangles per frame | 18.22 | 18.20 |
+| Peak scene glyphs | 1 194 | 1 211 |
+| Average damage | 51.68 % | 51.64 % |
+| Rectangles per frame | 18.73 | 18.75 |
 | Fish responding strongly | 15 | 15 |
-| Semantic moments | 1.0 / 1.1 / 1.1 / 1.2 / 7.1 / 12.0 s | identical |
+| Semantic moments | 1.0 / 1.1 / 1.1 / 1.4 / 7.2 / 12.0 s | identical |
 
-A second ripple costs seventeen glyphs and four hundredths of a percent of the
-panel. The fish response is unchanged to the frame.
+A second ripple costs seventeen glyphs and nothing measurable of the panel. The
+fish response is unchanged to the frame.
+
+*(Re-measured after review: the first version of this table used two presses
+delivered in the same frame, which the app's primary-pointer filter does not
+permit. The reachable gesture gives the same result.)*
 
 ## Performance
 

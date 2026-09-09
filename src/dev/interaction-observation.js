@@ -57,6 +57,11 @@ export const OBSERVATION_STEP_SECONDS = 0.1;
 // the cap is what keeps a "history" from quietly becoming an unbounded log.
 export const POINTER_HISTORY_LIMIT = 64;
 
+// The panel is a five-point capacitive touchscreen, so a history can carry five
+// fingers. Whether the aquarium answers more than one of them is a different
+// question, and the answer today is no - see `applyPointerEvent`.
+export const MAX_POINTERS = 5;
+
 // How close a fish has to be to count as attending the stimulus. Roughly two
 // body lengths of a grown fish: near enough that a watching adult would say it
 // went to look.
@@ -100,8 +105,8 @@ const DEGREES = 180 / Math.PI;
  * Pointer histories
  * ------------------------------------------------------------------ */
 
-function pointerEvent(type, x, y, seconds) {
-  return Object.freeze({ seconds: round(seconds, 3), type, x: round(x, 3), y: round(y, 3) });
+function pointerEvent(type, x, y, seconds, pointerId = 1) {
+  return Object.freeze({ seconds: round(seconds, 3), type, x: round(x, 3), y: round(y, 3), pointerId });
 }
 
 function round(value, places) {
@@ -110,17 +115,17 @@ function round(value, places) {
 }
 
 /** A press and release at one point: the gesture the product has today. */
-export function tap(x, y, { at = 0, holdSeconds = OBSERVATION_STEP_SECONDS } = {}) {
-  return [pointerEvent("down", x, y, at), pointerEvent("up", x, y, at + holdSeconds)];
+export function tap(x, y, { at = 0, holdSeconds = OBSERVATION_STEP_SECONDS, pointerId = 1 } = {}) {
+  return [pointerEvent("down", x, y, at, pointerId), pointerEvent("up", x, y, at + holdSeconds, pointerId)];
 }
 
 /** A press held still. The contact is sampled so a later phase can see duration. */
-export function hold(x, y, { at = 0, seconds = 1.6, sampleSeconds = 0.2 } = {}) {
-  const events = [pointerEvent("down", x, y, at)];
+export function hold(x, y, { at = 0, seconds = 1.6, sampleSeconds = 0.2, pointerId = 1 } = {}) {
+  const events = [pointerEvent("down", x, y, at, pointerId)];
   for (let elapsed = sampleSeconds; elapsed < seconds; elapsed += sampleSeconds) {
-    events.push(pointerEvent("move", x, y, at + elapsed));
+    events.push(pointerEvent("move", x, y, at + elapsed, pointerId));
   }
-  events.push(pointerEvent("up", x, y, at + seconds));
+  events.push(pointerEvent("up", x, y, at + seconds, pointerId));
   return events;
 }
 
@@ -129,29 +134,35 @@ export function hold(x, y, { at = 0, seconds = 1.6, sampleSeconds = 0.2 } = {}) 
  * path over 3 s is a slow drag and over 0.3 s is a swipe - the distinction the
  * plan asks for is speed, not a different event shape.
  */
-export function drag(path, { at = 0, seconds = 3, sampleSeconds = OBSERVATION_STEP_SECONDS } = {}) {
+export function drag(path, { at = 0, seconds = 3, sampleSeconds = OBSERVATION_STEP_SECONDS, pointerId = 1 } = {}) {
   const points = path.filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
   if (points.length < 2) throw new Error("a drag needs at least two points");
   const samples = Math.max(2, Math.round(seconds / sampleSeconds));
-  const events = [pointerEvent("down", points[0].x, points[0].y, at)];
+  const events = [pointerEvent("down", points[0].x, points[0].y, at, pointerId)];
   for (let step = 1; step <= samples; step += 1) {
     const progress = step / samples;
     const position = alongPath(points, progress);
-    events.push(pointerEvent(step === samples ? "up" : "move", position.x, position.y, at + progress * seconds));
+    events.push(pointerEvent(
+      step === samples ? "up" : "move",
+      position.x,
+      position.y,
+      at + progress * seconds,
+      pointerId,
+    ));
   }
   return events;
 }
 
 /** A fast straight drag. */
-export function swipe(from, to, { at = 0, seconds = 0.3 } = {}) {
-  return drag([from, to], { at, seconds });
+export function swipe(from, to, { at = 0, seconds = 0.3, pointerId = 1 } = {}) {
+  return drag([from, to], { at, seconds, pointerId });
 }
 
 /** The same point tapped several times, the way a child tests a thing. */
-export function repeatedTaps(x, y, { at = 0, count = 5, intervalSeconds = 0.6 } = {}) {
+export function repeatedTaps(x, y, { at = 0, count = 5, intervalSeconds = 0.6, pointerId = 1 } = {}) {
   const events = [];
   for (let index = 0; index < count; index += 1) {
-    events.push(...tap(x, y, { at: at + index * intervalSeconds }));
+    events.push(...tap(x, y, { at: at + index * intervalSeconds, pointerId }));
   }
   return events;
 }
@@ -177,26 +188,37 @@ export function pointerHistory(...groups) {
     if (!["down", "move", "up"].includes(event.type)) throw new Error(`unknown pointer event: ${event.type}`);
     if (!Number.isFinite(event.seconds) || event.seconds < 0) throw new Error("pointer events need a time in seconds");
     if (!Number.isFinite(event.x) || !Number.isFinite(event.y)) throw new Error("pointer events need world coordinates");
+    const pointerId = event.pointerId ?? 1;
+    if (!Number.isInteger(pointerId) || pointerId < 1 || pointerId > MAX_POINTERS) {
+      throw new Error(`pointer ids run from 1 to ${MAX_POINTERS}`);
+    }
   }
   if (events.length > POINTER_HISTORY_LIMIT) {
     throw new Error(`pointer history of ${events.length} exceeds the ${POINTER_HISTORY_LIMIT}-event cap`);
   }
   return Object.freeze(events
-    .map((event) => pointerEvent(event.type, event.x, event.y, event.seconds))
-    .sort((left, right) => left.seconds - right.seconds));
+    .map((event) => pointerEvent(event.type, event.x, event.y, event.seconds, event.pointerId ?? 1))
+    .sort((left, right) => left.seconds - right.seconds || left.pointerId - right.pointerId));
 }
 
-/** One line of text per history, so a scenario in a report can be replayed. */
+/**
+ * One line of text per history, so a scenario in a report can be replayed. The
+ * finger is only written down when it is not the first one, which keeps every
+ * single-touch history that has already been recorded readable unchanged.
+ */
 export function encodePointerHistory(history) {
-  return history.map((event) => `${event.seconds}:${event.type[0]}:${event.x}:${event.y}`).join(" ");
+  return history
+    .map((event) => `${event.seconds}:${event.type[0]}:${event.x}:${event.y}`
+      + (event.pointerId > 1 ? `:${event.pointerId}` : ""))
+    .join(" ");
 }
 
 export function decodePointerHistory(encoded) {
   const types = { d: "down", m: "move", u: "up" };
   const events = String(encoded).trim().split(/\s+/).filter(Boolean).map((token) => {
-    const [seconds, type, x, y] = token.split(":");
+    const [seconds, type, x, y, pointerId] = token.split(":");
     if (!(type in types)) throw new Error(`unknown pointer event code: ${type}`);
-    return pointerEvent(types[type], Number(x), Number(y), Number(seconds));
+    return pointerEvent(types[type], Number(x), Number(y), Number(seconds), pointerId ? Number(pointerId) : 1);
   });
   return pointerHistory(events);
 }
@@ -224,15 +246,26 @@ export function pointerEventForWorldPoint(x, y, rect = displayRect()) {
 /**
  * The one seam a gesture reaches the aquarium through.
  *
- * What the product does today, in full: a press outside the developer hotspot
- * registers a stimulus and a water impulse (Phase 1), steers the school and
- * forces every persistent fish into `touch-react` for the stimulus's 3.2
- * seconds. Movement and release are inert - not ignored by this harness, but
- * genuinely meaningless to the aquarium - which is why a hold and a swipe still
- * measure the same as the tap that began them. Phase 2 changes what the fish do
- * with the stimulus; Phases 3 and 4 give the rest of the gesture meaning here.
+ * What the product does today, in full - the same four rules `src/app.js`
+ * applies, in the same order:
+ *
+ * - only the **primary** pointer is heard. The panel is a five-point
+ *   touchscreen, but a second finger placed while the first is still down is
+ *   not primary and reaches nothing. Two disturbances at once are therefore
+ *   two presses in succession, not two fingers; a scenario that models two
+ *   fingers is recording what the product ignores, which is worth knowing and
+ *   is not evidence of what it does.
+ * - only the left button, which is every touch and the ordinary mouse press.
+ * - the developer hotspot is not part of the aquarium.
+ * - a press registers a stimulus and a water impulse (Phase 1) and hands every
+ *   fish a response role (Phase 2). Movement, hold duration and release are
+ *   inert - delivered by this harness and genuinely meaningless to the
+ *   aquarium - which is why a hold and a swipe still measure the same as the
+ *   tap that began them. Phases 3 and 4 give the rest of the gesture meaning.
  */
-export function applyPointerEvent(state, event, { rect = displayRect() } = {}) {
+export function applyPointerEvent(state, event, { rect = displayRect(), primary = true, button = 0 } = {}) {
+  if (!primary) return { state, delivered: false, reason: "not-the-primary-pointer" };
+  if (button !== 0) return { state, delivered: false, reason: "not-the-primary-button" };
   const point = aquariumPoint(pointerEventForWorldPoint(event.x, event.y, rect), rect);
   if (point.hotspot) return { state, delivered: false, reason: "developer-hotspot" };
   if (event.type !== "down") return { state, delivered: false, reason: "inert-today" };
@@ -435,7 +468,20 @@ export function observeInteraction(baseState, {
   const velocities = new Map(baseState.individuals.map((fish) => [fish.seed, { vx: fish.vx, vy: fish.vy }]));
   const turning = new Map(baseState.individuals.map((fish) => [fish.seed, false]));
 
-  const delivery = { total: events.length, delivered: 0, inert: 0, hotspot: 0, byType: { down: 0, move: 0, up: 0 } };
+  const delivery = {
+    total: events.length,
+    delivered: 0,
+    inert: 0,
+    hotspot: 0,
+    nonPrimary: 0,
+    byType: { down: 0, move: 0, up: 0 },
+  };
+  // Which fingers are on the glass, and which one the browser calls primary:
+  // the first one down, until every finger has lifted. A finger placed while
+  // another is still there is never primary and never becomes primary, which is
+  // exactly what `src/app.js` filters on.
+  const contacts = new Set();
+  let primaryPointer = null;
   const timeline = [];
   const startBubbles = new Set(createBubbleWorldRecords(baseState).map((record) => record.id));
 
@@ -464,12 +510,22 @@ export function observeInteraction(baseState, {
       const event = events[cursor];
       cursor += 1;
       delivery.byType[event.type] += 1;
-      const result = applyPointerEvent(treatment, event, { rect });
+      if (event.type === "down") {
+        if (contacts.size === 0) primaryPointer = event.pointerId;
+        contacts.add(event.pointerId);
+      }
+      const primary = event.pointerId === primaryPointer;
+      if (event.type === "up") {
+        contacts.delete(event.pointerId);
+        if (contacts.size === 0) primaryPointer = null;
+      }
+      const result = applyPointerEvent(treatment, event, { rect, primary });
       treatment = result.state;
       if (result.delivered) {
         delivery.delivered += 1;
         if (stimulusFrame === null) stimulusFrame = frame;
       } else if (result.reason === "developer-hotspot") delivery.hotspot += 1;
+      else if (result.reason === "not-the-primary-pointer") delivery.nonPrimary += 1;
       else delivery.inert += 1;
     }
 
@@ -859,17 +915,34 @@ export const INTERACTION_SCENARIOS = Object.freeze([
     gesture: (point) => tap(point.x, point.y, { at: 1 }),
   }),
   // Phase 1 gave the aquarium room for more than one live disturbance. Two
-  // fingers, half a tank apart, is the smallest scenario that shows it: under
-  // the single global reaction the second press erased the first.
+  // presses in quick succession, half a tank apart, is the smallest gesture
+  // that shows it - and it is one finger, because one finger is all the product
+  // listens to. Under the single global reaction the second press erased the
+  // first.
   Object.freeze({
     id: "two-point-tap",
     label: "Two-point tap",
     context: "stocked",
-    describe: "Two presses at once, half the tank between them.",
+    describe: "Two presses 0.4 s apart, half the tank between them.",
     anchor: (state) => ({ x: state.cols * 0.28, y: midWaterY(state) }),
     gesture: (point, state) => pointerHistory(
       tap(point.x, point.y, { at: 1 }),
-      tap(state.cols * 0.72, point.y + 1.5, { at: 1 }),
+      tap(state.cols * 0.72, point.y + 1.5, { at: 1.4 }),
+    ),
+  }),
+  // The panel takes five fingers; the app answers one. This scenario exists to
+  // record that, because it is the kind of thing that is obvious in the code
+  // and invisible in a capture - and because a phase that gives a second finger
+  // meaning will want the before.
+  Object.freeze({
+    id: "two-finger-press",
+    label: "Two fingers at once",
+    context: "stocked",
+    describe: "A second finger placed while the first is down. It is not the primary pointer.",
+    anchor: (state) => ({ x: state.cols * 0.28, y: midWaterY(state) }),
+    gesture: (point, state) => pointerHistory(
+      tap(point.x, point.y, { at: 1, holdSeconds: 0.6 }),
+      tap(state.cols * 0.72, point.y + 1.5, { at: 1.2, pointerId: 2 }),
     ),
   }),
   Object.freeze({

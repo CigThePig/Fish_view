@@ -110,8 +110,9 @@ growth; real time drives locomotion and activities. Keep that distinction.
 Stage 2 Phase 3 gives a held press meaning, so know what this does before you
 change it.
 
-`src/app.js` handles primary `pointerdown`, maps the event through
-`aquariumPoint`, and — outside the developer hotspot — calls `applyTouch`.
+`src/app.js` handles `pointerdown` for the **primary pointer only** — a second
+finger on the five-point panel reaches nothing — maps the event through
+`aquariumPoint`, and outside the developer hotspot calls `applyTouch`.
 `applyTouch` in `src/sim/state.js` classifies what the press landed on,
 registers **one stimulus and one impulse**
 (`src/sim/interaction-events.js`), assigns every fish a **response role**
@@ -143,7 +144,9 @@ The Phase 2 response model sits on top:
   already making.
 - **Something always answers**: the most interested fish that perceived the
   press investigates whatever its score, and if none perceived it, the nearest
-  one does.
+  one does — always a fish that is free to answer. A fish whose commitment is
+  total (a first-time arrival swimming in) is never taken off it, guarantee
+  included; it answers by watching.
 - A response **recovers** rather than being cancelled: the fish resumes the
   activity it put down, on a per-fish seeded beat.
 - The record is one transient object per fish, never persisted.

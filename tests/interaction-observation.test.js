@@ -70,6 +70,15 @@ test("a pointer history is capped, and survives a round trip through text", () =
   const encoded = encodePointerHistory(history);
   assert.deepEqual(decodePointerHistory(encoded), history);
   assert.equal(encodePointerHistory(decodePointerHistory(encoded)), encoded);
+  // One finger is written without a finger number, so every history recorded
+  // before the harness knew about fingers still reads and replays.
+  assert.equal(encoded.includes(":1:"), false);
+  assert.deepEqual(decodePointerHistory("1:d:33:9.5 1.1:u:33:9.5").map((event) => event.pointerId), [1, 1]);
+
+  const twoFingers = pointerHistory(tap(20, 9), tap(45, 11, { at: 0.2, pointerId: 2 }));
+  assert.equal(encodePointerHistory(twoFingers).includes(":2"), true);
+  assert.deepEqual(decodePointerHistory(encodePointerHistory(twoFingers)), twoFingers);
+  assert.throws(() => pointerHistory(tap(20, 9, { pointerId: 9 })), /pointer ids run from 1 to 5/);
 });
 
 test("replaying a pointer event is the production interaction path, unchanged", () => {
@@ -97,6 +106,43 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(hotspot.delivered, false);
   assert.equal(hotspot.reason, "developer-hotspot");
   assert.equal(hotspot.state, state);
+});
+
+test("only the primary pointer reaches the aquarium", () => {
+  const state = aquarium();
+
+  // The panel takes five fingers and the app answers one, so a second finger
+  // placed while the first is down reaches nothing. A harness that delivered it
+  // anyway would credit the aquarium with a response no viewer can produce.
+  assert.equal(applyPointerEvent(state, { type: "down", x: 33, y: 9.5 }, { primary: false }).delivered, false);
+  assert.equal(
+    applyPointerEvent(state, { type: "down", x: 33, y: 9.5 }, { primary: false }).reason,
+    "not-the-primary-pointer",
+  );
+  assert.equal(applyPointerEvent(state, { type: "down", x: 33, y: 9.5 }, { button: 2 }).delivered, false);
+
+  const twoFingers = observeInteraction(state, {
+    history: pointerHistory(
+      tap(20, 9, { at: 0.5, holdSeconds: 0.6 }),
+      tap(45, 11, { at: 0.7, pointerId: 2 }),
+    ),
+    observeSeconds: 2,
+  });
+  assert.equal(twoFingers.pointer.delivered, 1, "a second finger was answered");
+  assert.equal(twoFingers.pointer.nonPrimary, 2);
+  assert.equal(twoFingers.aquarium.bubblesCreated + twoFingers.aquarium.plantsDisturbed >= 0, true);
+
+  // The same two places, one finger, one after the other: both land.
+  const twoPresses = observeInteraction(state, {
+    history: pointerHistory(tap(20, 9, { at: 0.5 }), tap(45, 11, { at: 0.9 })),
+    observeSeconds: 2,
+  });
+  assert.equal(twoPresses.pointer.delivered, 2);
+  assert.equal(twoPresses.pointer.nonPrimary, 0);
+
+  // A finger that goes down after the first has lifted is primary again.
+  const history = pointerHistory(tap(20, 9, { at: 0.5 }), tap(45, 11, { at: 0.9, pointerId: 3 }));
+  assert.equal(observeInteraction(state, { history, observeSeconds: 2 }).pointer.delivered, 2);
 });
 
 test("an observation with no input reports an aquarium that was not touched", () => {

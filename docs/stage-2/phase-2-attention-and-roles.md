@@ -122,7 +122,7 @@ where every fish in every row is converging on one point.
 | --- | --- | --- |
 | One tap no longer synchronises the cast | The pre-Stage-2 instrument, unchanged since before Stage 2: activities left standing one frame after a tap went from **1, 1, 1** to **8, 7, 7** on seeds 5, 147, 1234 | `npm run measure:stage2-baseline` |
 | …across every scenario and seed | 45 observations: distinct activities after the press **1 → 7.7 mean (6–10)** for a single press; fish interrupted **15 → 3.2 mean (1–4)** | [`interaction-observation.json`](../assets/stage-2/phase-2/interaction-observation.json) |
-| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 64 investigate, 80 approach, 22 delayed, 68 watch, 76 wary, 216 acknowledge, 107 fish out of range | evidence file, `aquarium.roles` |
+| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 64 investigate, 84 approach, 22 delayed, 77 watch, 88 wary, 221 acknowledge, 122 fish out of range | evidence file, `aquarium.roles` |
 | Immediate feedback is still guaranteed | A press at any of five points, including a corner and a point with no fish near it, always produces an impulse, a stimulus and at least one investigator — including in a one-fish aquarium | `tests/attention-roles.test.js` |
 | Activities are not indiscriminately cancelled | Every fish not interrupted holds the exact activity and velocity it had; the fish that was feeding when the press landed stays on the sand and resumes | `tests/attention-roles.test.js`, `tests/phase2-activities.test.js`, the feeding scenario |
 | Recovery is readable | A responder's activity at the frame it lets go is the activity it put down; responders release on different frames | `tests/attention-roles.test.js` |
@@ -162,12 +162,12 @@ under the positional-only one, seven were.
 | Measure | Phase 1 | This phase |
 | --- | --- | --- |
 | Mature untouched avg / max damage | 58.3 / 51.8 / 52.1 % per seed | identical — no stimulus, no change |
-| Interaction avg damage (stocked + mature) | 52.9 % | 53.5 % |
+| Interaction avg damage (stocked + mature) | 52.9 % | 53.2 % |
 | Interaction worst frame | 97.9 % | 98.1 % |
-| Dirty rectangles per frame | 18.2 | 18.7 |
+| Dirty rectangles per frame | 18.2 | 18.9 |
 | Peak scene glyphs | 1 245 | 1 245 |
 | Full redraws | 0 | 0 |
-| Tap damage, pre-Stage-2 instrument | 55.2 / 52.4 / 56.8 % | 55.4 / 52.9 / 55.7 % |
+| Tap damage, pre-Stage-2 instrument | 55.2 / 52.4 / 56.8 % | 55.4 / 52.9 / 56.0 % |
 
 Half a percentage point of average damage, no new peak, no new glyphs, and the
 old instrument reads the touched aquarium as slightly *cheaper* than before —
@@ -177,15 +177,15 @@ this phase is a rounding error; what it spent was thinking, not pixels.
 ## Persistence
 
 Unchanged. `PERSISTENCE_VERSION` is still 2, no field added. A stocked ten-year
-aquarium with fifty taps serialises to 17 868 bytes against 17 853 before —
-fifteen bytes of difference from fish sitting in slightly different places, not from
-anything new being written. Response roles are transient: absent from the
+aquarium with fifty taps serialises to 17 872 bytes against 17 853 before —
+nineteen bytes of difference from fish sitting in slightly different places, not
+from anything new being written. Response roles are transient: absent from the
 payload, cleared by a reload and by an offline gap, and the invariants test now
 proves it per fish as well as per aquarium.
 
 ## Review findings, and what they changed
 
-Four defects were raised on the pull request and are fixed here, each with a
+Seven defects were raised on the pull request and are fixed here, each with a
 test that keeps it fixed:
 
 - **A repeated press cost a responder its way back.** A second press while a
@@ -212,6 +212,28 @@ test that keeps it fixed:
   scale its depth draws it (`src/sim/interaction-context.js`), which is what
   moved the context distribution and the headline reading from 9 to 8 activities
   on seed 5.
+- **A shy fish did not actually keep its distance.** `wary` turned a fixed half
+  radian off the fish's heading, which off a heading that pointed at the press
+  still points at the press: **52 of 141 shy responders were still closing on
+  the disturbance**, reading as a slightly slower `watch`. The turn is now
+  whatever it takes to stop closing, plus the lean — bounded at a quarter turn
+  plus half a radian. None are still closing now, except the nine that were
+  feeding, whose strike geometry is preserved on purpose
+  (`src/sim/attention.js`).
+- **A fish arriving for the first time could be pulled off its entry.** The
+  guaranteed first responder was chosen before commitment was consulted, so a
+  press beside a newcomer swimming in replaced a once-in-a-lifetime choreography
+  with `touch-react` — on all three seeds. A fish whose commitment is total is
+  now never given an investigating role, guarantee included; the guarantee finds
+  another fish, and the newcomer answers by watching (`src/sim/attention.js`).
+- **The harness delivered gestures the product cannot receive.** `applyTouch`
+  was called for every press, but `src/app.js` answers the primary pointer only.
+  The harness now models pointer identity and applies the same filter, so the
+  two-place demonstration is one finger pressing twice — which is reachable —
+  and a new `two-finger-press` scenario records that the second finger reaches
+  nothing (`src/dev/interaction-observation.js`). The Phase 1 report's
+  concurrency table was re-measured with the reachable gesture; it reads the
+  same.
 
 ## Remaining limitations
 
@@ -233,6 +255,9 @@ test that keeps it fixed:
   approach.
 - **Hold, drag and swipe still deliver only their opening press.** Phases 3 and
   4.
+- **The second finger is ignored.** The panel takes five; the app answers the
+  primary pointer. `two-finger-press` records the current answer so a later
+  phase that wants two hands has its before.
 
 ## Gate decision
 
