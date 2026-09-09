@@ -38,6 +38,19 @@ One save per deterministic seed lives at `fish-view:aquarium:<numeric-seed>`. Ne
 
 No portrait save is imported. Existing landscape v1/v2 biology remains supported without adding another save schema or maintaining duplicate worlds.
 
+## Stage 2
+
+The aquarium is roughly halfway through its intended development. The second
+half is [Stage 2](Fish-View-Stage-2-Interaction-Readability-Development-Plan.md):
+the relationship layer between the viewer and the aquarium, and a readability
+pass that lets a child tell what the fish are doing by watching them. It adds no
+UI. Phase status, the pre-Stage-2 [baseline](docs/stage-2/baseline-2026-09-09.md)
+and phase reports live in [`docs/stage-2/`](docs/stage-2/README.md).
+
+Anyone — or anything — working in this repository should read
+[`AGENTS.md`](AGENTS.md) first. It carries the product invariants, the
+architecture map and the commands.
+
 ## Development and validation
 
 Requires Node 20 or later.
@@ -46,11 +59,13 @@ Requires Node 20 or later.
 npm ci
 npm start
 npm test
+npm run verify                    # tests plus every audit the CI gate runs
 npm run build:pages
 npm run audit:simulation
 npm run audit:persistence -- --cases=200
 npm run audit:render
 npm run measure:feeding
+npm run measure:stage2-baseline   # tap synchronisation, damage and save size
 npm run capture:behaviors -- --scenario bubble-investigate --scale 1 --gif
 npm run capture:depth
 npm run capture:living

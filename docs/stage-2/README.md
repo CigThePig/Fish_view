@@ -1,0 +1,62 @@
+# Stage 2 — interaction, relationship and readability
+
+The specification is
+[Fish-View-Stage-2-Interaction-Readability-Development-Plan.md](../../Fish-View-Stage-2-Interaction-Readability-Development-Plan.md)
+at the repository root. This directory is the working record: which phase the
+product is in, what each completed phase concluded, and where its evidence went.
+
+Stage 2 is roughly half of the intended product development. It is not a
+collection of touch effects. It has two halves that depend on each other:
+
+- an **interaction layer** that makes the aquarium notice the person outside
+  the glass and remember them across months, and
+- a **readability pass** that makes autonomous behaviour understandable by
+  watching, without any text or UI.
+
+## Phase board
+
+Phases run in order. A phase is not started before the previous one's gate is
+met and its report is written. Every report ends with an explicit PASS or FAIL;
+a passing test suite is not by itself a PASS for a visual or behavioural phase.
+
+| # | Phase | State | Report |
+| --- | --- | --- | --- |
+| — | Repository preparation | Done | [baseline](baseline-2026-09-09.md) |
+| 0 | Interaction observation and baseline instrumentation | Not started | — |
+| 1 | Stimulus and impulse architecture | Not started | — |
+| 2 | Attention, response roles, contextual tap | Not started | — |
+| 3 | Hold and persistent presence | Not started | — |
+| 4 | Drag, swipe and local water impulse | Not started | — |
+| 5 | Environmental interaction and causal chains | Not started | — |
+| 6 | Persistent fish–viewer relationship | Not started | — |
+| 7A | Flagship chase redesign | Not started | — |
+| 7B | Remaining behaviour readability pass | Not started | — |
+| 8 | Scene salience and anti-synchronisation | Not started | — |
+| 9 | Repetition, habituation and long-watch validation | Not started | — |
+| 10 | ESP32-oriented performance and memory budget | Not started | — |
+| 11 | Integrated product validation and polish | Not started | — |
+
+Phase 0 changes developer tooling only. It must not change production
+interaction semantics, and it has to exist before Phase 1 starts, because it is
+what proves Phase 1 preserved the visible result while replacing the mechanism.
+
+## Evidence
+
+Measurements and captures are how a phase is judged, so they need to survive
+the session that produced them.
+
+- Transient output goes to `.audit-output/` and `.behavior-captures/`. Both are
+  git-ignored and are not evidence.
+- Evidence worth keeping goes to `docs/assets/stage-2/<phase>/` and is linked
+  from the phase report that produced it. Prefer compact artefacts: JSON
+  summaries, contact sheets, one short capture per claim. Do not commit large
+  video for a point a still frame makes.
+- A report claiming a visible change carries something to look at. A report
+  claiming a bounded cost carries the numbers, next to the
+  [baseline](baseline-2026-09-09.md) they are compared against.
+
+## Writing a phase report
+
+Copy [`phase-report-template.md`](phase-report-template.md) to
+`phase-<n>-<slug>.md` in this directory, fill it in, link it from the board
+above, and set the phase state.
