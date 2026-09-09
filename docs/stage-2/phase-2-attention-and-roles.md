@@ -185,7 +185,7 @@ proves it per fish as well as per aquarium.
 
 ## Review findings, and what they changed
 
-Nine defects were raised on the pull request and are fixed here, each with a
+Fourteen defects were raised on the pull request and are fixed here, each with a
 test that keeps it fixed:
 
 - **A repeated press cost a responder its way back.** A second press while a
@@ -253,6 +253,32 @@ test that keeps it fixed:
   (`src/dev/interaction-observation.js`). The headline "one frame after the
   press" readings still belong to the press that opened the observation, so
   every single-press scenario reads exactly as before.
+- **Latency was measured from the wrong press too.** The same fix left
+  `stimulusFrame` - the frame of the opening press - as the clock for every
+  fish, so a fish that answered a second press 0.7 s later read 0.8 s instead of
+  one frame. Each fish's clock now starts at the press its own response is
+  answering (`src/dev/interaction-observation.js`).
+- **A late responder did not count as still responding.** "Still holding the
+  response" compared each fish against the activity it was in one frame after
+  the press, so a delayed investigator - which enters that activity a beat later
+  - never counted, and the recovery moment could be declared while it was still
+  investigating. The measure now asks whether the fish is in an activity the
+  press imposed, learned from the observation itself rather than named in the
+  harness (`src/dev/interaction-observation.js`).
+- **A press somewhere else cut short a response already under way.** The
+  repeated-press fix only protected fish that had been pulled into
+  `touch-react`; a fish in the middle of a lean or a glance had its live
+  response dropped by a press it could not even perceive. Any in-flight response
+  is now left alone when a new press has no role for that fish
+  (`src/sim/state.js`).
+- **A press at the very start of a history had no "before" frame.** `tap()`
+  defaults to t = 0, so the opening press landed before the first frame and the
+  contact sheet labelled the already-touched frame both "before" and
+  "first-response". The observation now carries the untouched aquarium as frame
+  zero (`src/dev/interaction-observation.js`).
+- **AGENTS.md described Phase 3 as if it had happened.** "Phase 3 gives a held
+  press meaning" reads as current behaviour in a file that is the repository's
+  primary instructions. It now says Phase 3 *will* give it meaning.
 
 ## Remaining limitations
 

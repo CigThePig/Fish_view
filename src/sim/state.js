@@ -139,17 +139,18 @@ export function applyTouch(state, x, y) {
       nearestDistance = distance;
       nearestIndex = index;
     }
-    // A fish that is already answering an earlier press keeps the activity it
-    // put down, whatever this press does to it. Overwriting it with the
-    // `touch-react` it is currently in - or dropping the record because the new
-    // press is out of its range - would strand it: recovery would have nothing
+    // A fish that is already answering an earlier press keeps that answer,
+    // whatever this press does to it. A response has its own seeded life and
+    // ends when it is spent: a press somewhere else must not cut short a lean
+    // or a glance, and it must not overwrite the activity a responder put down
+    // with the `touch-react` it is currently in - recovery would have nothing
     // to resume, and a second tap would quietly cost the fish its thread.
     const answering = fish.activity?.current === ACTIVITIES.touchReact;
     const carried = fish.attention?.resume ?? null;
     const assigned = attention[index];
     const role = assigned
       ? (carried ? { ...assigned, resume: carried } : assigned)
-      : (answering ? fish.attention : null);
+      : fish.attention ?? null;
     const base = {
       ...fish,
       drives: { ...fish.drives },

@@ -107,8 +107,8 @@ growth; real time drives locomotion and activities. Keep that distinction.
 
 ### The interaction path as it stands today
 
-Stage 2 Phase 3 gives a held press meaning, so know what this does before you
-change it.
+Phase 3 will give a held press meaning; until then this is the whole path, so
+know what it does before you change it.
 
 `src/app.js` handles `pointerdown` for the **primary pointer only** — a second
 finger on the five-point panel reaches nothing — maps the event through

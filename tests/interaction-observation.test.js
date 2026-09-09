@@ -273,6 +273,68 @@ test("each fish is measured against the disturbance it is answering", () => {
     "the fixture has no fish nearer the second press");
 });
 
+test("latency is measured from the press a fish answers", () => {
+  const state = aquarium();
+  const left = 14;
+  const right = 52;
+  const observation = observeInteraction(state, {
+    history: pointerHistory(tap(left, 9, { at: 0.5 }), tap(right, 11, { at: 1.2 })),
+    observeSeconds: 6,
+  });
+  assert.equal(observation.pointer.delivered, 2);
+
+  // A fish out of range of the first press that answers the second one answered
+  // in a frame, not in the 0.8 s between the two presses. Measuring every fish
+  // from whichever press opened the observation turned a prompt response into a
+  // slow one.
+  const far = state.individuals
+    .map((fish, index) => ({ index, fish }))
+    .filter(({ fish }) => Math.hypot(left - fish.x, 9 - fish.y) > 30
+      && Math.hypot(right - fish.x, 11 - fish.y) <= 30);
+  assert.ok(far.length > 0, "the fixture has no fish that only the second press reaches");
+  for (const { fish } of far) {
+    const record = observation.fish.find((entry) => entry.id === fish.seed.toString(16));
+    if (record.responseLatencySeconds === null) continue;
+    assert.ok(record.responseLatencySeconds <= 0.3,
+      `${record.id} answered the second press but was recorded at ${record.responseLatencySeconds}s`);
+  }
+});
+
+test("a press at the very start of a history still has an untouched frame", () => {
+  // tap() defaults to t = 0, and a decoded history can too. The before moment
+  // has to be the aquarium before the press, not the frame it landed in.
+  const observation = observeInteraction(aquarium(), {
+    history: pointerHistory(tap(33, 9.5)),
+    observeSeconds: 3,
+  });
+  const before = observation.moments.find((moment) => moment.moment === "before");
+  const first = observation.moments.find((moment) => moment.moment === "first-response");
+  assert.equal(before.frame, 0);
+  assert.equal(before.deviation, 0);
+  assert.notEqual(before.frame, first.frame);
+});
+
+test("recovery waits for the fish that answered late", () => {
+  const state = aquarium();
+  const observation = observeInteraction(state, {
+    history: pointerHistory(tap(33, 9.5, { at: 0.5 })),
+    observeSeconds: 12,
+  });
+  const recovery = observation.moments.find((moment) => moment.moment === "recovery");
+  if (!recovery) return;
+  // Nothing may still be holding the activity the press imposed when the
+  // aquarium is called recovered - including a delayed investigator, which
+  // enters that activity a beat after the press rather than in its frame.
+  assert.equal(recovery.holdingStimulusActivity, 0);
+  const imposed = new Set(observation.fish
+    .filter((fish) => fish.activityAfterInput !== fish.startActivity)
+    .map((fish) => fish.activityAfterInput));
+  const stillHolding = observation.timeline
+    .filter((entry) => entry.frame > recovery.frame && entry.holdingStimulusActivity > 0);
+  assert.ok(imposed.size > 0, "the press imposed no activity on anything");
+  assert.equal(stillHolding.length, 0, "a fish re-entered the imposed activity after recovery was called");
+});
+
 test("the semantic moments run in order, inside the observation", () => {
   const observation = observeInteraction(aquarium(), {
     history: pointerHistory(tap(33, 9.5, { at: 0.5 })),

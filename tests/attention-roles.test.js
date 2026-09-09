@@ -26,7 +26,7 @@ import {
 import { spriteDimensions } from "../src/art/sprites.js";
 import { spriteForFish } from "../src/sim/fish-growth.js";
 import { STIMULUS_CONTEXTS, classifyStimulusContext } from "../src/sim/interaction-context.js";
-import { createStimulus } from "../src/sim/interaction-events.js";
+import { TOUCH_STIMULUS_RADIUS_CELLS, createStimulus } from "../src/sim/interaction-events.js";
 import { ACTIVITIES, activityCommitment, tickFishActivity } from "../src/sim/fish-activities.js";
 import { advanceAquariumHistory } from "../src/sim/aquarium-history.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
@@ -376,6 +376,30 @@ test("a shy fish keeps that distance for the whole response, not just the start"
   }
 });
 
+test("a press elsewhere does not cut short a response already under way", () => {
+  const base = settled(5);
+  const first = applyTouch(base, base.cols / 2, 9.5);
+  const passive = first.individuals.findIndex((fish) => isPassiveRole(fish.attention?.role));
+  assert.ok(passive >= 0, "no fish gave a passive response");
+  const record = first.individuals[passive].attention;
+
+  // A press well outside this fish's perception radius gives it no new role.
+  // Its lean or glance has its own seeded life and must run out on its own
+  // rather than being cancelled by something it never noticed.
+  const responder = first.individuals[passive];
+  const far = responder.x < base.cols / 2
+    ? { x: base.cols - 2, y: 14 }
+    : { x: 2, y: 14 };
+  assert.ok(Math.hypot(far.x - responder.x, far.y - responder.y) > TOUCH_STIMULUS_RADIUS_CELLS,
+    "the second press is not far enough away to be unnoticed");
+
+  const elsewhere = applyTouch(run(first, 0.3), far.x, far.y);
+  const after = elsewhere.individuals[passive].attention;
+  assert.ok(after, "a distant press cancelled a response already under way");
+  assert.equal(after.stimulusId, record.stimulusId);
+  assert.ok(after.ageSeconds > 0, "the response was restarted rather than left alone");
+});
+
 test("a fish arriving for the first time is never taken off its entry", () => {
   for (const seed of [5, 147, 1234]) {
     // Day 14 is the first arrival: a second fish swimming into the aquarium.
@@ -415,11 +439,14 @@ test("attention is transient: bounded, one per fish, and never carried over", ()
     assert.equal("resume" in fish.attention, attentionInvestigates(fish.attention));
   }
 
-  // A second press replaces the first response rather than stacking on it.
+  // A second press replaces the response of every fish that notices it, and
+  // leaves the others to finish the one they are already giving.
   const again = applyTouch(run(touched, 0.5), 12, 12);
   for (const fish of again.individuals) {
     if (!fish.attention) continue;
-    assert.equal(fish.attention.stimulusId, "touch:2");
+    const noticed = Math.hypot(12 - fish.x, 12 - fish.y) <= TOUCH_STIMULUS_RADIUS_CELLS;
+    assert.equal(fish.attention.stimulusId, noticed ? "touch:2" : "touch:1");
+    assert.equal(fish.attention.role !== undefined, true);
   }
 
   // And every response ends.
