@@ -335,6 +335,31 @@ test("recovery waits for the fish that answered late", () => {
   assert.equal(stillHolding.length, 0, "a fish re-entered the imposed activity after recovery was called");
 });
 
+test("a fish keeps the disturbance it answered for the whole observation", () => {
+  const state = aquarium();
+  // Two presses at opposite ends. A fish that answers the first one is still
+  // coming back from it long after its response expired; its distances must not
+  // silently re-attribute to the press at the other end of the tank.
+  const observation = observeInteraction(state, {
+    history: pointerHistory(tap(4, 9, { at: 0.5 }), tap(62, 9, { at: 1.2 })),
+    observeSeconds: 12,
+  });
+
+  let checked = 0;
+  for (const fish of observation.fish) {
+    const original = state.individuals.find((one) => one.seed.toString(16) === fish.id);
+    const toFirst = Math.hypot(4 - original.x, 9 - original.y);
+    const toSecond = Math.hypot(62 - original.x, 9 - original.y);
+    if (!(toFirst < 20 && toSecond > 40) || fish.startDistance === null) continue;
+    checked += 1;
+    // Everything in the row belongs to the near press: a fish that started 15
+    // cells from it cannot report a closest approach of 40-odd.
+    assert.ok(fish.closestDistance <= fish.startDistance + 1,
+      `${fish.id} started ${fish.startDistance} from the press it answered and reported ${fish.closestDistance}`);
+  }
+  assert.ok(checked > 0, "the fixture has no fish that answered only the first press");
+});
+
 test("the semantic moments run in order, inside the observation", () => {
   const observation = observeInteraction(aquarium(), {
     history: pointerHistory(tap(33, 9.5, { at: 0.5 })),

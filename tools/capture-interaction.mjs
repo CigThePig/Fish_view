@@ -67,7 +67,11 @@ function parseOptions(argumentsList) {
   const scale = Number(optionValue(argumentsList, "--scale", DEFAULT_SCALE));
   if (!Number.isFinite(scale) || scale < 0.2 || scale > 1) throw new Error("--scale must be between 0.2 and 1");
   const seed = Number(optionValue(argumentsList, "--seed", 5));
-  if (!Number.isSafeInteger(seed) || seed < 0) throw new Error("--seed must be a uint32 seed");
+  // The aquarium coerces its seed with >>> 0, so a larger number would quietly
+  // capture a different tank than the manifest says it did.
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    throw new Error("--seed must be a uint32 seed");
+  }
   return {
     scenarios,
     scale,

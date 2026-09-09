@@ -121,8 +121,8 @@ where every fish in every row is converging on one point.
 | Claim | How it was checked | Where |
 | --- | --- | --- |
 | One tap no longer synchronises the cast | The pre-Stage-2 instrument, unchanged since before Stage 2: activities left standing one frame after a tap went from **1, 1, 1** to **8, 7, 7** on seeds 5, 147, 1234 | `npm run measure:stage2-baseline` |
-| …across every scenario and seed | 45 observations: distinct activities after the press **1 → 7.7 mean (6–10)** for a single press; fish interrupted **15 → 3.2 mean (1–4)** | [`interaction-observation.json`](../assets/stage-2/phase-2/interaction-observation.json) |
-| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 68 investigate, 86 approach, 24 delayed, 80 watch, 90 wary, 221 acknowledge, 109 fish out of range | evidence file, `aquarium.roles` |
+| …across every scenario and seed | **48 observations** — 16 scenarios × 3 seeds — of which 39 are a single press: distinct activities after the press **1 → 7.7 mean (6–10)**; fish interrupted **15 → 3.2 mean (1–4)** | [`interaction-observation.json`](../assets/stage-2/phase-2/interaction-observation.json) |
+| Multiple fish visibly react differently | **5.8 distinct roles per single press** (3–7); 5.5 across all 48 observations, the one-fish aquarium included. Across the sweep: 68 investigate, 86 approach, 24 delayed, 80 watch, 90 wary, 221 acknowledge, 109 fish out of range | evidence file, `aquarium.roles` |
 | Immediate feedback is still guaranteed | A press at any of five points, including a corner and a point with no fish near it, always produces an impulse, a stimulus and at least one investigator — including in a one-fish aquarium | `tests/attention-roles.test.js` |
 | Activities are not indiscriminately cancelled | Every fish not interrupted holds the exact activity and velocity it had; the fish that was feeding when the press landed stays on the sand and resumes | `tests/attention-roles.test.js`, `tests/phase2-activities.test.js`, the feeding scenario |
 | Recovery is readable | A responder's activity at the frame it lets go is the activity it put down; responders release on different frames | `tests/attention-roles.test.js` |
@@ -162,7 +162,7 @@ under the positional-only one, seven were.
 | Measure | Phase 1 | This phase |
 | --- | --- | --- |
 | Mature untouched avg / max damage | 58.3 / 51.8 / 52.1 % per seed | identical — no stimulus, no change |
-| Interaction avg damage (stocked + mature) | 52.9 % | 53.2 % |
+| Interaction avg damage (stocked + mature) | 52.9 % | 53.1 % |
 | Interaction worst frame | 97.9 % | 98.1 % |
 | Dirty rectangles per frame | 18.2 | 19.0 |
 | Peak scene glyphs | 1 245 | 1 245 |
@@ -185,7 +185,7 @@ proves it per fish as well as per aquarium.
 
 ## Review findings, and what they changed
 
-Fourteen defects were raised on the pull request and are fixed here, each with a
+Eighteen defects were raised on the pull request and are fixed here, each with a
 test that keeps it fixed:
 
 - **A repeated press cost a responder its way back.** A second press while a
@@ -279,6 +279,27 @@ test that keeps it fixed:
 - **AGENTS.md described Phase 3 as if it had happened.** "Phase 3 gives a held
   press meaning" reads as current behaviour in a file that is the repository's
   primary instructions. It now says Phase 3 *will* give it meaning.
+- **A press on the surface was classified after being clamped inward.** The
+  visible waterline rides above the row a press can be sent to, so a press at
+  the very top of the tank was classified from the clamped point — and at wave
+  phases where the surface sat a hundredth of a row too low, a press plainly on
+  the surface read as open water and scored against the wrong affinity. What a
+  press landed on is now decided by where the viewer pressed; where a fish can
+  be sent to is still the clamped point (`src/sim/state.js`).
+- **A fish's measurements drifted to a press it never answered.** The reference
+  fell back to the latest press as soon as a fish's response expired — and a
+  fish is still coming back from a disturbance long after the response that sent
+  it ended, so the rest of its row was attributed to the other end of the tank.
+  Each fish now keeps the disturbance it answered for the whole observation; on
+  a two-press history one responder's closest approach corrects from 12.3 cells
+  to 8.8 (`src/dev/interaction-observation.js`).
+- **A capture seed above the uint32 range mislabelled its own evidence.** The
+  aquarium coerces its seed with `>>> 0`, so `--seed=4294967296` would have
+  rendered seed 0 and written a manifest claiming otherwise. The bound is now
+  enforced where it is advertised (`tools/capture-interaction.mjs`).
+- **This report's sweep count was stale.** It said 45 observations from before
+  the `two-finger-press` scenario was added; the committed artefact holds 48,
+  and the derived figures above are recomputed from it.
 
 ## Remaining limitations
 
@@ -310,7 +331,7 @@ test that keeps it fixed:
 | --- | --- |
 | One tap no longer synchronises the full persistent cast | Yes — 1 activity standing became 6–10; 3.2 of 15 fish interrupted on average |
 | Immediate feedback remains guaranteed | Yes — the impulse rings in the same frame and at least one fish always investigates, tested at the corners, the sand, the surface and in a one-fish tank |
-| Multiple fish visibly react differently | Yes — 5.8 distinct roles per press, six-role vocabulary, all six occurring, with a capture that shows them |
+| Multiple fish visibly react differently | Yes — 5.8 distinct roles per single press, six-role vocabulary, all six occurring, with a capture that shows them |
 | Current activities are not indiscriminately cancelled | Yes — every uninterrupted fish keeps its activity and heading; committed fish finish first |
 | Recovery is readable | Yes — responders resume what they put down, on staggered per-fish beats |
 | Interaction remains deterministic | Yes — same aquarium and press give the same roles; 48 000-tick audit clean |

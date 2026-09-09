@@ -100,15 +100,23 @@ function normalizeVector(x, y) {
 }
 
 export function applyTouch(state, x, y) {
-  const safeX = clamp(x, 0, state.cols - 1);
-  const safeY = clamp(y, WATERLINE_ROWS, state.rows - TOUCH_FLOOR_ROWS);
+  // Where the viewer pressed, and where the aquarium can act on it. They are
+  // not the same point: a press above the visible waterline or down in the
+  // gravel is clamped into the band a fish can be sent to, but what it *landed
+  // on* is decided by the raw point. Classifying the clamped one made a press
+  // on the surface read as open water whenever the wave happened to sit a
+  // hundredth of a row too low.
+  const pressX = clamp(x, 0, state.cols - 1);
+  const pressY = clamp(y, 0, state.rows - 1);
+  const safeX = pressX;
+  const safeY = clamp(pressY, WATERLINE_ROWS, state.rows - TOUCH_FLOOR_ROWS);
 
   // A press is three things: water that moves, something the inhabitants can
   // notice, and - now - a role for each of them. All of it happens in the frame
   // the press arrives, because a viewer must never wait a tick to be
   // acknowledged, and because a response chosen a frame later would be a
   // response to an aquarium that had already moved.
-  const context = classifyStimulusContext(state, safeX, safeY);
+  const context = classifyStimulusContext(state, pressX, pressY);
   const events = registerTouch(state, safeX, safeY, context);
   const stimulus = events.stimulus;
   const attention = assignAttention({ ...state, stimuli: events.stimuli }, stimulus, {

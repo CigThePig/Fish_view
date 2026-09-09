@@ -400,6 +400,25 @@ test("a press elsewhere does not cut short a response already under way", () => 
   assert.ok(after.ageSeconds > 0, "the response was restarted rather than left alone");
 });
 
+test("a press on the surface is a surface press however the wave is sitting", () => {
+  const base = settled(5);
+  // The visible surface rides above the row a press can be sent to, so a press
+  // at the very top of the tank is clamped inward before a fish can be aimed at
+  // it. What it landed on has to be decided by where the viewer pressed: at
+  // some wave phases the clamped point fell a hundredth of a row outside the
+  // surface margin and the same press read as open water.
+  for (let step = 0; step < 12; step += 1) {
+    const moment = run(base, step * 0.35);
+    for (const x of [7, 20, 33, 52]) {
+      const touched = applyTouch(moment, x, 0);
+      assert.equal(touched.stimuli[0].context, "surface",
+        `a press at the top of the tank at x=${x} read as ${touched.stimuli[0].context}`);
+      // The press still lands where a fish can be sent.
+      assert.ok(touched.stimuli[0].y >= 2);
+    }
+  }
+});
+
 test("a fish arriving for the first time is never taken off its entry", () => {
   for (const seed of [5, 147, 1234]) {
     // Day 14 is the first arrival: a second fish swimming into the aquarium.

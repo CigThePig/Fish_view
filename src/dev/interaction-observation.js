@@ -414,6 +414,9 @@ function createFishRecord(fish) {
     // observation. See `reference` in the frame loop.
     startDistance: null,
     startFromAttention: false,
+    // The disturbance this row is about: the first one the fish answered, or -
+    // for a fish that answered nothing - the press that opened the observation.
+    reference: null,
     // The frame the press this fish is answering was delivered on. Latency is
     // measured from there, not from whichever press opened the observation.
     originFrame: null,
@@ -614,11 +617,13 @@ export function observeInteraction(baseState, {
       velocities.set(fish.seed, { vx: fish.vx, vy: fish.vy });
       record.endingActivity = fish.activity?.current ?? null;
 
-      // What this fish is answering: the disturbance its own response is
-      // pointed at, or - for a fish with no response, and for aquarium code
-      // that predates response roles - the last press to land.
+      // What this fish is answering, kept for the whole observation once it is
+      // known. A response outlives its record - a fish is still coming back
+      // from a press long after the response that sent it expired - so falling
+      // back to the latest press after expiry would silently re-attribute the
+      // rest of the run to a disturbance the fish never noticed.
       const answering = fish.attention ?? null;
-      const reference = answering ?? latestPress;
+      const reference = answering ?? record.reference ?? latestPress;
       if (reference && stimulusFrame !== null && frame >= stimulusFrame) {
         const distance = Math.hypot(reference.x - fish.x, reference.y - fish.y);
         // Where it was when it began answering. A fish that only notices the
@@ -633,6 +638,7 @@ export function observeInteraction(baseState, {
         if (record.startDistance === null || (answering && !record.startFromAttention)) {
           record.startDistance = round(distance, 2);
           record.originFrame = answering ? latestPressFrame : stimulusFrame;
+          record.reference = { x: reference.x, y: reference.y };
           record.startFromAttention = Boolean(answering);
         }
         record.closestDistance = Math.min(record.closestDistance, distance);
@@ -736,7 +742,7 @@ export function observeInteraction(baseState, {
     });
   }
 
-  const fish = [...fishRecords.values()].map(({ startFromAttention, originFrame, ...record }) => ({
+  const fish = [...fishRecords.values()].map(({ startFromAttention, originFrame, reference, ...record }) => ({
     ...record,
     closestDistance: Number.isFinite(record.closestDistance) ? round(record.closestDistance, 2) : null,
     distanceTravelled: round(record.distanceTravelled, 2),
