@@ -21,6 +21,7 @@ import {
   attentionInterest,
   attentionInvestigates,
   isPassiveRole,
+  shapeTargetForAttention,
 } from "../src/sim/attention.js";
 import { spriteDimensions } from "../src/art/sprites.js";
 import { spriteForFish } from "../src/sim/fish-growth.js";
@@ -337,6 +338,42 @@ test("a shy fish actually puts water between itself and the press", () => {
   // that pointed at the press left a third of them closing on it, which read as
   // a slightly slower watch rather than a fish keeping its distance.
   assert.equal(closing, 0, `${closing} of ${leaning} shy responders were still closing on the press`);
+});
+
+test("a shy fish keeps that distance for the whole response, not just the start", () => {
+  // The lean fades; the not-closing does not. A turn that decayed with the
+  // response swung back through the press on its way out, which a test that
+  // only looked at the first frame could not see.
+  const fish = { x: 10, y: 10, vx: 0.4, vy: 0, seed: 12345, visual: { pitch: 0 } };
+  const attention = {
+    stimulusId: "touch:test",
+    role: RESPONSE_ROLES.wary,
+    x: 20,
+    y: 10,
+    distance: 10,
+    delaySeconds: 0,
+    durationSeconds: 3.2,
+    ageSeconds: 0,
+  };
+  for (const bearing of [0, 0.4, 1, 1.5, 2.5, 3]) {
+    const target = {
+      x: fish.x + Math.cos(bearing) * 10,
+      y: fish.y + Math.sin(bearing) * 10,
+      speed: 0.4,
+    };
+    for (const progress of [0, 0.05, 0.25, 0.5, 0.75, 0.99]) {
+      const shaped = shapeTargetForAttention(target, fish, {
+        ...attention,
+        ageSeconds: attention.durationSeconds * progress,
+      });
+      const toTarget = { x: shaped.x - fish.x, y: shaped.y - fish.y };
+      const toPress = { x: attention.x - fish.x, y: attention.y - fish.y };
+      const closing = (toTarget.x * toPress.x + toTarget.y * toPress.y)
+        / (Math.hypot(toTarget.x, toTarget.y) * Math.hypot(toPress.x, toPress.y));
+      assert.ok(closing <= 0.001,
+        `at ${(progress * 100).toFixed(0)}% of the response, a shy fish on bearing ${bearing} was closing (${closing.toFixed(3)})`);
+    }
+  }
 });
 
 test("a fish arriving for the first time is never taken off its entry", () => {

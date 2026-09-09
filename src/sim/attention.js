@@ -376,15 +376,21 @@ export function shapeTargetForAttention(target, fish, attention) {
   const stimulusBearing = Math.atan2(attention.y - fish.y, attention.x - fish.x);
   let rotation;
   if (away) {
-    // Leaning away has to put water between the fish and the disturbance. A
-    // fixed turn off a heading that pointed at the press still points at the
-    // press - which made a third of shy responders read as a slightly slower
-    // watch - so the turn is whatever it takes to stop closing, and then a
-    // little further. It is bounded: a quarter turn plus the lean, at most.
+    // Leaning away has to put water between the fish and the disturbance, and
+    // it has to keep it there for as long as the fish is leaning. A fixed turn
+    // off a heading that pointed at the press still points at the press, and a
+    // turn that decays with the response swings back through the press on its
+    // way out - both read as a slightly slower watch rather than a fish keeping
+    // its distance.
+    //
+    // So the turn has two parts: enough to stop closing, which does not decay
+    // while the response lives, and the lean on top of it, which does. The
+    // whole thing is bounded at a quarter turn plus the lean, and it ends the
+    // moment the response does.
     const toward = angleDifference(stimulusBearing, bearing);
     const side = toward === 0 ? (fish.seed & 1 ? 1 : -1) : Math.sign(toward);
     const stopClosing = Math.max(0, Math.PI / 2 - Math.abs(toward));
-    rotation = side * (stopClosing * envelope + turn);
+    rotation = side * (stopClosing + turn);
   } else {
     rotation = clamp(angleDifference(bearing, stimulusBearing), -turn, turn);
   }

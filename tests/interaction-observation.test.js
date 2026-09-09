@@ -242,6 +242,37 @@ test("a response that only changes posture still counts as a response", () => {
   );
 });
 
+test("each fish is measured against the disturbance it is answering", () => {
+  const state = aquarium();
+  // Two presses, half a tank apart. A fish that crosses to answer the second
+  // one must not have its distances recorded against the first.
+  const left = 14;
+  const right = 50;
+  const observation = observeInteraction(state, {
+    history: pointerHistory(tap(left, 9, { at: 0.5 }), tap(right, 11, { at: 1.2 })),
+    observeSeconds: 6,
+  });
+  assert.equal(observation.pointer.delivered, 2);
+
+  for (const fish of observation.fish) {
+    if (fish.startDistance === null) continue;
+    // Every recorded distance belongs to one of the two presses, not to a
+    // point measured from the wrong one.
+    assert.ok(fish.closestDistance <= fish.startDistance + 40);
+    assert.ok(fish.startDistance >= 0);
+  }
+
+  // At least one fish ends up nearer the second press than it ever was to the
+  // first; measured against the first press alone, its answer would read as a
+  // fish wandering off.
+  const start = state.individuals.map((fish) => ({
+    toLeft: Math.hypot(left - fish.x, 9 - fish.y),
+    toRight: Math.hypot(right - fish.x, 11 - fish.y),
+  }));
+  assert.ok(start.some((distances) => distances.toRight < distances.toLeft),
+    "the fixture has no fish nearer the second press");
+});
+
 test("the semantic moments run in order, inside the observation", () => {
   const observation = observeInteraction(aquarium(), {
     history: pointerHistory(tap(33, 9.5, { at: 0.5 })),

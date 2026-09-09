@@ -122,7 +122,7 @@ where every fish in every row is converging on one point.
 | --- | --- | --- |
 | One tap no longer synchronises the cast | The pre-Stage-2 instrument, unchanged since before Stage 2: activities left standing one frame after a tap went from **1, 1, 1** to **8, 7, 7** on seeds 5, 147, 1234 | `npm run measure:stage2-baseline` |
 | …across every scenario and seed | 45 observations: distinct activities after the press **1 → 7.7 mean (6–10)** for a single press; fish interrupted **15 → 3.2 mean (1–4)** | [`interaction-observation.json`](../assets/stage-2/phase-2/interaction-observation.json) |
-| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 64 investigate, 84 approach, 22 delayed, 77 watch, 88 wary, 221 acknowledge, 122 fish out of range | evidence file, `aquarium.roles` |
+| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 68 investigate, 86 approach, 24 delayed, 80 watch, 90 wary, 221 acknowledge, 109 fish out of range | evidence file, `aquarium.roles` |
 | Immediate feedback is still guaranteed | A press at any of five points, including a corner and a point with no fish near it, always produces an impulse, a stimulus and at least one investigator — including in a one-fish aquarium | `tests/attention-roles.test.js` |
 | Activities are not indiscriminately cancelled | Every fish not interrupted holds the exact activity and velocity it had; the fish that was feeding when the press landed stays on the sand and resumes | `tests/attention-roles.test.js`, `tests/phase2-activities.test.js`, the feeding scenario |
 | Recovery is readable | A responder's activity at the frame it lets go is the activity it put down; responders release on different frames | `tests/attention-roles.test.js` |
@@ -164,7 +164,7 @@ under the positional-only one, seven were.
 | Mature untouched avg / max damage | 58.3 / 51.8 / 52.1 % per seed | identical — no stimulus, no change |
 | Interaction avg damage (stocked + mature) | 52.9 % | 53.2 % |
 | Interaction worst frame | 97.9 % | 98.1 % |
-| Dirty rectangles per frame | 18.2 | 18.9 |
+| Dirty rectangles per frame | 18.2 | 19.0 |
 | Peak scene glyphs | 1 245 | 1 245 |
 | Full redraws | 0 | 0 |
 | Tap damage, pre-Stage-2 instrument | 55.2 / 52.4 / 56.8 % | 55.4 / 52.9 / 56.0 % |
@@ -185,7 +185,7 @@ proves it per fish as well as per aquarium.
 
 ## Review findings, and what they changed
 
-Seven defects were raised on the pull request and are fixed here, each with a
+Nine defects were raised on the pull request and are fixed here, each with a
 test that keeps it fixed:
 
 - **A repeated press cost a responder its way back.** A second press while a
@@ -234,6 +234,25 @@ test that keeps it fixed:
   nothing (`src/dev/interaction-observation.js`). The Phase 1 report's
   concurrency table was re-measured with the reachable gesture; it reads the
   same.
+- **The shy lean decayed through the press.** The first version of the fix above
+  scaled the whole turn by the fading response envelope, so a fish whose target
+  pointed straight at the disturbance stopped closing for the first quarter of
+  its response and then swung back through it, ending pointed straight at the
+  press. The first test only sampled 0.1 s in and could not see it. The turn now
+  has two parts: enough to stop closing, which holds for as long as the response
+  does, and the lean on top, which fades. Sampled through the whole response, on
+  six headings and across 27 presses on three seeds - **1 725 samples, none
+  closing** (`src/sim/attention.js`).
+- **Every fish was measured against the first press.** A history with two
+  presses has two causes in it, and the harness attributed distances, time near
+  the disturbance and the response curve to whichever press opened the
+  observation - so a fish crossing the tank to answer the second one read as a
+  fish wandering off. Each fish is now measured against the disturbance its own
+  response is pointed at, falling back to the last press to land for a fish that
+  has no response and for aquarium code that predates roles
+  (`src/dev/interaction-observation.js`). The headline "one frame after the
+  press" readings still belong to the press that opened the observation, so
+  every single-press scenario reads exactly as before.
 
 ## Remaining limitations
 

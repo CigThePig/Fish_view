@@ -380,7 +380,7 @@ function plantTips(state) {
   });
 }
 
-function createFishRecord(fish, stimulus) {
+function createFishRecord(fish) {
   const traits = traitsFromSeed(fish.seed, fish.history);
   return {
     id: fish.seed.toString(16),
@@ -409,7 +409,11 @@ function createFishRecord(fish, stimulus) {
     role: null,
     activityAfterInput: null,
     responseLatencySeconds: null,
-    startDistance: stimulus ? round(Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y), 2) : null,
+    // Distance to the disturbance this fish is answering, at the moment it
+    // began answering it - not to whichever press happened to open the
+    // observation. See `reference` in the frame loop.
+    startDistance: null,
+    startFromAttention: false,
     closestDistance: Number.POSITIVE_INFINITY,
     distanceTravelled: 0,
     averageSpeed: 0,
@@ -457,13 +461,12 @@ export function observeInteraction(baseState, {
   const events = pointerHistory(history);
   const rect = displayRect(viewportScale);
   const frames = Math.round(observeSeconds / stepSeconds);
-  const stimulus = events.find((event) => event.type === "down") ?? null;
 
   let treatment = baseState;
   let control = baseState;
   let scene = render(baseState);
 
-  const fishRecords = new Map(baseState.individuals.map((fish) => [fish.seed, createFishRecord(fish, stimulus)]));
+  const fishRecords = new Map(baseState.individuals.map((fish) => [fish.seed, createFishRecord(fish)]));
   const headings = new Map(baseState.individuals.map((fish) => [fish.seed, heading(fish, 0)]));
   const velocities = new Map(baseState.individuals.map((fish) => [fish.seed, { vx: fish.vx, vy: fish.vy }]));
   const turning = new Map(baseState.individuals.map((fish) => [fish.seed, false]));
@@ -492,6 +495,10 @@ export function observeInteraction(baseState, {
 
   let cursor = 0;
   let stimulusFrame = null;
+  // The most recent press to land. A history with more than one press has more
+  // than one cause in it, and a fish crossing the tank to answer the second one
+  // must not be measured against the first.
+  let latestPress = null;
   let damageTotal = 0;
   let damageWorst = 0;
   let rectangleTotal = 0;
@@ -523,6 +530,7 @@ export function observeInteraction(baseState, {
       treatment = result.state;
       if (result.delivered) {
         delivery.delivered += 1;
+        latestPress = { x: result.point.x, y: result.point.y };
         if (stimulusFrame === null) stimulusFrame = frame;
       } else if (result.reason === "developer-hotspot") delivery.hotspot += 1;
       else if (result.reason === "not-the-primary-pointer") delivery.nonPrimary += 1;
@@ -576,13 +584,31 @@ export function observeInteraction(baseState, {
       velocities.set(fish.seed, { vx: fish.vx, vy: fish.vy });
       record.endingActivity = fish.activity?.current ?? null;
 
-      if (stimulus && stimulusFrame !== null && frame >= stimulusFrame) {
-        const distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y);
+      // What this fish is answering: the disturbance its own response is
+      // pointed at, or - for a fish with no response, and for aquarium code
+      // that predates response roles - the last press to land.
+      const answering = fish.attention ?? null;
+      const reference = answering ?? latestPress;
+      if (reference && stimulusFrame !== null && frame >= stimulusFrame) {
+        const distance = Math.hypot(reference.x - fish.x, reference.y - fish.y);
+        // Where it was when it began answering. A fish that only notices the
+        // second press is measured from there, not from where it happened to be
+        // when the first one landed.
+        if (record.startDistance === null || (answering && !record.startFromAttention)) {
+          record.startDistance = round(distance, 2);
+          record.startFromAttention = Boolean(answering);
+        }
         record.closestDistance = Math.min(record.closestDistance, distance);
         if (distance <= NEAR_STIMULUS_RADIUS_CELLS) record.secondsNearStimulus += stepSeconds;
-        if (record.activityAfterInput === null && frame === stimulusFrame) {
+        if (frame === stimulusFrame) {
+          // The headline reading is what the cast was doing one frame after the
+          // press, so this one stays fixed to the press that opened the
+          // observation.
           record.activityAfterInput = fish.activity?.current ?? null;
-          record.role = fish.attention?.role ?? "none";
+          record.role = answering?.role ?? "none";
+        } else if (record.role === "none" && answering) {
+          // Out of range for that press, and answering a later one.
+          record.role = answering.role;
         }
       }
 
@@ -597,7 +623,7 @@ export function observeInteraction(baseState, {
         && changedActivity) {
         holdingStimulusActivity += 1;
       }
-      if (stimulus) response += Math.abs(closingSpeed(fish, stimulus) - closingSpeed(twin, stimulus));
+      if (reference) response += Math.abs(closingSpeed(fish, reference) - closingSpeed(twin, reference));
       record.peakDeviation = Math.max(record.peakDeviation, separation);
       record.peakSpeedDeviation = Math.max(record.peakSpeedDeviation, speedSeparation);
       record.peakPitchDeviation = Math.max(record.peakPitchDeviation, pitchSeparation);
@@ -667,7 +693,7 @@ export function observeInteraction(baseState, {
     });
   }
 
-  const fish = [...fishRecords.values()].map((record) => ({
+  const fish = [...fishRecords.values()].map(({ startFromAttention, ...record }) => ({
     ...record,
     closestDistance: Number.isFinite(record.closestDistance) ? round(record.closestDistance, 2) : null,
     distanceTravelled: round(record.distanceTravelled, 2),
