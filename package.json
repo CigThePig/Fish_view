@@ -7,10 +7,12 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test",
+    "verify": "npm test && npm run audit:simulation && npm run audit:persistence -- --cases=200 && npm run audit:render && npm run measure:feeding",
     "audit:simulation": "node tools/audit-simulation.mjs",
     "audit:render": "node tools/audit-render.mjs",
     "audit:persistence": "node tools/audit-persistence.mjs",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
+    "measure:stage2-baseline": "node tools/measure-stage2-baseline.mjs",
     "measure:screen": "node tools/measure-screen-legibility.mjs",
     "measure:feeding": "node tools/measure-substrate-feeding.mjs",
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs",
