@@ -15,30 +15,17 @@ function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
-const HABITATS = Object.freeze({
-  landscape: Object.freeze([
-    Object.freeze({ start: 0.025, end: 0.18, count: 5, families: Object.freeze(["grass", "lowLeaf"]) }),
-    Object.freeze({ start: 0.235, end: 0.34, count: 3, families: Object.freeze(["ribbon", "meadow"]) }),
-    Object.freeze({ start: 0.385, end: 0.43, count: 1, families: Object.freeze(["tall"]), solitary: true }),
-    Object.freeze({ start: 0.5, end: 0.56, count: 1, families: Object.freeze(["lowLeaf"]), solitary: true }),
-    Object.freeze({ start: 0.6, end: 0.76, count: 5, families: Object.freeze(["broadleaf", "meadow", "grass"]) }),
-    Object.freeze({ start: 0.81, end: 0.98, count: 7, families: Object.freeze(["tall", "ribbon"]), rareChance: 0.085 }),
-  ]),
-  portrait: Object.freeze([
-    Object.freeze({ start: 0.03, end: 0.26, count: 4, families: Object.freeze(["grass", "lowLeaf"]) }),
-    Object.freeze({ start: 0.1, end: 0.34, count: 3, families: Object.freeze(["tall", "ribbon"]), rareChance: 0.07 }),
-    Object.freeze({ start: 0.42, end: 0.5, count: 1, families: Object.freeze(["lowLeaf"]), solitary: true }),
-    Object.freeze({ start: 0.55, end: 0.74, count: 3, families: Object.freeze(["broadleaf", "meadow"]) }),
-    Object.freeze({ start: 0.72, end: 0.97, count: 5, families: Object.freeze(["tall", "ribbon"]), rareChance: 0.09 }),
-  ]),
-});
+const HABITATS = Object.freeze([
+  Object.freeze({ start: 0.025, end: 0.18, count: 5, families: Object.freeze(["grass", "lowLeaf"]) }),
+  Object.freeze({ start: 0.235, end: 0.34, count: 3, families: Object.freeze(["ribbon", "meadow"]) }),
+  Object.freeze({ start: 0.385, end: 0.43, count: 1, families: Object.freeze(["tall"]), solitary: true }),
+  Object.freeze({ start: 0.5, end: 0.56, count: 1, families: Object.freeze(["lowLeaf"]), solitary: true }),
+  Object.freeze({ start: 0.6, end: 0.76, count: 5, families: Object.freeze(["broadleaf", "meadow", "grass"]) }),
+  Object.freeze({ start: 0.81, end: 0.98, count: 7, families: Object.freeze(["tall", "ribbon"]), rareChance: 0.085 }),
+]);
 
-function orientationFromColumns(cols) {
-  return cols < 50 ? "portrait" : "landscape";
-}
-
-function habitatSlot(orientation, index) {
-  const habitats = HABITATS[orientation];
+function habitatSlot(index) {
+  const habitats = HABITATS;
   let cursor = 0;
   for (const habitat of habitats) {
     if (index < cursor + habitat.count) {
@@ -101,27 +88,27 @@ function createPlantRecord({ seed, speciesId, x, ageDays, matureHeight }) {
   };
 }
 
-// The stable seeds of an orientation's authored initial roster. Diagnostics use
+// The stable seeds of the authored initial roster. Diagnostics use
 // it to tell an original specimen from one the aquarium grew for itself.
-export function initialPlantSeeds(baseSeed, orientation) {
+export function initialPlantSeeds(baseSeed) {
   return Array.from(
-    { length: plantCountFor(orientation) },
+    { length: plantCountFor() },
     (_, index) => mix32((baseSeed >>> 0) ^ Math.imul(index + 31, 0xc2b2ae35)),
   );
 }
 
-export function plantCountFor(orientation) {
-  return HABITATS[orientation].reduce((total, habitat) => total + habitat.count, 0);
+export function plantCountFor() {
+  return HABITATS.reduce((total, habitat) => total + habitat.count, 0);
 }
 
 // The hard, measured ceiling on a lifetime of propagation and rare emergence.
 // It is a rendering budget first and a composition budget second: a mature
 // aquarium at this count is the worst case the damage and glyph regressions
 // are measured against, so it is raised only with new measurements.
-export const PLANT_CAPS = Object.freeze({ landscape: 30, portrait: 22 });
+export const PLANT_CAP = 30;
 
-export function plantCapFor(orientation) {
-  return PLANT_CAPS[orientation] ?? PLANT_CAPS.landscape;
+export function plantCapFor() {
+  return PLANT_CAP;
 }
 
 // One construction path for every plant that is not part of the authored
@@ -155,13 +142,13 @@ export function createPlantFromSeed({
 // Habitat bands are composition, not geometry: exposing the normalized bands a
 // species family already occupies lets long-horizon content choose a plausible
 // region without reading anything the renderer produced.
-export function plantHabitatBands(orientation) {
-  return HABITATS[orientation] ?? HABITATS.landscape;
+export function plantHabitatBands() {
+  return HABITATS;
 }
 
-export function createPlant(baseSeed, index, cols, rows, orientation = orientationFromColumns(cols)) {
+export function createPlant(baseSeed, index, cols, rows) {
   const seed = mix32(baseSeed ^ Math.imul(index + 31, 0xc2b2ae35));
-  const { habitat, localIndex } = habitatSlot(orientation, index);
+  const { habitat, localIndex } = habitatSlot(index);
   const slotProgress = (localIndex + 0.18 + sample01(seed, 1) * 0.64) / habitat.count;
   const normalizedX = habitat.start + (habitat.end - habitat.start) * slotProgress;
   const margin = habitat.solitary ? 0.75 : 0.48;

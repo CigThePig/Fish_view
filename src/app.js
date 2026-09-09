@@ -1,5 +1,6 @@
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=true-rotation-20260902";
-import { render } from "./render/render.js?v=true-rotation-20260902";
+import { DeveloperGesture, aquariumPoint } from "./platform/aquarium-input.js";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=horizontal-20260909";
+import { render } from "./render/render.js?v=horizontal-20260909";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { VisibilityClock } from "./platform/visibility-clock.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
@@ -18,25 +19,11 @@ const wallClockHours = now.getHours() + now.getMinutes() / 60;
 const visibilityClock = new VisibilityClock();
 if (document.visibilityState === "hidden") visibilityClock.pause(now.getTime());
 
-let states = {
-  portrait: loadPersistedState(createAquariumState({ orientation: "portrait", seed, wallClockHours })),
-  landscape: loadPersistedState(createAquariumState({ orientation: "landscape", seed, wallClockHours })),
-};
-
-const canvases = {
-  portrait: document.querySelector("#portrait-canvas"),
-  landscape: document.querySelector("#landscape-canvas"),
-};
-const renderers = {
-  portrait: new CanvasSceneRenderer(canvases.portrait),
-  landscape: new CanvasSceneRenderer(canvases.landscape),
-};
-const stage = document.querySelector("#aquarium-stage");
+let state = loadPersistedState(createAquariumState({ seed, wallClockHours }));
+const canvas = document.querySelector("#aquarium-canvas");
+const renderer = new CanvasSceneRenderer(canvas);
 const debugPanel = document.querySelector("#debug-panel");
-const debugToggle = document.querySelector("#debug-toggle");
-let currentMode = query.get("orientation") === "portrait" ? "portrait" : "landscape";
-if (query.get("orientation") === "compare") currentMode = "compare";
-stage.dataset.mode = currentMode;
+const gesture = new DeveloperGesture();
 
 let lastFrameTime = performance.now();
 let accumulator = TICK_INTERVAL;
@@ -47,8 +34,8 @@ let sampledTotal = 0;
 let sampledRectangles = 0;
 let sampledPlantChanges = 0;
 let sampledPlantFrames = 0;
-const previousPlantSignatures = { portrait: new Map(), landscape: new Map() };
-const latestPlantMetrics = { portrait: null, landscape: null };
+let previousPlantSignatures = new Map();
+let latestPlantMetrics = null;
 
 function updatePersonalityDiagnostics(state) {
   const lines = state.individuals.map((fish, index) => {
@@ -113,34 +100,27 @@ function updateGrowthDiagnostics(state) {
   document.querySelector("#growth-output").textContent = lines.join("\n");
 }
 
-function visibleOrientations() {
-  return currentMode === "compare" ? ["portrait", "landscape"] : [currentMode];
-}
-
 function drawVisible() {
-  visibleOrientations().forEach((orientation) => {
-    const state = states[orientation];
-    const scene = render(state);
-    const result = renderers[orientation].draw(scene);
-    latestPlantMetrics[orientation] = scene.metadata.plants;
-    const previous = previousPlantSignatures[orientation];
-    const next = new Map(scene.objects
-      .filter((object) => object.id.startsWith("plant:"))
-      .map((object) => [object.id, object.signature]));
-    let changed = 0;
-    for (const [id, signature] of next) {
-      if (previous.get(id) !== signature) changed += 1;
-    }
-    for (const id of previous.keys()) {
-      if (!next.has(id)) changed += 1;
-    }
-    previousPlantSignatures[orientation] = next;
-    sampledPlantChanges += changed;
-    sampledPlantFrames += 1;
-    sampledDamage += result.damagedPixels;
-    sampledTotal += result.totalPixels;
-    sampledRectangles += result.damageRectangles;
-  });
+  const scene = render(state);
+  const result = renderer.draw(scene);
+  latestPlantMetrics = scene.metadata.plants;
+  const previous = previousPlantSignatures;
+  const next = new Map(scene.objects
+    .filter((object) => object.id.startsWith("plant:"))
+    .map((object) => [object.id, object.signature]));
+  let changed = 0;
+  for (const [id, signature] of next) {
+    if (previous.get(id) !== signature) changed += 1;
+  }
+  for (const id of previous.keys()) {
+    if (!next.has(id)) changed += 1;
+  }
+  previousPlantSignatures = next;
+  sampledPlantChanges += changed;
+  sampledPlantFrames += 1;
+  sampledDamage += result.damagedPixels;
+  sampledTotal += result.totalPixels;
+  sampledRectangles += result.damageRectangles;
   sampledFrames += 1;
 }
 
@@ -153,8 +133,7 @@ function updateMetrics(timestamp) {
   document.querySelector("#rect-output").textContent = sampledFrames
     ? (sampledRectangles / sampledFrames).toFixed(1)
     : "0";
-  const state = states[currentMode === "portrait" ? "portrait" : "landscape"];
-  const metrics = latestPlantMetrics[state.orientation];
+  const metrics = latestPlantMetrics;
   document.querySelector("#age-output").textContent = `${state.totalDays.toFixed(1)} days`;
   document.querySelector("#plant-output").textContent = metrics ? String(metrics.instances) : "—";
   document.querySelector("#plant-joints-output").textContent = metrics ? String(metrics.activeJoints) : "—";
@@ -185,10 +164,7 @@ function frame(timestamp) {
   accumulator += elapsed;
   if (accumulator >= TICK_INTERVAL) {
     const delta = Math.min(accumulator, 0.25);
-    states = {
-      portrait: tick(states.portrait, delta),
-      landscape: tick(states.landscape, delta),
-    };
+    state = tick(state, delta);
     accumulator = 0;
     drawVisible();
   }
@@ -196,19 +172,7 @@ function frame(timestamp) {
   requestAnimationFrame(frame);
 }
 
-function setMode(mode) {
-  currentMode = mode;
-  stage.dataset.mode = mode;
-  document.querySelectorAll("[data-mode-button]").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.modeButton === mode);
-    button.setAttribute("aria-pressed", String(button.dataset.modeButton === mode));
-  });
-  syncControls();
-  drawVisible();
-}
-
 function syncControls() {
-  const state = states[currentMode === "portrait" ? "portrait" : "landscape"];
   document.querySelectorAll("[data-setting]").forEach((input) => {
     const value = String(state.settings[input.dataset.setting]);
     input.value = value;
@@ -219,42 +183,60 @@ function syncControls() {
   document.querySelector("#clock-output").textContent = formatClock(state.timeOfDayHours);
 }
 
-document.querySelectorAll("[data-mode-button]").forEach((button) => {
-  button.addEventListener("click", () => setMode(button.dataset.modeButton));
-});
-setMode(currentMode);
-
-Object.entries(canvases).forEach(([orientation, canvas]) => {
-  canvas.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const normalizedX = (event.clientX - rect.left) / rect.width;
-    const normalizedY = (event.clientY - rect.top) / rect.height;
-    states = {
-      portrait: applyTouch(states.portrait, normalizedX * states.portrait.cols, normalizedY * states.portrait.rows),
-      landscape: applyTouch(states.landscape, normalizedX * states.landscape.cols, normalizedY * states.landscape.rows),
-    };
+syncControls();
+let pointerStart = null;
+canvas.addEventListener("pointerdown", (event) => {
+  if (!event.isPrimary || event.button !== 0 || !debugPanel.hidden) return;
+  event.preventDefault();
+  const point = aquariumPoint(event, canvas.getBoundingClientRect());
+  pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() };
+  if (event.isTrusted) canvas.setPointerCapture?.(event.pointerId);
+  if (!point.hotspot) {
+    gesture.reset();
+    state = applyTouch(state, point.x, point.y);
     drawVisible();
-    canvas.setPointerCapture?.(event.pointerId);
-  });
+  }
 });
-
+canvas.addEventListener("pointerup", (event) => {
+  const start = pointerStart;
+  pointerStart = null;
+  if (!start || start.id !== event.pointerId) return;
+  const point = aquariumPoint(event, canvas.getBoundingClientRect());
+  const now = performance.now();
+  if (now - start.time > 600 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) {
+    gesture.reset();
+    return;
+  }
+  const startPoint = aquariumPoint({ clientX: start.x, clientY: start.y }, canvas.getBoundingClientRect());
+  if (!startPoint.hotspot) return;
+  if (gesture.tap(point.hotspot, now)) setDebugOpen(true);
+});
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+canvas.addEventListener("pointercancel", () => { pointerStart = null; gesture.reset(); });
+document.addEventListener("pointerdown", (event) => {
+  if (event.target !== canvas) gesture.reset();
+});
 function setDebugOpen(open) {
+  gesture.reset();
   debugPanel.hidden = !open;
-  debugToggle.setAttribute("aria-expanded", String(open));
+  canvas.setAttribute("aria-expanded", String(open));
+  if (open) { syncControls(); document.querySelector("#debug-close").focus(); }
+  else canvas.focus({ preventScroll: true });
 }
-
-debugToggle.addEventListener("click", () => setDebugOpen(debugPanel.hidden));
+canvas.addEventListener("keydown", (event) => {
+  if (!event.repeat && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    setDebugOpen(true);
+  }
+});
 document.querySelector("#debug-close").addEventListener("click", () => setDebugOpen(false));
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") setDebugOpen(false); });
 
 document.querySelectorAll("[data-setting]").forEach((input) => {
   input.addEventListener("input", () => {
     const name = input.dataset.setting;
     const value = Number(input.value);
-    states = {
-      portrait: withSettings(states.portrait, { [name]: value }),
-      landscape: withSettings(states.landscape, { [name]: value }),
-    };
+    state = withSettings(state, { [name]: value });
     document.querySelector(`[data-output="${name}"]`).textContent = input.value;
   });
 });
@@ -262,10 +244,7 @@ document.querySelectorAll("[data-setting]").forEach((input) => {
 const timeScale = document.querySelector("#time-scale");
 timeScale.addEventListener("change", () => {
   const value = Number(timeScale.value);
-  states = {
-    portrait: withSettings(states.portrait, { timeScale: value }),
-    landscape: withSettings(states.landscape, { timeScale: value }),
-  };
+  state = withSettings(state, { timeScale: value });
 });
 
 const clockControl = document.querySelector("#clock-control");
@@ -277,54 +256,44 @@ function formatClock(hours) {
 }
 clockControl.addEventListener("input", () => {
   const value = Number(clockControl.value);
-  states = {
-    portrait: { ...states.portrait, timeOfDayHours: value },
-    landscape: { ...states.landscape, timeOfDayHours: value },
-  };
+  state = { ...state, timeOfDayHours: value };
   clockOutput.textContent = formatClock(value);
 });
 
 document.querySelector("#fullscreen-toggle").addEventListener("click", async () => {
   if (!document.fullscreenElement) {
-    await document.documentElement.requestFullscreen?.();
+    try { await document.documentElement.requestFullscreen?.(); } catch { /* Viewport fitting remains available. */ }
   } else {
-    await document.exitFullscreen?.();
+    try { await document.exitFullscreen?.(); } catch { /* The user can still close the drawer. */ }
   }
 });
 
-function saveAll() {
+function saveAquarium() {
   const savedAtMs = visibilityClock.saveTimestamp(Date.now());
-  savePersistedState(states.portrait, savedAtMs);
-  savePersistedState(states.landscape, savedAtMs);
+  savePersistedState(state, savedAtMs);
 }
 
-setInterval(saveAll, 12_000);
+setInterval(saveAquarium, 12_000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     visibilityClock.pause(Date.now());
-    saveAll();
+    saveAquarium();
   } else {
     const elapsed = visibilityClock.resume(Date.now());
-    states = {
-      portrait: advanceOffline(states.portrait, elapsed),
-      landscape: advanceOffline(states.landscape, elapsed),
-    };
+    state = advanceOffline(state, elapsed);
     lastFrameTime = performance.now();
     accumulator = 0;
     drawVisible();
   }
 });
-globalThis.addEventListener("pagehide", saveAll);
+globalThis.addEventListener("pagehide", saveAquarium);
 
 document.querySelector("#reset-simulation").addEventListener("click", () => {
-  clearPersistedState(states.portrait);
-  clearPersistedState(states.landscape);
-  states = {
-    portrait: createAquariumState({ orientation: "portrait", seed, wallClockHours }),
-    landscape: createAquariumState({ orientation: "landscape", seed, wallClockHours }),
-  };
+  clearPersistedState(state);
+  state = createAquariumState({ seed, wallClockHours });
   syncControls();
-  Object.values(renderers).forEach((renderer) => renderer.reset());
+  renderer.reset();
+  previousPlantSignatures.clear();
   drawVisible();
 });
 

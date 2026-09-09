@@ -85,7 +85,7 @@ test("activity choreography profiles preserve a calm baseline and distinct energ
 });
 
 test("school, deliberate follow, companion formation, and chase expose different social geometry", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 7331, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 7331, wallClockHours: 12 });
   // Deliberately an ordinary territorial fish rather than a shoaling one: a
   // shoaling species holds a sociability floor that lifts its following speed,
   // which is the point of that species and not what this test is measuring.
@@ -130,7 +130,6 @@ test("school, deliberate follow, companion formation, and chase expose different
 
 test("bubble pursuit predicts a real rising bubble and produces a readable ascent", () => {
   const found = findDurableBubble(stockedAquarium({
-    orientation: "landscape",
     seed: 321,
     wallClockHours: 12,
   }));
@@ -197,7 +196,7 @@ test("bubble pursuit predicts a real rising bubble and produces a readable ascen
 });
 
 test("playful chase is faster than following and gives the chased fish a bounded evasive response", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 2020, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 2020, wallClockHours: 12 });
   const chaserSource = base.individuals[0];
   const chasedSource = base.individuals[1];
   const chaser = {
@@ -275,7 +274,7 @@ test("playful chase is faster than following and gives the chased fish a bounded
 });
 
 test("substrate feeding uses deterministic clustered pecks at a physically readable scale", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 444, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 444, wallClockHours: 12 });
   // Any fish actually working the sand here. The graze line is per-fish - a
   // fish's distance from the glass sets the scale it is drawn at and so how far
   // its mouth reaches, and its mouth leads its centre over terrain that is not
@@ -333,7 +332,7 @@ test("substrate feeding uses deterministic clustered pecks at a physically reada
 });
 
 test("the strike moves the fish, not just its target", () => {
-  const base = withSettings(stockedAquarium({ orientation: "landscape", seed: 444, wallClockHours: 12 }), {
+  const base = withSettings(stockedAquarium({ seed: 444, wallClockHours: 12 }), {
     timeScale: 1,
   });
   const index = 3;
@@ -367,11 +366,12 @@ test("the strike moves the fish, not just its target", () => {
 });
 
 test("the peck meets the substrate crest without burying the fish", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const base = stockedAquarium({ orientation, seed: 444, wallClockHours: 12 });
+  {
+
+    const base = stockedAquarium({ seed: 444, wallClockHours: 12 });
     const index = 3;
     const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
-    const x = orientation === "landscape" ? 25 : 20;
+    const x = 25;
     let best = null;
     for (let age = 0; age < 12; age += 0.02) {
       const fish = { ...source, x, activity: { ...source.activity, ageRealSeconds: age } };
@@ -408,11 +408,11 @@ test("the peck meets the substrate crest without burying the fish", () => {
     const mouthEntered = (bottomOf([mouth]) - terrainPixels) / rowPixels;
     assert.ok(
       mouthEntered >= -0.4,
-      `${orientation} peck left the mouth ${(-mouthEntered).toFixed(2)} rows clear of the substrate it feeds from`,
+      `landscape peck left the mouth ${(-mouthEntered).toFixed(2)} rows clear of the substrate it feeds from`,
     );
     assert.ok(
       mouthEntered <= 0.6,
-      `${orientation} peck drove the mouth ${mouthEntered.toFixed(2)} rows under the crest`,
+      `landscape peck drove the mouth ${mouthEntered.toFixed(2)} rows under the crest`,
     );
     // Getting the mouth down there costs body: the underside passes through the
     // crest, which is what a fish nosing into sand looks like. It may not go so
@@ -422,13 +422,13 @@ test("the peck meets the substrate crest without burying the fish", () => {
     const entered = (visibleBottom - terrainPixels) / rowPixels;
     assert.ok(
       entered <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
-      `${orientation} peck buried the fish ${entered.toFixed(2)} rows into the substrate`,
+      `landscape peck buried the fish ${entered.toFixed(2)} rows into the substrate`,
     );
   }
 });
 
 test("plant inspection hovers around one specimen while weaving alternates route sides", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 614, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 614, wallClockHours: 12 });
   const index = 4;
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
   assert.ok(plant);
@@ -480,7 +480,7 @@ test("plant inspection hovers around one specimen while weaving alternates route
 });
 
 test("surface investigation ascends, probes the safe meniscus, and remains below it", () => {
-  const base = stockedAquarium({ orientation: "portrait", seed: 447, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 447, wallClockHours: 12 });
   const index = 4;
   const source = withActivity(base.individuals[index], "explore", ACTIVITIES.surfaceInvestigate, {
     targetType: "surface",
@@ -518,7 +518,7 @@ test("surface investigation ascends, probes the safe meniscus, and remains below
 });
 
 test("resting locomotion and body rhythm are measurably quieter than cruise", () => {
-  const base = stockedAquarium({ orientation: "landscape", seed: 91, wallClockHours: 12 });
+  const base = stockedAquarium({ seed: 91, wallClockHours: 12 });
   const source = base.individuals[2];
   const resting = withActivity(source, "rest", ACTIVITIES.openWaterRest, {
     targetType: "waypoint",

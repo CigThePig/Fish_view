@@ -1,3 +1,5 @@
+> Subsystem report from before the horizontal-only migration. Historical measurements below are retained as evidence; portrait is retired. Current tools capture and measure only the 800 × 480 aquarium. See [current architecture](../README.md).
+
 # A habitat worth watching
 
 The original aquarium had a substantial fish activity vocabulary, but most of
@@ -59,7 +61,7 @@ ambient effects; they do not preserve their exact last position.
 
 ## Evidence and cost
 
-`npm run capture:living` generates both orientations at six age/time combinations,
+`npm run capture:living` generates the canonical aquarium at six age/time combinations,
 plus an unforced three-minute observation report. Add `-- --video` to encode a
 thirty-second MP4 with FFmpeg. The ordinary capture needs only the existing
 Canvas development dependency. The behavior lab also has a **Drifting seed

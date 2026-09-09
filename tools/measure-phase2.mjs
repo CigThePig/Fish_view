@@ -15,7 +15,7 @@ const hasPhase2 = fs.existsSync(path.join(root, "src/sim/bubbles.js"));
 const bubbleWorld = hasPhase2 ? await import(url("src/sim/bubbles.js")) : null;
 const legacyBubbles = hasPhase2 ? null : await import(url("src/render/bubbles.js"));
 const legacyPalette = hasPhase2 ? null : await import(url("src/render/palette.js"));
-const { orientationConfig } = await import(url("src/sim/config.js"));
+const { DISPLAY } = await import(url("src/sim/config.js"));
 
 function fishFillMaximum(scene) {
   return Math.max(0, ...scene.objects
@@ -25,7 +25,7 @@ function fishFillMaximum(scene) {
 
 function bubbleRecords(state) {
   if (bubbleWorld) return bubbleWorld.createBubbleWorldRecords(state);
-  const target = orientationConfig(state.orientation);
+  const target = DISPLAY;
   const metrics = {
     cellWidth: target.pixelWidth / state.cols,
     cellHeight: target.pixelHeight / state.rows,
@@ -110,8 +110,8 @@ function forcePlantSocialHeavy(state) {
   };
 }
 
-function prepare(orientation, scenario) {
-  let state = stocked(createAquariumState({ orientation, seed: 5, wallClockHours: 12 }));
+function prepare(scenario) {
+  let state = stocked(createAquariumState({ seed: 5, wallClockHours: 12 }));
   for (let frame = 0; frame < 100; frame += 1) state = tick(state, 0.1);
   if (scenario === "bubble-heavy") {
     let best = state;
@@ -133,8 +133,8 @@ function prepare(orientation, scenario) {
   return state;
 }
 
-function runSequence(orientation, scenario) {
-  let state = prepare(orientation, scenario);
+function runSequence(scenario) {
+  let state = prepare(scenario);
   let previous = render(state);
   let maximumFishFills = fishFillMaximum(previous);
   let maximumBubbles = previous.objects.filter((object) => object.id.startsWith("bubble:")).length;
@@ -162,7 +162,6 @@ function runSequence(orientation, scenario) {
     previous = next;
   }
   return {
-    orientation,
     scenario,
     averageDamagePercent: damaged / 200 * 100,
     maximumDamagePercent: maximumDamage * 100,
@@ -175,15 +174,16 @@ function runSequence(orientation, scenario) {
 }
 
 const rows = [];
-for (const orientation of ["landscape", "portrait"]) {
+{
+
   for (const scenario of ["ordinary", "bubble-heavy", "plant-social"]) {
-    rows.push(runSequence(orientation, scenario));
+    rows.push(runSequence(scenario));
   }
 }
 
 for (const row of rows) {
   console.log([
-    row.orientation.padEnd(9),
+    "landscape".padEnd(9),
     row.scenario.padEnd(12),
     `avg=${row.averageDamagePercent.toFixed(2)}%`,
     `max=${row.maximumDamagePercent.toFixed(2)}%`,

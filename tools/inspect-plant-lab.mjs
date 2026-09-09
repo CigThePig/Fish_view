@@ -38,9 +38,8 @@ function drawSkeleton(canvas, line) {
   }
 }
 
-function snapshot(speciesId, orientation = "landscape") {
+function snapshot(speciesId) {
   const scene = renderPlantLabScene(speciesId, {
-    orientation,
     size: "maximum",
     currentMultiplier: 1,
     elapsedRealSeconds: 6.3,
@@ -63,7 +62,7 @@ function snapshot(speciesId, orientation = "landscape") {
     .join("\n")
     .replace(/\n+$/u, "");
   return [
-    `${speciesId} / ${orientation} / skeleton overlay`,
+    `${speciesId} / landscape / skeleton overlay`,
     `active joints: ${scene.metadata.plants.activeJoints}; rendered glyphs: ${scene.metadata.plants.glyphs}; max specimen glyphs: ${scene.metadata.plants.maximumGlyphs}`,
     body,
   ].join("\n");
@@ -72,5 +71,5 @@ function snapshot(speciesId, orientation = "landscape") {
 for (const speciesId of SPECIES) {
   console.log("\n" + snapshot(speciesId));
 }
-console.log("\n" + snapshot("tall-forkgrass", "portrait"));
-console.log("\n" + snapshot("split-reed", "portrait"));
+console.log("\n" + snapshot("tall-forkgrass"));
+console.log("\n" + snapshot("split-reed"));

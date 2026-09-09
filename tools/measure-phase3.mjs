@@ -36,15 +36,15 @@ function fishFillMaximum(scene) {
     .map((object) => object.fill.length));
 }
 
-function matureState(orientation, seed) {
-  const base = createAquariumState({ orientation, seed, wallClockHours: 12 });
+function matureState(seed) {
+  const base = createAquariumState({ seed, wallClockHours: 12 });
   if (!history || !createPlantFromSeed) {
     // Pre-Phase-3 tree: the best available "mature" case is the original
     // roster grown old.
     return { ...base, plants: base.plants.map((plant) => ({ ...plant, ageDays: 400 })) };
   }
   const grown = history.advanceAquariumHistory(base, 900);
-  const cap = plantCapFor(orientation);
+  const cap = plantCapFor();
   const roster = [...grown.plants];
   let filler = 0;
   while (roster.length < cap) {
@@ -61,10 +61,10 @@ function matureState(orientation, seed) {
   return { ...grown, plants: roster.map((plant) => ({ ...plant, ageDays: 400 })) };
 }
 
-function runSequence(orientation, scenario, seed) {
+function runSequence(scenario, seed) {
   let state = scenario === "mature"
-    ? matureState(orientation, seed)
-    : createAquariumState({ orientation, seed, wallClockHours: 12 });
+    ? matureState(seed)
+    : createAquariumState({ seed, wallClockHours: 12 });
   // Settle before measuring so the first frames are not the initial layout.
   for (let frame = 0; frame < 20; frame += 1) state = tick(state, 0.1);
 
@@ -91,7 +91,6 @@ function runSequence(orientation, scenario, seed) {
   }
   const diagnostics = previous.metadata.plants;
   return {
-    orientation,
     scenario,
     seed,
     individuals: state.individuals.length,
@@ -109,7 +108,6 @@ function runSequence(orientation, scenario, seed) {
 function summarize(rows) {
   const average = (pick) => rows.reduce((sum, row) => sum + pick(row), 0) / rows.length;
   return {
-    orientation: rows[0].orientation,
     scenario: rows[0].scenario,
     individuals: Math.max(...rows.map((row) => row.individuals)),
     plantObjects: Math.max(...rows.map((row) => row.plantObjects)),
@@ -124,15 +122,16 @@ function summarize(rows) {
 }
 
 const summaries = [];
-for (const orientation of ["landscape", "portrait"]) {
+{
+
   for (const scenario of ["fresh", "mature"]) {
-    summaries.push(summarize(SEEDS.map((seed) => runSequence(orientation, scenario, seed))));
+    summaries.push(summarize(SEEDS.map((seed) => runSequence(scenario, seed))));
   }
 }
 
 for (const row of summaries) {
   console.log([
-    row.orientation.padEnd(9),
+    "landscape".padEnd(9),
     row.scenario.padEnd(7),
     `fish=${row.individuals}`,
     `plants=${row.plantObjects}`,

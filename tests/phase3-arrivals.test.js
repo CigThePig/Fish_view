@@ -42,8 +42,8 @@ import { behaviorUtilities, tick } from "../src/sim/tick.js";
 
 const SEED = 0xa51c0a7e;
 
-function atDay(day, { orientation = "landscape", seed = SEED } = {}) {
-  return advanceAquariumHistory(createAquariumState({ orientation, seed }), day);
+function atDay(day, { seed = SEED } = {}) {
+  return advanceAquariumHistory(createAquariumState({ seed }), day);
 }
 
 // An arrival hatches as a fry, so it is bounded by the artwork it is drawn
@@ -53,7 +53,8 @@ function halfWidth(fish) {
 }
 
 test("the aquarium gains one fish a fortnight up to its ceiling and stops", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [SEED, 5, 77, 4242]) {
       const schedule = contentSchedule(seed).filter((milestone) => milestone.type === "fish-arrival");
       assert.equal(schedule.length, ROSTER_SIZE - INITIAL_INDIVIDUAL_COUNT);
@@ -62,16 +63,16 @@ test("the aquarium gains one fish a fortnight up to its ceiling and stops", () =
         const due = schedule[ordinal].day;
         assert.equal(due, (ordinal + INITIAL_INDIVIDUAL_COUNT) * ARRIVAL_INTERVAL_DAYS);
         assert.equal(
-          atDay(due - 0.5, { orientation, seed }).individuals.length,
+          atDay(due - 0.5, { seed }).individuals.length,
           INITIAL_INDIVIDUAL_COUNT + ordinal,
         );
         assert.equal(
-          atDay(due + 0.5, { orientation, seed }).individuals.length,
+          atDay(due + 0.5, { seed }).individuals.length,
           INITIAL_INDIVIDUAL_COUNT + ordinal + 1,
         );
       }
 
-      const distantFuture = atDay(2000, { orientation, seed });
+      const distantFuture = atDay(2000, { seed });
       assert.equal(distantFuture.individuals.length, MAX_INDIVIDUALS);
       assert.equal(new Set(distantFuture.individuals.map((fish) => fish.seed)).size, MAX_INDIVIDUALS);
     }
@@ -79,9 +80,10 @@ test("the aquarium gains one fish a fortnight up to its ceiling and stops", () =
 });
 
 test("a fresh aquarium begins with exactly the roster's founding fish", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [SEED, 991, 12]) {
-      const state = createAquariumState({ orientation, seed });
+      const state = createAquariumState({ seed });
       const roster = aquariumRoster(seed);
       assert.equal(state.individuals.length, INITIAL_INDIVIDUAL_COUNT);
       state.individuals.forEach((fish, index) => {
@@ -91,25 +93,24 @@ test("a fresh aquarium begins with exactly the roster's founding fish", () => {
   }
 });
 
-test("arrival identity is stable, unique, and the same in both orientations", () => {
+test("arrival identity is stable, unique, and the same in the canonical aquarium", () => {
   for (const seed of [SEED, 5, 77, 4242, 100003]) {
     const schedule = contentSchedule(seed).filter((milestone) => milestone.type === "fish-arrival");
-    const landscape = atDay(200, { orientation: "landscape", seed }).individuals.map((fish) => fish.seed);
-    const portrait = atDay(200, { orientation: "portrait", seed }).individuals.map((fish) => fish.seed);
-    assert.deepEqual(landscape, portrait);
+    const landscape = atDay(200, { seed }).individuals.map((fish) => fish.seed);
     assert.deepEqual(landscape.slice(INITIAL_INDIVIDUAL_COUNT), schedule.map((milestone) => milestone.fishSeed));
     assert.equal(new Set(landscape).size, landscape.length);
     // Repeating the run reaches the same cast.
-    assert.deepEqual(atDay(200, { orientation: "landscape", seed }).individuals.map((fish) => fish.seed), landscape);
+    assert.deepEqual(atDay(200, { seed }).individuals.map((fish) => fish.seed), landscape);
   }
 });
 
 test("arrivals enter from a safe water edge with inward velocity", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [SEED, 5, 77, 4242, 100003, 8]) {
       const schedule = contentSchedule(seed).filter((milestone) => milestone.type === "fish-arrival");
       for (let ordinal = 0; ordinal < schedule.length; ordinal += 1) {
-        const state = atDay(schedule[ordinal].day + 0.01, { orientation, seed });
+        const state = atDay(schedule[ordinal].day + 0.01, { seed });
         const fish = state.individuals.at(-1);
         const width = halfWidth(fish);
         assert.equal(fish.seed, schedule[ordinal].fishSeed);
@@ -140,11 +141,12 @@ test("arrivals enter from a safe water edge with inward velocity", () => {
 });
 
 test("two overdue arrivals resolved at once do not stack on top of each other", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [SEED, 5, 77, 4242, 100003, 8, 313]) {
       // One jump past both windows: migration, a huge accelerated leap, and a
       // long offline gap all take this path.
-      const state = atDay(400, { orientation, seed });
+      const state = atDay(400, { seed });
       const [first, second] = state.individuals.slice(INITIAL_INDIVIDUAL_COUNT);
       assert.ok(first && second);
       assert.ok(Math.abs(first.x - second.x) > 4, "both arrivals entered from the same place");
@@ -155,7 +157,7 @@ test("two overdue arrivals resolved at once do not stack on top of each other", 
 });
 
 test("an arrival is a full Phase 2 individual, not a simplified newcomer", () => {
-  const state = atDay(400, { orientation: "landscape", seed: SEED });
+  const state = atDay(400, { seed: SEED });
   const index = state.individuals.length - 1;
   const fish = state.individuals[index];
 
@@ -223,7 +225,7 @@ test("existing relationships survive an arrival without gaining fake familiarity
 test("an arrival swims in and then joins the ordinary activity system", () => {
   let state = withSettings(
     advanceAquariumHistory(
-      createAquariumState({ orientation: "landscape", seed: SEED, wallClockHours: 12 }),
+      createAquariumState({ seed: SEED, wallClockHours: 12 }),
       ARRIVAL_INTERVAL_DAYS + 0.5,
     ),
     { timeScale: 1 },
@@ -248,7 +250,7 @@ test("an arrival swims in and then joins the ordinary activity system", () => {
 // that occupy roster slots 0 to 2 - rather than three of a stocked initial cast.
 // Everything that arrives after them forages like any other fish.
 test("only the first three roster slots hold the protected mid-water band", () => {
-  let state = withSettings(atDay(400, { orientation: "landscape", seed: SEED }), { timeScale: 3600 });
+  let state = withSettings(atDay(400, { seed: SEED }), { timeScale: 3600 });
   for (let frame = 0; frame < 600; frame += 1) state = tick(state, 0.1);
   const ceiling = WATERLINE_ROWS + (state.rows - 6) * 0.68;
   assert.ok(state.individuals.slice(0, 3).every((fish) => fish.y < ceiling));

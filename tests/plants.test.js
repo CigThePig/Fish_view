@@ -36,8 +36,8 @@ import { tick } from "../src/sim/tick.js";
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
-function matureState(orientation, seed = 5, wallClockHours = 12) {
-  const state = createAquariumState({ orientation, seed, wallClockHours });
+function matureState(seed = 5, wallClockHours = 12) {
+  const state = createAquariumState({ seed, wallClockHours });
   return {
     ...state,
     plants: state.plants.map((plant) => ({ ...plant, ageDays: 200 })),
@@ -97,20 +97,21 @@ test("the shared library contains 28 bounded non-coral skeletal species", () => 
   }
 });
 
-test("planting layout and individual variation are deterministic and orientation-aware", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const first = createAquariumState({ orientation, seed: 991 });
-    const second = createAquariumState({ orientation, seed: 991 });
-    const different = createAquariumState({ orientation, seed: 992 });
+test("planting layout and individual variation are deterministic and canonical", () => {
+  {
+
+    const first = createAquariumState({ seed: 991 });
+    const second = createAquariumState({ seed: 991 });
+    const different = createAquariumState({ seed: 992 });
     assert.deepEqual(first.plants, second.plants);
     assert.notDeepEqual(first.plants, different.plants);
-    assert.equal(first.plants.length, plantCountFor(orientation));
-    assert.equal(first.plants.length, orientation === "landscape" ? 22 : 16);
+    assert.equal(first.plants.length, plantCountFor());
+    assert.equal(first.plants.length, 22);
     assert.ok(first.plants.some((plant) => !Number.isInteger(plant.x)), "roots snapped to a cell grid");
     assert.deepEqual(new Set(first.plants.map((plant) => plant.layer)), new Set(["background", "midground", "foreground"]));
     const sorted = first.plants.map((plant) => plant.x).sort((left, right) => left - right);
     const largestGap = Math.max(...sorted.slice(1).map((x, index) => x - sorted[index]));
-    assert.ok(largestGap > first.cols * 0.055, orientation + " layout has no open-water gap");
+    assert.ok(largestGap > first.cols * 0.055, "landscape" + " layout has no open-water gap");
   }
 });
 
@@ -119,7 +120,7 @@ test("rare species remain discoverable without dominating seeded aquariums", () 
   let total = 0;
   let tanksWithRarePlants = 0;
   for (let seed = 0; seed < 240; seed += 1) {
-    const state = createAquariumState({ orientation: "landscape", seed });
+    const state = createAquariumState({ seed });
     const count = state.plants.filter((plant) => RARE_PLANT_IDS.includes(plant.speciesId)).length;
     rare += count;
     total += state.plants.length;
@@ -131,8 +132,9 @@ test("rare species remain discoverable without dominating seeded aquariums", () 
 });
 
 test("growth reveals structural joints while every root remains fixed", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const rows = orientation === "landscape" ? 20 : 33;
+  {
+
+    const rows = 20;
     const state = poseState(rows);
     const context = createPlantFrameContext(state, { currentMultiplier: 0, still: true, interactions: false });
     for (const [index, species] of PLANT_SPECIES.entries()) {
@@ -159,8 +161,9 @@ test("growth reveals structural joints while every root remains fixed", () => {
 });
 
 test("strong current, touch, and fish poses remain finite and bounded", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const rows = orientation === "landscape" ? 20 : 33;
+  {
+
+    const rows = 20;
     for (const [index, species] of PLANT_SPECIES.entries()) {
       const plant = createPlantSpecimen({
         speciesId: species.id,
@@ -224,16 +227,17 @@ test("reduced-detail quality keeps the same skeleton while omitting leaf attachm
 
 test("mature aquarium plants stay within joint, attachment, and scene budgets", () => {
   // Continuous stems cost roughly twice the glyphs of the old dashed sampling,
-  // and buy back repainted pixels: whole-scene damage fell in both orientations
+  // and buy back repainted pixels: whole-scene damage fell in the canonical aquarium
   // because the ink now clusters into tighter, more stable object bounds.
-  for (const [orientation, maximumTotal] of [["landscape", 520], ["portrait", 560]]) {
+  {
+    const maximumTotal = 520;
     for (const seed of [5, 83, 147]) {
-      const scene = render(matureState(orientation, seed));
+      const scene = render(matureState(seed));
       const objects = plantObjects(scene);
       const diagnostics = scene.metadata.plants;
-      assert.equal(objects.length, orientation === "landscape" ? 22 : 16);
+      assert.equal(objects.length, 22);
       assert.equal(diagnostics.instances, objects.length);
-      assert.ok(diagnostics.glyphs <= maximumTotal, orientation + " has too many plant glyphs");
+      assert.ok(diagnostics.glyphs <= maximumTotal, "landscape" + " has too many plant glyphs");
       assert.ok(diagnostics.maximumActiveJoints <= MAX_PLANT_JOINTS);
       assert.ok(diagnostics.maximumGlyphs <= MAX_RENDERED_PLANT_GLYPHS);
       assert.ok(diagnostics.glyphs >= diagnostics.activeJoints);
@@ -257,7 +261,7 @@ test("mature aquarium plants stay within joint, attachment, and scene budgets", 
 });
 
 test("plant depth ordering follows specimen distance and interleaves with fish", () => {
-  const state = matureState("landscape", 5), scene = render(state);
+  const state = matureState(5), scene = render(state);
   for (const [index, plant] of state.plants.entries()) {
     const object = scene.objects.find(o => o.id === `plant:${index}:${plant.seed}`);
     assert.equal(object.layer, worldLayer(plantDepth(plant)));
@@ -270,7 +274,7 @@ test("plant depth ordering follows specimen distance and interleaves with fish",
 });
 
 test("quantized background poses can skip frames without synchronizing the garden", () => {
-  const base = matureState("landscape", 29);
+  const base = matureState(29);
   const first = render({ ...base, elapsedRealSeconds: 1.01 });
   const second = render({ ...base, elapsedRealSeconds: 1.11 });
   const beforeBackground = plantObjects(first).filter((object) => base.plants[Number(object.id.split(":")[1])].layer === "background");
@@ -293,16 +297,17 @@ test("quantized background poses can skip frames without synchronizing the garde
 });
 
 test("mature vegetation preserves bounded dirty rectangles without full repaints", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [5, 83, 147]) {
-      let state = matureState(orientation, seed);
+      let state = matureState(seed);
       for (let frame = 0; frame < 20; frame += 1) state = tick(state, 0.1);
       const before = render(state);
       const after = render(tick(state, 0.1));
       const damage = calculateDamage(before, after);
       assert.equal(damage.full, false);
       assert.ok(damage.rects.length > 0);
-      assert.ok(damage.area < damage.total * 0.72, `${orientation}/${seed} damaged ${(damage.area / damage.total * 100).toFixed(1)}%`);
+      assert.ok(damage.area < damage.total * 0.72, `landscape/${seed} damaged ${(damage.area / damage.total * 100).toFixed(1)}%`);
     }
   }
 });
@@ -317,7 +322,7 @@ test("plant palettes stay quantized, restrained, and valid at day and night", ()
     assert.match(palette.plants.growthTip, HEX_COLOR);
     assert.match(palette.plants.glowTip, HEX_COLOR);
   }
-  const nightScene = render(matureState("landscape", 83, 2));
+  const nightScene = render(matureState(83, 2));
   const nightPlantColors = plantObjects(nightScene)
     .flatMap((object) => glyphsForObject(nightScene, object).map((glyph) => glyph.fg));
   const known = new Set(scenePalette({ timeOfDayHours: 2 }).plantDepthLanes.flatMap(p =>
@@ -326,7 +331,7 @@ test("plant palettes stay quantized, restrained, and valid at day and night", ()
 });
 
 test("persistence v2 stores biology, not animated joints, and migrates v1 saves", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 818 });
+  const base = createAquariumState({ seed: 818 });
   const evolved = {
     ...base,
     plants: base.plants.map((plant, index) => ({ ...plant, ageDays: plant.ageDays + index + 3.5 })),
@@ -358,7 +363,6 @@ test("persistence v2 stores biology, not animated joints, and migrates v1 saves"
 test("the dedicated plant lab renders every species and debug skeleton deterministically", () => {
   for (const species of PLANT_SPECIES) {
     const options = {
-      orientation: species.layer === "background" ? "portrait" : "landscape",
       paletteMode: species.rare ? "night" : "day",
       elapsedRealSeconds: 6.3,
       seed: 901,

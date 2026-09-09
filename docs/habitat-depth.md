@@ -1,3 +1,5 @@
+> Subsystem report from before the horizontal-only migration. Historical measurements below are retained as evidence; portrait is retired. Current tools capture and measure only the 800 × 480 aquarium. See [current architecture](../README.md).
+
 # A floor with depth
 
 The previous scene rooted every plant on the rear sand silhouette. Plant species selected a fixed render layer, all named fish stayed between two plant groups, and PR #29 placed all snails and shrimp in front of every fish. These rules contradicted the apparent depth conveyed by size and position.
@@ -59,4 +61,4 @@ npm run capture:depth -- --root=/tmp/fish-depth-before --output=/tmp/depth-befor
 npm run capture:depth -- --compare=/tmp/depth-before
 ```
 
-The capture tool also saves each native-resolution image independently, including young/mature day scenes and night scenes in both orientations.
+The capture tool also saves each native-resolution image independently, including young/mature day scenes and night scenes of the canonical aquarium.

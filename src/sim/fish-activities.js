@@ -348,7 +348,7 @@ function sizeInterest(sizeClass) {
 }
 
 function selectBubbleTarget(fish, state, traits, affinities, bubbles) {
-  const radius = Math.min(state.cols * 0.38, state.orientation === "portrait" ? 12 : 18);
+  const radius = Math.min(state.cols * 0.38, 18);
   let best = null;
   for (const bubble of bubbles ?? []) {
     if (bubble.phase !== "rise"

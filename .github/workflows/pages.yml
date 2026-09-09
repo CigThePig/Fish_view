@@ -1,4 +1,4 @@
-name: Verify and deploy Phase 0
+name: Verify and deploy Fish View
 
 on:
   push:
@@ -37,11 +37,8 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Stage the static site
-        run: |
-          mkdir _site
-          cp *.html *.css LICENSE THIRD_PARTY_NOTICES.md _site/
-          cp -R src _site/src
+      - name: Stage fingerprinted static assets
+        run: npm run build:pages
 
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4

@@ -41,8 +41,8 @@ function forceForage(state) {
   };
 }
 
-function runSequence(orientation, scenario) {
-  let state = stocked(createAquariumState({ orientation, seed: 5, wallClockHours: 12 }));
+function runSequence(scenario) {
+  let state = stocked(createAquariumState({ seed: 5, wallClockHours: 12 }));
   for (let frame = 0; frame < 100; frame += 1) state = tick(state, 0.1);
   if (scenario === "forage") state = forceForage(state);
   let previous = render(state);
@@ -59,7 +59,6 @@ function runSequence(orientation, scenario) {
     previous = next;
   }
   return {
-    orientation,
     scenario,
     ...summarize(fractions),
     fullFrames,
@@ -68,13 +67,14 @@ function runSequence(orientation, scenario) {
 }
 
 const rows = [];
-for (const orientation of ["landscape", "portrait"]) {
-  rows.push(runSequence(orientation, "ordinary"));
-  if (hasPhase1) rows.push(runSequence(orientation, "forage"));
+{
+
+  rows.push(runSequence("ordinary"));
+  if (hasPhase1) rows.push(runSequence("forage"));
 }
 for (const row of rows) {
   console.log([
-    row.orientation.padEnd(9),
+    "landscape".padEnd(9),
     row.scenario.padEnd(8),
     `avg=${row.averagePercent.toFixed(2)}%`,
     `max=${row.maximumPercent.toFixed(2)}%`,

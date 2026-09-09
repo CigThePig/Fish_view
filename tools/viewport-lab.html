@@ -1,0 +1,71 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fish View viewport inspection</title>
+<style>
+body { margin: 12px; background: #ddd; color: #111; font: 14px system-ui; }
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+button { padding: 8px; }
+iframe { display: block; border: 0; transform-origin: top left; }
+#preview { overflow: hidden; }
+pre { white-space: pre-wrap; }
+</style>
+<nav id="sizes"></nav>
+<button id="check">Measure layout</button>
+<button id="gesture">Test triple tap</button>
+<div id="preview"><iframe id="app" title="Real Fish View application" src="../index.html?seed=viewport-validation&orientation=portrait" width="800" height="480"></iframe></div>
+<pre id="results"></pre>
+<script type="module">
+const app = document.querySelector('#app');
+const results = document.querySelector('#results');
+for (const [width, height] of [[800,480],[1280,720],[1920,1080],[844,390],[390,844],[360,800]]) {
+  const button = document.createElement('button');
+  button.textContent = `${width} × ${height}`;
+  button.onclick = () => { app.width = width; app.height = height; fitPreview(); requestAnimationFrame(() => requestAnimationFrame(measure)); };
+  document.querySelector('#sizes').append(button);
+}
+function fitPreview() {
+  const width = Number(app.width), height = Number(app.height);
+  const scale = Math.min(1, (innerWidth - 24) / width, (innerHeight - 110) / height);
+  app.style.transform = `scale(${scale})`;
+  document.querySelector('#preview').style.width = `${width * scale}px`;
+  document.querySelector('#preview').style.height = `${height * scale}px`;
+}
+addEventListener('resize', fitPreview);
+function measure() {
+  const doc = app.contentDocument;
+  const canvas = doc.querySelector('canvas');
+  const rect = canvas.getBoundingClientRect();
+  const width = Number(app.width), height = Number(app.height);
+  const expectedWidth = Math.min(width, height * 5 / 3);
+  const data = {
+    viewport: [width, height], canvas: [canvas.width, canvas.height],
+    bounds: [rect.x, rect.y, rect.width, rect.height],
+    oneCanvas: doc.querySelectorAll('canvas').length === 1,
+    fits: rect.left >= -0.02 && rect.top >= -0.02 && rect.right <= width + 0.02 && rect.bottom <= height + 0.02,
+    largestFit: Math.abs(rect.width - expectedWidth) < 0.1,
+    aspect: Math.abs(rect.width / rect.height - 5 / 3) < 0.001,
+    noScroll: doc.documentElement.scrollWidth === width && doc.documentElement.scrollHeight === height,
+    panelHidden: doc.querySelector('#debug-panel').hidden,
+  };
+  results.textContent = JSON.stringify(data, null, 2);
+  return data;
+}
+function tap(canvas, x, y, pointerType = 'touch') {
+  for (const type of ['pointerdown','pointerup']) canvas.dispatchEvent(new app.contentWindow.PointerEvent(type, {
+    clientX: x, clientY: y, button: 0, pointerId: 1, pointerType, isPrimary: true, bubbles: true,
+  }));
+}
+document.querySelector('#check').onclick = measure;
+document.querySelector('#gesture').onclick = () => {
+  const doc = app.contentDocument;
+  const canvas = doc.querySelector('canvas');
+  const rect = canvas.getBoundingClientRect();
+  const panel = doc.querySelector('#debug-panel');
+  const x = rect.right - 10, y = rect.top + 10;
+  tap(canvas, x, y); tap(canvas, x, y);
+  const twoHidden = panel.hidden;
+  tap(canvas, x, y);
+  results.textContent = JSON.stringify({ twoHidden, threeOpen: !panel.hidden, ...measure(), panelHidden: panel.hidden }, null, 2);
+};
+app.onload = () => { fitPreview(); measure(); };
+</script>

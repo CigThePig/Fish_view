@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#07100f">
     <title>Fish View — Skeletal plant lab</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="plant-lab.css?v=living-skeletal-plants-20260830">
+    <link rel="stylesheet" href="plant-lab.css?v=horizontal-20260909">
   </head>
   <body class="plant-page">
     <header class="plant-lab-header">
@@ -23,12 +23,6 @@
 
     <section class="plant-lab-controls" aria-label="Plant lab controls">
       <button type="button" id="freeze-toggle" aria-pressed="false">Freeze animation</button>
-      <label>Orientation
-        <select id="orientation-control">
-          <option value="landscape">800 × 480 landscape</option>
-          <option value="portrait">480 × 800 portrait</option>
-        </select>
-      </label>
       <label>Palette
         <select id="palette-control">
           <option value="day">Day</option>
@@ -77,6 +71,6 @@
     <p id="lab-metrics" class="plant-lab-metrics" aria-live="polite"></p>
     <main id="plant-grid" class="plant-grid"></main>
 
-    <script type="module" src="src/plant-lab.js?v=visual-depth-20260830"></script>
+    <script type="module" src="src/plant-lab.js?v=horizontal-20260909"></script>
   </body>
 </html>

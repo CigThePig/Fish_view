@@ -46,22 +46,22 @@ const { glyphPixelRects } = await import(url("src/render/glyph-raster.js"));
 const { spriteForFish } = await import(url("src/sim/fish-growth.js"));
 const { spriteMouthOffset } = await import(url("src/art/sprites.js"));
 const { FORAGE_GRAZE_BURIAL_ROWS, FORAGE_PECK_ROWS, forageActivity } = await import(url("src/sim/fish-motion.js"));
-const { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, orientationConfig } = await import(url("src/sim/config.js"));
+const { CELL_HEIGHT, CELL_WIDTH, DEFAULT_SEED, DISPLAY } = await import(url("src/sim/config.js"));
 const { createAquariumState } = await import(url("src/sim/state.js"));
 const { stocked } = await import(url("tools/stocked-aquarium.mjs"));
 const { tick } = await import(url("src/sim/tick.js"));
 
 const STEP_SECONDS = 0.1;
 const failures = [];
-const canvasCache = new Map();
+let canvasEntry;
 
-function frame(state, orientation, sceneOverride = null) {
-  const config = orientationConfig(orientation);
-  let entry = canvasCache.get(orientation);
+function frame(state, sceneOverride = null) {
+  const config = DISPLAY;
+  let entry = canvasEntry;
   if (!entry) {
     const canvas = createCanvas(config.pixelWidth, config.pixelHeight);
     entry = { canvas, renderer: new CanvasSceneRenderer(canvas), config };
-    canvasCache.set(orientation, entry);
+    canvasEntry = entry;
   }
   const scene = sceneOverride ?? render(state);
   entry.renderer.draw(scene);
@@ -116,13 +116,14 @@ function report(title) {
 // --- A. How far each behaviour actually moves on the panel -------------------
 
 report("Behaviour motion on the panel (pixels)");
-console.log("scenario              orientation   travel  vertical  peak px/s  body px");
+console.log("scenario              display       travel  vertical  peak px/s  body px");
 const motion = new Map();
-for (const orientation of ["landscape", "portrait"]) {
+{
+
   for (const scenario of SHOWCASE_SCENARIOS) {
-    let state = createShowcaseState({ orientation, scenario: scenario.id });
+    let state = createShowcaseState({ scenario: scenario.id });
     const first = showcaseSubjects(state, scenario.id)[0];
-    let previous = bodyCentre(objectFor(frame(state, orientation).scene, subjectId(first.index, first.fish)).bounds);
+    let previous = bodyCentre(objectFor(frame(state).scene, subjectId(first.index, first.fish)).bounds);
     let travel = 0;
     let vertical = 0;
     let peak = 0;
@@ -131,7 +132,7 @@ for (const orientation of ["landscape", "portrait"]) {
     for (let index = 0; index < frames; index += 1) {
       state = tickShowcase(state, STEP_SECONDS, scenario.id);
       const subject = showcaseSubjects(state, scenario.id)[0];
-      const object = objectFor(frame(state, orientation).scene, subjectId(subject.index, subject.fish));
+      const object = objectFor(frame(state).scene, subjectId(subject.index, subject.fish));
       const centre = bodyCentre(object.bounds);
       const step = Math.hypot(centre.x - previous.x, centre.y - previous.y);
       travel += step;
@@ -140,9 +141,9 @@ for (const orientation of ["landscape", "portrait"]) {
       bodyWidth = Math.max(bodyWidth, object.bounds.width);
       previous = centre;
     }
-    motion.set(`${orientation}:${scenario.id}`, { travel, vertical, peak });
+    motion.set(`landscape:${scenario.id}`, { travel, vertical, peak });
     console.log(
-      `${scenario.id.padEnd(21)} ${orientation.padEnd(12)} ${travel.toFixed(0).padStart(6)} ${vertical.toFixed(0).padStart(9)} ${peak.toFixed(0).padStart(10)} ${bodyWidth.toFixed(0).padStart(8)}`,
+      `${scenario.id.padEnd(21)} ${"landscape".padEnd(12)} ${travel.toFixed(0).padStart(6)} ${vertical.toFixed(0).padStart(9)} ${peak.toFixed(0).padStart(10)} ${bodyWidth.toFixed(0).padStart(8)}`,
     );
   }
 }
@@ -162,19 +163,20 @@ const ERRANDS = new Set([
 ]);
 const AMBIENT = new Set(["cruise", "school-follow", "plant-weave"]);
 for (const [key, value] of motion) {
-  const [orientation, id] = key.split(":");
+  const [, id] = key.split(":");
   const floor = ERRANDS.has(id) ? 57 : AMBIENT.has(id) ? 30 : 0;
   if (floor && value.travel < floor) {
-    failures.push(`${orientation}: ${id} moves only ${value.travel.toFixed(0)}px across its whole loop`);
+    failures.push(`landscape: ${id} moves only ${value.travel.toFixed(0)}px across its whole loop`);
   }
 }
 
 // --- B. The feeding strike ---------------------------------------------------
 
 report("Feeding strike (production tank)");
-console.log("orientation  plunge px  mouth gap  belly gap  debris glyphs  debris contrast  strike repaint");
-for (const orientation of ["landscape", "portrait"]) {
-  let state = stocked(createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 }));
+console.log("display  plunge px  mouth gap  belly gap  debris glyphs  debris contrast  strike repaint");
+feeding: {
+
+  let state = stocked(createAquariumState({ seed: DEFAULT_SEED, wallClockHours: 12 }));
   let best = null;
   let rest = null;
   let window = null;
@@ -186,7 +188,7 @@ for (const orientation of ["landscape", "portrait"]) {
       if (!forage.searching) continue;
       if (watching === null) watching = index;
       if (watching !== index) continue;
-      const { scene, canvas } = frame(state, orientation);
+      const { scene, canvas } = frame(state);
       const object = objectFor(scene, subjectId(index, fish));
       const debris = objectFor(scene, `forage-debris:${index}:${fish.seed}`);
       // One window, pinned to the panel on first sighting. A window that
@@ -228,9 +230,9 @@ for (const orientation of ["landscape", "portrait"]) {
     }
   }
   if (!best) {
-    failures.push(`${orientation}: no feeding strike happened in ten simulated minutes`);
-    console.log(`${orientation.padEnd(12)} no strike observed`);
-    continue;
+    failures.push(`landscape: no feeding strike happened in ten simulated minutes`);
+    console.log(`${"landscape".padEnd(12)} no strike observed`);
+    break feeding;
   }
   const plunge = best.peak.centre.y - best.rest.centre.y;
   const palette = scenePalette(state);
@@ -245,7 +247,7 @@ for (const orientation of ["landscape", "portrait"]) {
     ...best.peak.state,
     individuals: best.peak.state.individuals.map((fish, index) => (index === best.peak.index ? best.rest.fish : fish)),
   };
-  const quiet = pixels(frame(counterfactual, orientation).canvas, window.x, window.y, window.width, window.height);
+  const quiet = pixels(frame(counterfactual).canvas, window.x, window.y, window.width, window.height);
   const peakImage = best.peak.image;
   let changed = 0;
   if (quiet.width === peakImage.width && quiet.height === peakImage.height) {
@@ -258,7 +260,7 @@ for (const orientation of ["landscape", "portrait"]) {
   // Isolate the effect itself: body movement cannot stand in for visible silt.
   const withoutSilt = { ...best.peak.scene, objects: best.peak.scene.objects.filter((object) =>
     object.id !== `forage-debris:${best.peak.index}:${best.peak.fish.seed}`) };
-  const clearImage = pixels(frame(best.peak.state, orientation, withoutSilt).canvas,
+  const clearImage = pixels(frame(best.peak.state, withoutSilt).canvas,
     window.x, window.y, window.width, window.height);
   let visibleSiltPixels = 0;
   for (let offset = 0; offset < clearImage.data.length; offset += 4) {
@@ -267,29 +269,29 @@ for (const orientation of ["landscape", "portrait"]) {
     if (delta > 6) visibleSiltPixels++;
   }
   console.log(`  visible contact/silt pixels (luminance difference > 6): ${visibleSiltPixels}`);
-  if (!visibleSiltPixels) failures.push(`${orientation}: the contact/silt effect is fully occluded`);
+  if (!visibleSiltPixels) failures.push(`landscape: the contact/silt effect is fully occluded`);
   // Graded against the fish's own silhouette rather than a flat pixel count: a
   // strike has to repaint a tenth of the animal that performs it, whatever size
   // that animal is drawn at.
   const silhouette = best.peak.bounds.width * best.peak.bounds.height;
   const repaintShare = changed / Math.max(1, silhouette);
   console.log(
-    `${orientation.padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.mouthGap.toFixed(2).padStart(10)} ${best.peak.bellyGap.toFixed(2).padStart(10)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${`${changed} (${(repaintShare * 100).toFixed(0)}%)`.padStart(14)}`,
+    `${"landscape".padEnd(12)} ${plunge.toFixed(1).padStart(9)} ${best.peak.mouthGap.toFixed(2).padStart(10)} ${best.peak.bellyGap.toFixed(2).padStart(10)} ${String(best.peak.debris.length).padStart(14)} ${`${(debrisContrast * 100).toFixed(0)}%`.padStart(16)} ${`${changed} (${(repaintShare * 100).toFixed(0)}%)`.padStart(14)}`,
   );
-  if (plunge < 6) failures.push(`${orientation}: a feeding strike moves the fish ${plunge.toFixed(1)}px down the panel`);
+  if (plunge < 6) failures.push(`landscape: a feeding strike moves the fish ${plunge.toFixed(1)}px down the panel`);
   // Graded against the ink, so the number is calibrated to where the fish is
   // rather than to where its bounding box reached. The same strike measured
   // 0.90 rows of clear water under a threshold of 0.45 while the box-based
   // figure read 0.17: the check was passing on a fish that never touched the
   // sand. The contact mark and the debris puff close the last of the gap.
-  if (best.peak.mouthGap > 0.35) failures.push(`${orientation}: a feeding fish strikes with its mouth ${best.peak.mouthGap.toFixed(2)} rows above the substrate`);
+  if (best.peak.mouthGap > 0.35) failures.push(`landscape: a feeding fish strikes with its mouth ${best.peak.mouthGap.toFixed(2)} rows above the substrate`);
   if (best.peak.bellyGap < -(FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35)) {
-    failures.push(`${orientation}: a feeding fish buries ${(-best.peak.bellyGap).toFixed(2)} rows of itself in the substrate`);
+    failures.push(`landscape: a feeding fish buries ${(-best.peak.bellyGap).toFixed(2)} rows of itself in the substrate`);
   }
-  if (best.peak.debris.length < 4) failures.push(`${orientation}: a feeding strike raised ${best.peak.debris.length} debris glyphs`);
-  if (debrisContrast < 0.3) failures.push(`${orientation}: debris sits ${(debrisContrast * 100).toFixed(0)}% off the substrate it lands on`);
+  if (best.peak.debris.length < 4) failures.push(`landscape: a feeding strike raised ${best.peak.debris.length} debris glyphs`);
+  if (debrisContrast < 0.3) failures.push(`landscape: debris sits ${(debrisContrast * 100).toFixed(0)}% off the substrate it lands on`);
   if (repaintShare < 0.1) {
-    failures.push(`${orientation}: a feeding strike repaints only ${(repaintShare * 100).toFixed(0)}% of the fish`);
+    failures.push(`landscape: a feeding strike repaints only ${(repaintShare * 100).toFixed(0)}% of the fish`);
   }
 }
 
@@ -299,7 +301,7 @@ report("Pair spacing through a chase (rows)");
 console.log("scenario              min    max   range");
 for (const id of ["playful-chase", "individual-follow", "companion-cruise"]) {
   const scenario = SHOWCASE_SCENARIOS.find((entry) => entry.id === id);
-  let state = createShowcaseState({ orientation: "landscape", scenario: id });
+  let state = createShowcaseState({ scenario: id });
   let minimum = Infinity;
   let maximum = 0;
   for (let step = 0; step < Math.round(scenario.loopSeconds / STEP_SECONDS); step += 1) {
@@ -323,9 +325,9 @@ console.log("hour   mean luminance  body vs water  accent vs body");
 const NIGHT_HOURS = new Set([21, 23, 3]);
 let noonLuminance = 0;
 for (const hour of [12, 16, 19, 21, 23, 3, 6, 9]) {
-  let state = stocked(createAquariumState({ orientation: "landscape", seed: DEFAULT_SEED, wallClockHours: hour }));
+  let state = stocked(createAquariumState({ seed: DEFAULT_SEED, wallClockHours: hour }));
   for (let step = 0; step < 60; step += 1) state = tick(state, STEP_SECONDS);
-  const { scene, canvas } = frame(state, "landscape");
+  const { scene, canvas } = frame(state);
   const whole = pixels(canvas, 0, 0, canvas.width, canvas.height);
   let total = 0;
   for (let offset = 0; offset < whole.data.length; offset += 4) {
@@ -393,10 +395,10 @@ for (const hour of [12, 16, 19, 21, 23, 3, 6, 9]) {
 report("Rendered pitch (landscape)");
 console.log("pitch  drawn angle  nose rise px  rows");
 {
-  let state = createShowcaseState({ orientation: "landscape", scenario: "substrate-search" });
+  let state = createShowcaseState({ scenario: "substrate-search" });
   for (let step = 0; step < 90; step += 1) state = tickShowcase(state, STEP_SECONDS, "substrate-search");
   const subject = showcaseSubjects(state, "substrate-search")[0];
-  const config = orientationConfig("landscape");
+  const config = DISPLAY;
   const cellHeight = config.pixelHeight / config.rows;
 
   // The angle the panel actually receives, fitted rather than inferred from a
@@ -417,7 +419,7 @@ console.log("pitch  drawn angle  nose rise px  rows");
         ? { ...fish, visual: { ...fish.visual, pitch, turnProgress: 1 } }
         : fish)),
     };
-    const { scene } = frame(posed, "landscape");
+    const { scene } = frame(posed);
     const object = objectFor(scene, subjectId(subject.index, subject.fish));
     const glyphs = glyphsForObject(scene, object);
     const points = glyphs.map((glyph) => ({

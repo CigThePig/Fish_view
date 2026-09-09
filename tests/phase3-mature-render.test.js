@@ -20,14 +20,14 @@ import { tick } from "../src/sim/tick.js";
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 // Measured budgets for a maximum-population mature garden, sitting above the
 // observed worst case so ordinary seeded variation has room.
-const MATURE_PLANT_GLYPH_BUDGET = { landscape: 780, portrait: 860 };
+const MATURE_PLANT_GLYPH_BUDGET = 780;
 
 // A deterministic worst-case aquarium: the hard plant cap, every specimen
 // mature, every fish arrival resolved, and enough age for a rare lifecycle.
-function maturePhase3State(orientation, seed = 5, wallClockHours = 12) {
-  const base = createAquariumState({ orientation, seed, wallClockHours });
+function maturePhase3State(seed = 5, wallClockHours = 12) {
+  const base = createAquariumState({ seed, wallClockHours });
   const grown = advanceAquariumHistory(base, 900);
-  const cap = plantCapFor(orientation);
+  const cap = plantCapFor();
   const plants = [...grown.plants];
   // Top the roster up to the cap with local shoots of existing colonies so the
   // measurement is against the budget rather than against whatever this seed
@@ -58,9 +58,10 @@ function plantObjects(scene) {
 }
 
 test("the mature Phase 3 worst case is the population the caps describe", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const state = maturePhase3State(orientation);
-    assert.equal(state.plants.length, plantCapFor(orientation));
+  {
+
+    const state = maturePhase3State();
+    assert.equal(state.plants.length, plantCapFor());
     assert.equal(state.individuals.length, MAX_INDIVIDUALS);
     assert.equal(state.school.length, 32);
     assert.deepEqual(
@@ -72,18 +73,19 @@ test("the mature Phase 3 worst case is the population the caps describe", () => 
 });
 
 test("a mature maximum-population aquarium renders finite, unique, supported objects", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [5, 83, 147]) {
-      let state = maturePhase3State(orientation, seed);
+      let state = maturePhase3State(seed);
       for (let frame = 0; frame < 12; frame += 1) state = tick(state, 0.1);
       const scene = render(state);
       const diagnostics = scene.metadata.plants;
 
       assert.equal(new Set(scene.objects.map((object) => object.id)).size, scene.objects.length);
-      assert.equal(plantObjects(scene).length, plantCapFor(orientation));
-      assert.equal(diagnostics.instances, plantCapFor(orientation));
-      assert.ok(diagnostics.glyphs <= MATURE_PLANT_GLYPH_BUDGET[orientation],
-        `${orientation}/${seed} emitted ${diagnostics.glyphs} plant glyphs`);
+      assert.equal(plantObjects(scene).length, plantCapFor());
+      assert.equal(diagnostics.instances, plantCapFor());
+      assert.ok(diagnostics.glyphs <= MATURE_PLANT_GLYPH_BUDGET,
+        `landscape/${seed} emitted ${diagnostics.glyphs} plant glyphs`);
       assert.ok(diagnostics.maximumGlyphs <= MAX_RENDERED_PLANT_GLYPHS);
       assert.ok(diagnostics.maximumAttachmentsPerSegment <= MAX_SAMPLES_PER_SEGMENT);
       // Every posed bone still ends on its own joint: the continuity contract.
@@ -117,9 +119,10 @@ test("a mature maximum-population aquarium renders finite, unique, supported obj
 });
 
 test("ordinary motion in a mature Phase 3 aquarium never requests a full redraw", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+  {
+
     for (const seed of [5, 83, 147]) {
-      let state = maturePhase3State(orientation, seed);
+      let state = maturePhase3State(seed);
       for (let frame = 0; frame < 20; frame += 1) state = tick(state, 0.1);
       let previous = render(state);
       let maximumFill = 0;
@@ -128,7 +131,7 @@ test("ordinary motion in a mature Phase 3 aquarium never requests a full redraw"
         state = tick(state, 0.1);
         const next = render(state);
         const damage = calculateDamage(previous, next);
-        assert.equal(damage.full, false, `${orientation}/${seed} requested a full redraw`);
+        assert.equal(damage.full, false, `landscape/${seed} requested a full redraw`);
         assert.ok(damage.rects.length > 0);
         worstDamage = Math.max(worstDamage, damage.area / damage.total);
         maximumFill = Math.max(maximumFill, ...next.objects
@@ -140,15 +143,15 @@ test("ordinary motion in a mature Phase 3 aquarium never requests a full redraw"
       // the largest fish on screen, which legitimately differs between seeds.
       assert.ok(maximumFill > 0 && maximumFill <= 128, `an individual drew ${maximumFill} body spans`);
       // Broader roots change rectangle merging; measured peak is 98.8%,
-      // with lower average damage in both orientations. Keep a no-full-frame gate.
-      assert.ok(worstDamage < 0.995, `${orientation}/${seed} damaged ${(worstDamage * 100).toFixed(1)}%`);
+      // with lower average damage in the canonical aquarium. Keep a no-full-frame gate.
+      assert.ok(worstDamage < 0.995, `landscape/${seed} damaged ${(worstDamage * 100).toFixed(1)}%`);
     }
   }
 });
 
 test("a rare bloom is a slow palette change, not a per-frame invalidation", () => {
-  const orientation = "landscape";
-  const base = createAquariumState({ orientation, seed: 5 });
+
+  const base = createAquariumState({ seed: 5 });
   const glowSpecies = RARE_PLANT_IDS.find((id) => PLANT_SPECIES_BY_ID[id].glowTips);
   assert.ok(glowSpecies);
 
@@ -192,7 +195,7 @@ test("a rare bloom is a slow palette change, not a per-frame invalidation", () =
 
 test("the mature palette introduces no new colours", () => {
   for (const hour of [2, 12]) {
-    const scene = render(maturePhase3State("landscape", 83, hour));
+    const scene = render(maturePhase3State(83, hour));
     const colors = new Set(plantObjects(scene)
       .flatMap((object) => glyphsForObject(scene, object).map((glyph) => glyph.fg)));
     const known = new Set(scenePalette({ timeOfDayHours: hour }).plantDepthLanes.flatMap(p =>
@@ -201,12 +204,13 @@ test("the mature palette introduces no new colours", () => {
   }
 });
 
-test("propagation and emergence keep every root inside the tank in both orientations", () => {
-  for (const orientation of ["landscape", "portrait"]) {
+test("propagation and emergence keep every root inside the tank in the canonical aquarium", () => {
+  {
+
     for (let seed = 0; seed < 40; seed += 1) {
-      const state = advanceAquariumHistory(createAquariumState({ orientation, seed }), 730);
+      const state = advanceAquariumHistory(createAquariumState({ seed }), 730);
       for (const plant of state.plants) {
-        assert.ok(plant.x > 0 && plant.x < state.cols, `${orientation}/${seed} rooted a plant at ${plant.x}`);
+        assert.ok(plant.x > 0 && plant.x < state.cols, `landscape/${seed} rooted a plant at ${plant.x}`);
         assert.ok(["background", "midground", "foreground"].includes(plantSpecies(plant).layer));
         assert.equal(plant.layer, plantSpecies(plant).layer);
         assert.ok(plant.matureHeight > 0 && plant.matureHeight < state.rows);

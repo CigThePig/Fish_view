@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Phase 0 web prototype for a persistent ASCII aquarium nightlight.",
+  "description": "Persistent 800 \u00d7 480 landscape ASCII aquarium.",
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test",
@@ -16,7 +16,9 @@
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs",
     "capture:depth": "node tools/capture-habitat-depth.mjs",
     "capture:living": "node tools/capture-living-aquarium.mjs",
-    "measure:living": "node tools/measure-living-aquarium.mjs"
+    "measure:living": "node tools/measure-living-aquarium.mjs",
+    "dev": "node tools/serve.mjs",
+    "build:pages": "node tools/build-pages.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.100"

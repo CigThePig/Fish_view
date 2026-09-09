@@ -4,12 +4,12 @@ Fish View keeps bubbles procedural rather than turning them into persistent part
 
 ## Visual behavior
 
-- Landscape uses five persistent bottom emitters; portrait uses three.
+- The aquarium uses five persistent bottom emitters.
 - Emitters release irregular bursts of two to five bubbles, then stay quiet for long seeded intervals.
 - Some emitters sit beside deterministic plant roots while others occupy open substrate, avoiding evenly spaced bubble columns.
 - A few isolated bubbles begin away from the main streams so the scene does not look like a set of elevators.
 - Four seeded size classes are used: micro, normal, large, and rare jumbo bubbles.
-- Rise speed is roughly 0.24 to 0.68 logical rows per real second before the small portrait compensation, several times the old 0.035 to 0.085 range.
+- Rise speed is roughly 0.24 to 0.68 logical rows per real second, several times the old 0.035 to 0.085 range.
 - Bubbles grow as they rise. Their glyph vocabulary progresses through `.`, `'`, `o`, `O`, and, for rare jumbo bubbles near the surface, `()`.
 - Large bubbles can carry a tiny typographic highlight.
 - Every rising path combines the shared aquarium current with two inexpensive harmonics. This creates a slow bend plus a quicker local wobble.

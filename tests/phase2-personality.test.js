@@ -34,7 +34,7 @@ test("each personality deliberately accents two or three visible signature inter
 });
 
 test("diagnostic affinity ranking is stable and learned history cannot reroll personality", () => {
-  const state = stockedAquarium({ orientation: "landscape", seed: 913 });
+  const state = stockedAquarium({ seed: 913 });
   for (const fish of state.individuals) {
     const before = topAffinities(fish.seed);
     const changedHistory = {
@@ -63,7 +63,7 @@ test("pair compatibility is symmetric, bounded, and never treats self as a compa
 });
 
 test("derived affinities are not redundantly persisted", () => {
-  const saved = serializePersistentState(stockedAquarium({ orientation: "portrait", seed: 881 }));
+  const saved = serializePersistentState(stockedAquarium({ seed: 881 }));
   for (const fish of saved.individuals) {
     assert.equal("affinities" in fish, false);
     assert.equal("personality" in fish, false);

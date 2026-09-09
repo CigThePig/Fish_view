@@ -6,7 +6,6 @@ import { mix32 } from "./sim/prng.js";
 const UPDATE_INTERVAL_MS = 100;
 const controls = {
   freeze: document.querySelector("#freeze-toggle"),
-  orientation: document.querySelector("#orientation-control"),
   palette: document.querySelector("#palette-control"),
   size: document.querySelector("#size-control"),
   current: document.querySelector("#current-control"),
@@ -74,7 +73,6 @@ function renderVisible(timeSeconds) {
     if (!view.visible) continue;
     const seed = mix32(0x51a7 ^ Math.imul(view.index + 1, 0x9e3779b1) ^ Math.imul(variation + 1, 0x85ebca6b));
     const scene = renderPlantLabScene(view.species.id, {
-      orientation: controls.orientation.value,
       paletteMode: controls.palette.value,
       elapsedRealSeconds: timeSeconds,
       seed,
@@ -118,4 +116,3 @@ function frame(timestamp) {
 
 renderVisible(0);
 requestAnimationFrame(frame);
-

@@ -22,14 +22,14 @@ function run(state, count, dt = 0.1) {
 }
 
 test("the same seed and inputs produce an identical run", () => {
-  const options = { orientation: "landscape", seed: 123456, wallClockHours: 14.25 };
+  const options = { seed: 123456, wallClockHours: 14.25 };
   const left = run(createAquariumState(options), 120);
   const right = run(createAquariumState(options), 120);
   assert.deepEqual(left, right);
 });
 
 test("tick is pure and leaves its input untouched", () => {
-  const state = createAquariumState({ orientation: "portrait", seed: 44, wallClockHours: 8 });
+  const state = createAquariumState({ seed: 44, wallClockHours: 8 });
   const snapshot = structuredClone(state);
   const next = tick(state, 0.1);
   assert.deepEqual(state, snapshot);
@@ -39,7 +39,7 @@ test("tick is pure and leaves its input untouched", () => {
 });
 
 test("touch response is immediate, reproducible, and not probabilistic", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 7, wallClockHours: 12 });
+  const state = createAquariumState({ seed: 7, wallClockHours: 12 });
   const first = applyTouch(state, 20, 9);
   const second = applyTouch(state, 20, 9);
   assert.deepEqual(first, second);
@@ -49,7 +49,7 @@ test("touch response is immediate, reproducible, and not probabilistic", () => {
 });
 
 test("individual facing uses hysteresis and a deterministic turn pose", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 71, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 71, wallClockHours: 12 });
   const withVelocity = (vx) => ({
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0
@@ -75,7 +75,7 @@ test("individual facing uses hysteresis and a deterministic turn pose", () => {
 });
 
 test("bounded emergence keeps fish visible and drives away from extremes", () => {
-  const state = createAquariumState({ orientation: "portrait", seed: 9001, wallClockHours: 2 });
+  const state = createAquariumState({ seed: 9001, wallClockHours: 2 });
   const result = run(state, 2000);
   for (const fish of result.individuals) {
     assert.ok(fish.x >= 0 && fish.x <= result.cols);
@@ -86,13 +86,13 @@ test("bounded emergence keeps fish visible and drives away from extremes", () =>
 });
 
 test("week-per-second acceleration exposes plant growth without removing entities", () => {
-  const state = withSettings(createAquariumState({ orientation: "portrait", seed: 3 }), { timeScale: 604800 });
+  const state = withSettings(createAquariumState({ seed: 3 }), { timeScale: 604800 });
   const ages = new Map(state.plants.map((plant) => [plant.seed, plant.ageDays]));
   const result = run(state, 50);
   // The roster may now grow with aquarium age, but nothing ever leaves it and
   // every original specimen is still present and older.
   assert.ok(result.plants.length >= state.plants.length);
-  assert.ok(result.plants.length <= plantCapFor("portrait"));
+  assert.ok(result.plants.length <= plantCapFor());
   assert.ok(result.individuals.length >= state.individuals.length);
   assert.ok(result.individuals.length <= 8);
   for (const [seed, age] of ages) {
@@ -103,7 +103,7 @@ test("week-per-second acceleration exposes plant growth without removing entitie
 });
 
 test("persistence stores individuals and plants but not the identity-free school", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 81 });
+  const base = createAquariumState({ seed: 81 });
   const evolved = run(applyTouch(base, 12, 8), 30);
   const saved = serializePersistentState(evolved);
   assert.equal("school" in saved, false);
@@ -122,7 +122,7 @@ test("persistence stores individuals and plants but not the identity-free school
 });
 
 test("offline time advances the long horizon without simulating loss", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 19 });
+  const state = createAquariumState({ seed: 19 });
   const advanced = advanceOffline(state, 14 * 86400);
   assert.ok(advanced.individuals.length >= state.individuals.length);
   assert.ok(advanced.plants.length >= state.plants.length);
@@ -141,7 +141,7 @@ test("simulated speed does not change how a fish behaves in real time", () => {
   // speeds of the same one.
   const sample = (timeScale) => {
     let state = withSettings(
-      stockedAquarium({ orientation: "landscape", seed: 5, wallClockHours: 12 }),
+      stockedAquarium({ seed: 5, wallClockHours: 12 }),
       { timeScale },
     );
     let previous = state.individuals.map((fish) => fish.behavior.current);

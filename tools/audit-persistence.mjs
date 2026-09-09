@@ -19,11 +19,11 @@ const plantFields = ["seed", "speciesId", "ageDays", "x", "matureHeight", "phase
 const report = { options, generatorSeed: randomState, failures: 0, examples: [] };
 for (let sample = 0; sample < options.cases; sample++) {
   const seed = random(0x100000000);
-  const orientation = sample % 2 ? "portrait" : "landscape";
+
   // A stocked aquarium, so the fuzzing has a full roster to damage: a new tank
   // holds one fish and a save written from it corrupts in far fewer ways.
   const base = advanceAquariumHistory(
-    createAquariumState({ seed, orientation }),
+    createAquariumState({ seed }),
     ROSTER_COMPLETE_DAY + 200,
   );
   const saved = serializePersistentState(base);
@@ -66,7 +66,7 @@ for (let sample = 0; sample < options.cases; sample++) {
     }
   } catch (error) {
     report.failures++;
-    if (report.examples.length < 12) report.examples.push({ sample, seed, orientation, error: String(error), saved: JSON.parse(json) });
+    if (report.examples.length < 12) report.examples.push({ sample, seed, error: String(error), saved: JSON.parse(json) });
   }
 }
 await writeAudit(options.output, "persistence", report);

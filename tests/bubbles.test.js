@@ -9,13 +9,13 @@ import {
 import { render } from "../src/render/render.js";
 import { scenePalette } from "../src/render/palette.js";
 import { glyphsForObject } from "../src/render/scene.js";
-import { orientationConfig } from "../src/sim/config.js";
+import { DISPLAY } from "../src/sim/config.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
 function metricsFor(state) {
-  const target = orientationConfig(state.orientation);
+  const target = DISPLAY;
   return {
     cellWidth: target.pixelWidth / state.cols,
     cellHeight: target.pixelHeight / state.rows,
@@ -28,7 +28,7 @@ function recordsAt(state, seconds) {
 }
 
 test("aquarium renderer deterministically replaces legacy ambient particles with bubbles", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 0x51a7, wallClockHours: 12 });
+  const state = createAquariumState({ seed: 0x51a7, wallClockHours: 12 });
   const first = render(state);
   const second = render(state);
   assert.deepEqual(first, second);
@@ -39,11 +39,12 @@ test("aquarium renderer deterministically replaces legacy ambient particles with
 });
 
 test("bubble emitters are few, stable, and physically grounded at the substrate", () => {
-  for (const orientation of ["portrait", "landscape"]) {
-    const state = createAquariumState({ orientation, seed: 44, wallClockHours: 12 });
+  {
+
+    const state = createAquariumState({ seed: 44, wallClockHours: 12 });
     const emitters = createBubbleEmitters(state);
-    assert.equal(emitters.length, bubbleEmitterCount(orientation));
-    assert.equal(emitters.length, orientation === "portrait" ? 3 : 5);
+    assert.equal(emitters.length, bubbleEmitterCount());
+    assert.equal(emitters.length, 5);
     for (const emitter of emitters) {
       assert.ok(emitter.burstCount >= 2 && emitter.burstCount <= 5);
       assert.ok(emitter.burstSpacing >= 0.48 && emitter.burstSpacing <= 0.92);
@@ -57,7 +58,7 @@ test("rising bubbles are several times faster than the old ambient drift and kee
   const classes = new Set();
   const speeds = [];
   for (let seed = 1; seed <= 24; seed += 1) {
-    const state = createAquariumState({ orientation: "landscape", seed, wallClockHours: 12 });
+    const state = createAquariumState({ seed, wallClockHours: 12 });
     for (let seconds = 0; seconds <= 160; seconds += 4) {
       for (const record of recordsAt(state, seconds)) {
         classes.add(record.sizeClass);
@@ -72,7 +73,7 @@ test("rising bubbles are several times faster than the old ambient drift and kee
 });
 
 test("bubble lifecycles grow into richer glyphs and actually pop at the surface", () => {
-  const state = createAquariumState({ orientation: "landscape", seed: 9, wallClockHours: 12 });
+  const state = createAquariumState({ seed: 9, wallClockHours: 12 });
   let sawMicro = false;
   let sawCircle = false;
   let sawJumboPair = false;
@@ -102,7 +103,7 @@ test("bubble lifecycles grow into richer glyphs and actually pop at the surface"
 });
 
 test("individual fish occasionally exhale bubbles without becoming particle emitters", () => {
-  let state = createAquariumState({ orientation: "landscape", seed: 13, wallClockHours: 12 });
+  let state = createAquariumState({ seed: 13, wallClockHours: 12 });
   let fishRecords = [];
   for (let frame = 0; frame <= 1200 && fishRecords.length === 0; frame += 1) {
     state = tick(state, 0.1);
@@ -114,7 +115,7 @@ test("individual fish occasionally exhale bubbles without becoming particle emit
 });
 
 test("nearby individual fish shove and lift rising bubbles", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 21, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 21, wallClockHours: 12 });
   let seconds = 0;
   let target = null;
   for (; seconds <= 160 && !target; seconds += 0.5) {
@@ -136,7 +137,7 @@ test("nearby individual fish shove and lift rising bubbles", () => {
 });
 
 test("a substrate touch releases a small deterministic bubble burst", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 33, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 33, wallClockHours: 12 });
   const floorTouch = applyTouch(base, base.cols * 0.42, base.rows - 0.2);
   const floorRecords = createBubbleRenderRecords(floorTouch, scenePalette(floorTouch), metricsFor(floorTouch))
     .filter((record) => record.kind === "touch");
@@ -150,10 +151,11 @@ test("a substrate touch releases a small deterministic bubble burst", () => {
 });
 
 test("living bubbles stay inside a small dirty-rectangle friendly budget", () => {
-  for (const orientation of ["portrait", "landscape"]) {
+  {
+
     let maximumObjects = 0;
     let maximumGlyphs = 0;
-    const state = createAquariumState({ orientation, seed: 77, wallClockHours: 12 });
+    const state = createAquariumState({ seed: 77, wallClockHours: 12 });
     for (let seconds = 0; seconds <= 240; seconds += 1) {
       const scene = render({ ...state, elapsedRealSeconds: seconds });
       const bubbles = scene.objects.filter((object) => object.id.startsWith("bubble:"));
@@ -165,7 +167,7 @@ test("living bubbles stay inside a small dirty-rectangle friendly budget", () =>
       maximumGlyphs = Math.max(maximumGlyphs, glyphCount);
       assert.ok(bubbles.every((object) => object.glyphCount <= 3));
     }
-    assert.ok(maximumObjects <= 42, `${orientation} emitted ${maximumObjects} bubble objects`);
-    assert.ok(maximumGlyphs <= 96, `${orientation} emitted ${maximumGlyphs} bubble glyphs`);
+    assert.ok(maximumObjects <= 42, `landscape emitted ${maximumObjects} bubble objects`);
+    assert.ok(maximumGlyphs <= 96, `landscape emitted ${maximumGlyphs} bubble glyphs`);
   }
 });

@@ -14,11 +14,11 @@ const { CanvasSceneRenderer } = await importFrom(options.root, "src/render/canva
 const { glyphPixelRects } = await importFrom(options.root, "src/render/glyph-raster.js");
 const report = { options, frames: 0, differences: 0, escapedBounds: 0, runs: [] };
 
-for (const orientation of ["landscape", "portrait"]) for (const seed of options.seeds) {
-  let state = advanceAquariumHistory(createAquariumState({ orientation, seed }), options.days);
+for (const seed of options.seeds) {
+  let state = advanceAquariumHistory(createAquariumState({ seed }), options.days);
   const canvas = createCanvas(1, 1), reference = createCanvas(1, 1);
   const incremental = new CanvasSceneRenderer(canvas), full = new CanvasSceneRenderer(reference);
-  const run = { orientation, seed, differingFrames: 0, worstPixels: 0, first: null, escaped: null };
+  const run = { seed, differingFrames: 0, worstPixels: 0, first: null, escaped: null };
   for (let frame = 0; frame < options.frames; frame++) {
     if (frame === Math.floor(options.frames / 6)) state = applyTouch(state, state.cols / 2, state.rows - 4);
     if (frame === Math.floor(options.frames * 5 / 9)) state = { ...state, timeOfDayHours: 0 };
@@ -56,7 +56,7 @@ for (const orientation of ["landscape", "portrait"]) for (const seed of options.
       if (run.first.frame === frame) {
         await mkdir(options.output, { recursive: true });
         for (const [name, image] of [["incremental", canvas], ["full", reference]]) {
-          await writeFile(path.join(options.output, `${orientation}-${seed}-${name}.png`), image.toBuffer("image/png"));
+          await writeFile(path.join(options.output, `landscape-${seed}-${name}.png`), image.toBuffer("image/png"));
         }
       }
     }

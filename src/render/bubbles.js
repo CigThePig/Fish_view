@@ -6,9 +6,9 @@ import {
 import { SUBSTRATE_ROWS } from "../sim/config.js";
 import { SURFACE_Y_ROWS } from "../sim/environment.js";
 import { sampleSigned } from "../sim/prng.js";
-import { worldLayer, laneForDepth } from "./depth.js?v=visual-depth-20260830";
-import { mixColor } from "./palette.js?v=visual-depth-20260830";
-import { addGlyphObject, positionedGlyph } from "./scene.js?v=true-rotation-20260902";
+import { worldLayer, laneForDepth } from "./depth.js?v=horizontal-20260909";
+import { mixColor } from "./palette.js?v=horizontal-20260909";
+import { addGlyphObject, positionedGlyph } from "./scene.js?v=horizontal-20260909";
 
 const NEAR_BUBBLE_SCALE = 0.28;
 
@@ -175,7 +175,7 @@ export function drawBubbles(builder, state, palette, metrics, layer) {
     });
   }
   builder.metadata.bubbles = {
-    emitters: bubbleEmitterCount(state.orientation),
+    emitters: bubbleEmitterCount(),
     active: records.length,
     stream: records.filter((record) => record.kind === "stream").length,
     isolated: records.filter((record) => record.kind === "isolated").length,

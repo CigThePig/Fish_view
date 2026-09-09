@@ -7,7 +7,7 @@ import {
   spriteDimensions,
   substrateArt,
 } from "../art/sprites.js";
-import { CELL_HEIGHT, CELL_WIDTH, orientationConfig, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
+import { CELL_HEIGHT, CELL_WIDTH, DISPLAY, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import {
   SUBSTRATE_RELIEF_ROWS,
   SURFACE_WAVE_CURVATURE,
@@ -22,10 +22,10 @@ import { spriteForFish } from "../sim/fish-growth.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
-import { pitchGlyphSpin } from "./fish-pitch.js?v=true-rotation-20260902";
-import { fishBodyFill } from "./fish-body.js?v=true-rotation-20260902";
-import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=true-rotation-20260902";
-import { drawBubbles } from "./bubbles.js?v=phase2-personality-20260831";
+import { pitchGlyphSpin } from "./fish-pitch.js?v=horizontal-20260909";
+import { fishBodyFill } from "./fish-body.js?v=horizontal-20260909";
+import { glyphWidthScale, poseSprite } from "./fish-pose.js?v=horizontal-20260909";
+import { drawBubbles } from "./bubbles.js?v=horizontal-20260909";
 import {
   worldLayer,
   depthScale,
@@ -33,21 +33,21 @@ import {
   schoolDepthScale,
   scatteredDepth,
   spreadDepth,
-} from "./depth.js?v=visual-depth-20260830";
-import { bodyFillForDepth, mixColor, MASK_SYMBOLS, scenePalette } from "./palette.js?v=visual-depth-20260830";
+} from "./depth.js?v=horizontal-20260909";
+import { bodyFillForDepth, mixColor, MASK_SYMBOLS, scenePalette } from "./palette.js?v=horizontal-20260909";
 import {
   addPlantRecord,
   createPlantRenderRecords,
   plantRenderRecord,
   skeletonLinesForRecord,
-} from "./plants.js?v=visual-depth-20260830";
+} from "./plants.js?v=horizontal-20260909";
 import {
   addGlyphObject,
   createSceneBuilder,
   finalizeScene,
   positionedGlyph,
   sceneMetrics,
-} from "./scene.js?v=true-rotation-20260902";
+} from "./scene.js?v=horizontal-20260909";
 
 const TAU = Math.PI * 2;
 const BODY_MOTION_BY_ACTIVITY = Object.freeze({
@@ -361,7 +361,7 @@ function createBackground(dimensions, palette, seed, {
 }
 
 function builderForState(state, palette) {
-  const target = orientationConfig(state.orientation);
+  const target = DISPLAY;
   const dimensions = {
     width: target.pixelWidth,
     height: target.pixelHeight,
@@ -372,7 +372,7 @@ function builderForState(state, palette) {
     ...dimensions,
     background: createBackground(dimensions, palette, state.seed),
     metadata: {
-      orientation: state.orientation,
+
       paletteStage: palette.paletteStage,
       daylight: palette.daylight,
       night: palette.night,
@@ -595,7 +595,7 @@ function drawAmbient(builder, state, palette, metrics) {
   const waterTop = SURFACE_Y_ROWS + 0.5;
   const waterBottom = state.rows - SUBSTRATE_ROWS - 0.2;
   const travel = waterBottom - waterTop;
-  const count = state.orientation === "portrait" ? 8 : 13;
+  const count = 13;
   for (let index = 0; index < count; index += 1) {
     const initialY = sampleRange(state.seed, 1400 + index, 0, travel);
     const speed = sampleRange(state.seed, 1500 + index, 0.035, 0.085);
@@ -1005,7 +1005,6 @@ export function renderSpriteScene(sprite, {
 }
 
 export function renderPlantLabScene(speciesId, {
-  orientation = "landscape",
   paletteMode = "day",
   elapsedRealSeconds = 0,
   seed = 0x51a7,
@@ -1015,7 +1014,7 @@ export function renderPlantLabScene(speciesId, {
   disturbance = "none",
   quality = 1,
 } = {}) {
-  const target = orientationConfig(orientation);
+  const target = DISPLAY;
   const cellWidth = target.pixelWidth / target.cols;
   const logicalWidth = 18;
   const dimensions = {
@@ -1049,7 +1048,6 @@ export function renderPlantLabScene(speciesId, {
   const state = {
     version: 2,
     seed: specimenSeed,
-    orientation,
     cols: logicalWidth,
     rows: target.rows,
     elapsedRealSeconds,
@@ -1076,7 +1074,6 @@ export function renderPlantLabScene(speciesId, {
       plantLab: true,
       speciesId,
       paletteStage: palette.paletteStage,
-      orientation,
       seed: specimenSeed,
     },
   });

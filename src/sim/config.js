@@ -1,18 +1,5 @@
-export const ORIENTATIONS = Object.freeze({
-  portrait: Object.freeze({
-    id: "portrait",
-    cols: 40,
-    rows: 33,
-    pixelWidth: 480,
-    pixelHeight: 800,
-  }),
-  landscape: Object.freeze({
-    id: "landscape",
-    cols: 66,
-    rows: 20,
-    pixelWidth: 800,
-    pixelHeight: 480,
-  }),
+export const DISPLAY = Object.freeze({
+  cols: 66, rows: 20, pixelWidth: 800, pixelHeight: 480,
 });
 
 // Authoring metrics for the bundled bitmap glyphs. Physical scene dimensions
@@ -119,12 +106,6 @@ export function sanitizeSettings(settings, fallback = DEFAULT_SETTINGS) {
     const bounded = Math.max(minimum, Math.min(maximum, value));
     return [key, key === "schoolCount" ? Math.round(bounded) : bounded];
   }));
-}
-
-export function orientationConfig(orientation) {
-  const config = ORIENTATIONS[orientation];
-  if (!config) throw new Error(`Unknown orientation: ${orientation}`);
-  return config;
 }
 
 export function waterBounds(state) {

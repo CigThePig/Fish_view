@@ -12,8 +12,8 @@ import { stockedAquarium } from './support/aquarium.js';
 const living = (scene) => scene.objects.filter((o) => /^(living:|wood:|meadow:|dust:|epiphyte:)/.test(o.id));
 
 test('the living habitat stays bounded and supported from day one to twenty years', () => {
-  for (const orientation of ['landscape','portrait']) for (const days of [0,45,180,730,1825,7300]) {
-    const state=advanceAquariumHistory(createAquariumState({orientation,seed:83}),days);
+  for (const days of [0,45,180,730,1825,7300]) {
+    const state=advanceAquariumHistory(createAquariumState({seed:83}),days);
     const records=livingWorldRecords(state);
     assert.ok(records.length>=4 && records.length<=7);
     assert.equal(new Set(records.map(r=>r.id)).size,records.length);
@@ -42,8 +42,9 @@ test('offline time and restore retain the same habitat without adding save field
 });
 
 test('resident movement is continuous and slower than the fish', () => {
-  for(const orientation of ['landscape','portrait']) {
-    const base=advanceAquariumHistory(createAquariumState({seed:83,orientation}),180);
+  {
+
+    const base=advanceAquariumHistory(createAquariumState({seed:83}),180);
     let previous=livingWorldRecords(base);
     for(let frame=1;frame<=1200;frame++) {
       const records=livingWorldRecords({...base,elapsedRealSeconds:frame*0.1});
@@ -66,9 +67,10 @@ test('a disappearing tuft releases its fish and cannot be followed after recycli
   assert.equal(resolveActivityTarget(fish,3,{...state,elapsedRealSeconds:120},activity),null);
 });
 
-test('ordinary watching produces new encounters and a traveling school in both orientations', () => {
-  for(const orientation of ['landscape','portrait']) {
-    let state=stockedAquarium({seed:83,orientation});
+test('ordinary watching produces new encounters and a traveling school in the canonical aquarium', () => {
+  {
+
+    let state=stockedAquarium({seed:83});
     let inspections=0, nearInspections=0, minX=Infinity,maxX=-Infinity;
     for(let frame=0;frame<1800;frame++) {
       const previous=state;state=tick(state,0.1);
@@ -83,8 +85,8 @@ test('ordinary watching produces new encounters and a traveling school in both o
       const center=state.school.reduce((sum,f)=>sum+f.x,0)/state.school.length;
       if(frame>300){ minX=Math.min(minX,center);maxX=Math.max(maxX,center); }
     }
-    assert.ok(inspections>30,`${orientation}: no spontaneous encounter`);
-    assert.ok(nearInspections>10,`${orientation}: fish never reached the tuft`);
-    assert.ok(maxX-minX>state.cols*0.15,`${orientation}: school stayed in one place`);
+    assert.ok(inspections>30,`landscape: no spontaneous encounter`);
+    assert.ok(nearInspections>10,`landscape: fish never reached the tuft`);
+    assert.ok(maxX-minX>state.cols*0.15,`landscape: school stayed in one place`);
   }
 });

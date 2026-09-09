@@ -272,7 +272,7 @@ test("mirrored facings draw mirrored fish", () => {
 });
 
 test("a pitched fish in the tank turns the ink inside every one of its glyphs", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 331, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 331, wallClockHours: 12 });
   const index = 0;
   const posed = (pitch) => {
     const scene = render({

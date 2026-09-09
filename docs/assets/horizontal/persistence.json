@@ -1,0 +1,9 @@
+{
+  "options": {
+    "cases": 200,
+    "output": ".audit-output"
+  },
+  "generatorSeed": 1369948382,
+  "failures": 0,
+  "examples": []
+}

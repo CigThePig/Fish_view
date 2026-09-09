@@ -56,9 +56,10 @@ function lanesFor(state) {
 }
 
 test("the cast is spread through the tank instead of standing on one plane", () => {
-  for (const orientation of ["portrait", "landscape"]) {
+  {
+
     for (const seed of SEEDS) {
-      const state = stockedAquarium({ orientation, seed, wallClockHours: 12 });
+      const state = stockedAquarium({ seed, wallClockHours: 12 });
       const lanes = lanesFor(state);
       assert.equal(lanes.length, MAX_INDIVIDUALS);
       // A full roster over five lanes will double up, but it must never all
@@ -66,7 +67,7 @@ test("the cast is spread through the tank instead of standing on one plane", () 
       // for.
       assert.ok(
         new Set(lanes).size >= 3,
-        `${orientation}/${seed} put the whole cast on ${new Set(lanes).size} plane(s)`,
+        `landscape/${seed} put the whole cast on ${new Set(lanes).size} plane(s)`,
       );
       const scene = render(state);
       assert.deepEqual(
@@ -80,7 +81,7 @@ test("the cast is spread through the tank instead of standing on one plane", () 
 });
 
 test("distance changes a fish's size, its ink, and the body behind it together", () => {
-  const state = stockedAquarium({ orientation: "landscape", seed: 33, wallClockHours: 12 });
+  const state = stockedAquarium({ seed: 33, wallClockHours: 12 });
   const palette = scenePalette(state);
   const scene = render(state);
   const lanes = lanesFor(state);
@@ -116,7 +117,7 @@ test("distance changes a fish's size, its ink, and the body behind it together",
 test("depth colours come from tables the palette builds once per stage", () => {
   // This is the ESP32 contract: atmospheric perspective must cost one array
   // index per fish per frame, not a colour mix per glyph.
-  const state = createAquariumState({ orientation: "portrait", seed: 5, wallClockHours: 9 });
+  const state = createAquariumState({ seed: 5, wallClockHours: 9 });
   const palette = scenePalette(state);
   const scene = render(state);
   const known = new Set(palette.depthLanes.flatMap((lane) => [
@@ -136,7 +137,7 @@ test("depth colours come from tables the palette builds once per stage", () => {
 });
 
 test("the far end of the school swims behind the midground weed", () => {
-  const scene = render(stockedAquarium({ orientation: "landscape", seed: 7, wallClockHours: 12 }));
+  const scene = render(stockedAquarium({ seed: 7, wallClockHours: 12 }));
   const school = scene.objects.filter((object) => object.id.startsWith("school:"));
   assert.ok(school.length > 20);
   const layers = new Set(school.map((object) => object.layer));
@@ -182,8 +183,9 @@ function waterUnder(scene, palette, shaft) {
 }
 
 test("sun shafts stay in the water, fade with depth, and dim at night", () => {
-  for (const orientation of ["portrait", "landscape"]) {
-    const state = createAquariumState({ orientation, seed: 5, wallClockHours: 12 });
+  {
+
+    const state = createAquariumState({ seed: 5, wallClockHours: 12 });
     const palette = scenePalette(state);
     const scene = render(state);
     const bands = scene.background.bands;
@@ -215,8 +217,8 @@ test("sun shafts stay in the water, fade with depth, and dim at night", () => {
     assert.ok(Math.max(...highest) > Math.max(...lowest), "the shafts do not fade with depth");
   }
 
-  const dayState = createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 });
-  const nightState = createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 2 });
+  const dayState = createAquariumState({ seed: 5, wallClockHours: 12 });
+  const nightState = createAquariumState({ seed: 5, wallClockHours: 2 });
   const lift = (state) => {
     const scene = render(state);
     const palette = scenePalette(state);
@@ -228,7 +230,7 @@ test("sun shafts stay in the water, fade with depth, and dim at night", () => {
 });
 
 test("the ground plane recedes and the tank edges fall away", () => {
-  const scene = render(createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 }));
+  const scene = render(createAquariumState({ seed: 5, wallClockHours: 12 }));
   const { floorSlabs, edges, bands, substrateSegments } = scene.background;
   assert.equal(floorSlabs.length >= 2, true);
   // The strip nearest the bottom of the panel is the part closest to the
@@ -261,8 +263,9 @@ test("the ground plane recedes and the tank edges fall away", () => {
 });
 
 test("depth costs a bounded number of background fills and no extra full repaints", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    let state = createAquariumState({ orientation, seed: 5, wallClockHours: 12 });
+  {
+
+    let state = createAquariumState({ seed: 5, wallClockHours: 12 });
     for (let frame = 0; frame < 40; frame += 1) state = tick(state, 0.1);
     let worstRegionFills = 0;
     let previous = render(state);
@@ -272,7 +275,7 @@ test("depth costs a bounded number of background fills and no extra full repaint
       state = tick(state, 0.6);
       const scene = render(state);
       const damage = calculateDamage(previous, scene);
-      assert.equal(damage.full, false, `${orientation} repainted the whole field at frame ${frame}`);
+      assert.equal(damage.full, false, `landscape repainted the whole field at frame ${frame}`);
       const background = scene.background;
       const painted = [
         ...sceneShafts(scene),
@@ -295,7 +298,7 @@ test("depth costs a bounded number of background fills and no extra full repaint
     // across every test seed went from 252 to 288.
     assert.ok(
       worstRegionFills <= 310,
-      `${orientation} asked for ${worstRegionFills} background fills in one frame`,
+      `landscape asked for ${worstRegionFills} background fills in one frame`,
     );
   }
 });
@@ -310,7 +313,7 @@ function shaftHead(scene, index) {
 }
 
 test("the swell overhead moves and resizes the shafts under it", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 5, wallClockHours: 12 });
   const heads = (hours) => Array.from({ length: 16 }, (_, step) => (
     shaftHead(render({ ...base, timeOfDayHours: hours, elapsedRealSeconds: step * 2 }), 0)
   ));
@@ -336,8 +339,9 @@ test("the swell overhead moves and resizes the shafts under it", () => {
 });
 
 test("the swell reaches the head of a shaft and leaves its depths alone", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    const base = createAquariumState({ orientation, seed: 33, wallClockHours: 15 });
+  {
+
+    const base = createAquariumState({ seed: 33, wallClockHours: 15 });
     const at = (seconds) => render({ ...base, elapsedRealSeconds: seconds });
     const early = at(0);
     const later = at(7.5);
@@ -349,20 +353,21 @@ test("the swell reaches the head of a shaft and leaves its depths alone", () => 
       assert.deepEqual(
         byId(later, `shaft:${index}:deep`).fill,
         byId(early, `shaft:${index}:deep`).fill,
-        orientation + " repainted the depths of a shaft for a passing wave",
+        "landscape" + " repainted the depths of a shaft for a passing wave",
       );
       assert.notDeepEqual(
         byId(later, `shaft:${index}:lit`).fill,
         byId(early, `shaft:${index}:lit`).fill,
-        orientation + " left the head of a shaft still",
+        "landscape" + " left the head of a shaft still",
       );
     }
   }
 });
 
 test("a shaft enters no higher than the surface that repaints over it", () => {
-  for (const orientation of ["landscape", "portrait"]) {
-    let state = createAquariumState({ orientation, seed: 7, wallClockHours: 9 });
+  {
+
+    let state = createAquariumState({ seed: 7, wallClockHours: 9 });
     for (let frame = 0; frame < 60; frame += 1) {
       state = { ...state, elapsedRealSeconds: frame * 0.1 };
       const scene = render(state);
@@ -374,13 +379,13 @@ test("a shaft enters no higher than the surface that repaints over it", () => {
         .filter((object) => object.id.startsWith("surface:"))
         .flatMap((object) => object.fill.map((span) => span.y)));
       const shaftTop = Math.min(...sceneShafts(scene).map((span) => span.y));
-      assert.ok(shaftTop >= surfaceTop, `${orientation} lit the air above the water at frame ${frame}`);
+      assert.ok(shaftTop >= surfaceTop, `landscape lit the air above the water at frame ${frame}`);
     }
   }
 });
 
 test("the sun leans on its own two-hour clock and no longer restages the field", () => {
-  const base = createAquariumState({ orientation: "landscape", seed: 5, wallClockHours: 12 });
+  const base = createAquariumState({ seed: 5, wallClockHours: 12 });
   // The shafts left the background when they started following the swell, and
   // took the sun's whole-field repaints with them: moving the sun now costs
   // four scene objects, not a repaint of the tank.
@@ -402,8 +407,9 @@ test("the sun leans on its own two-hour clock and no longer restages the field",
 });
 
 test("the whole scene stays inside the substrate layer at every distance", () => {
-  for (const orientation of ["portrait", "landscape"]) {
-    const state = createAquariumState({ orientation, seed: 818, wallClockHours: 15 });
+  {
+
+    const state = createAquariumState({ seed: 818, wallClockHours: 15 });
     const scene = render(state);
     const surface = SURFACE_Y_ROWS;
     const floor = state.rows - SUBSTRATE_ROWS + SUBSTRATE_RELIEF_ROWS;

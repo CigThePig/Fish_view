@@ -8,7 +8,7 @@ import { fishSubstrateY } from "../src/sim/fish-motion.js";
  * see, because it is a fraction of a row between two specific things - the
  * lowest ink of one fish and the crest directly under it.
  *
- * So this walks every growth stage of every species in both orientations,
+ * So this walks every growth stage of every species in the canonical aquarium,
  * parks each one on its own graze line, drives it through the deepest strike
  * its own seed produces, and measures the gap in rows against the rendered
  * frame rather than against any model the simulation holds. `--sheet` writes a
@@ -28,7 +28,7 @@ import { renderedFeedingContact } from "../src/dev/rendered-contact.js";
 import { render } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { sceneTuning } from "../src/sim/choreography-tuning.js";
-import { CELL_WIDTH, DEFAULT_SEED, orientationConfig } from "../src/sim/config.js";
+import { CELL_WIDTH, DEFAULT_SEED, DISPLAY } from "../src/sim/config.js";
 import {
   ACTIVITIES,
   createActivityState,
@@ -40,7 +40,7 @@ import { createAquariumState } from "../src/sim/state.js";
 import { stocked } from "./stocked-aquarium.mjs";
 
 const SUBJECT_INDEX = 3;
-const ORIENTATIONS = ["landscape", "portrait"];
+
 
 // `--tune grazeBurialRows=1.2,grazePitchDegrees=30` runs the whole sweep with
 // the substrate-search scene tuning overridden, which is the same override the
@@ -182,9 +182,9 @@ function contactRows(state, fish) {
 
 export function measureFeeding(override = null) {
   const results = [];
-  for (const orientation of ORIENTATIONS) {
+  {
     const state = {
-      ...stocked(createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 })),
+      ...stocked(createAquariumState({ seed: DEFAULT_SEED, wallClockHours: 12 })),
       ...(override ? { choreographyTuning: override } : {}),
     };
     const tuning = sceneTuning(state, "substrate-search");
@@ -199,7 +199,6 @@ export function measureFeeding(override = null) {
       const rest = contactRows(state, grazing);
       const hit = contactRows(state, striking);
       results.push({
-        orientation,
         id: stage.id,
         width,
         height,
@@ -214,9 +213,9 @@ export function measureFeeding(override = null) {
 }
 
 function report(results) {
-  for (const orientation of ORIENTATIONS) {
-    const rows = results.filter((entry) => entry.orientation === orientation);
-    console.log(`\n${orientation}  mouth = rows the mouth sits above the crest, buried = rows the underside passes through it`);
+  {
+    const rows = results.filter((entry) => true);
+    console.log(`\nlandscape  mouth = rows the mouth sits above the crest, buried = rows the underside passes through it`);
     console.log(`${"stage".padEnd(26)} ${"size".padEnd(5)} ${"graze".padStart(6)} ${"strike".padStart(7)} ${"buried".padStart(7)}`);
     for (const entry of rows.slice().sort((left, right) => left.cells - right.cells)) {
       const flag = entry.strike >= 0.25 ? "  <- exceeds 0.25-row contact tolerance" : "";
@@ -242,12 +241,12 @@ function report(results) {
 async function writeSheet(target, only = null, override = null) {
   const { createCanvas } = await loadCanvasModule();
   const { CanvasSceneRenderer } = await import("../src/render/canvas-renderer.js");
-  const orientation = "landscape";
-  const config = orientationConfig(orientation);
+
+  const config = DISPLAY;
   const rowPixels = config.pixelHeight / config.rows;
   const columnPixels = config.pixelWidth / config.cols;
   const state = {
-    ...stocked(createAquariumState({ orientation, seed: DEFAULT_SEED, wallClockHours: 12 })),
+    ...stocked(createAquariumState({ seed: DEFAULT_SEED, wallClockHours: 12 })),
     ...(override ? { choreographyTuning: override } : {}),
   };
   const tuning = sceneTuning(state, "substrate-search");

@@ -35,12 +35,12 @@ import { render } from "../src/render/render.js";
 const SEED = 0xa51c0a7e;
 const SEEDS = [SEED, 1, 5, 17, 42, 77, 313, 4242, 100003];
 
-function fresh(seed = SEED, orientation = "landscape") {
-  return createAquariumState({ orientation, seed });
+function fresh(seed = SEED) {
+  return createAquariumState({ seed });
 }
 
-function atDay(day, { seed = SEED, orientation = "landscape" } = {}) {
-  return advanceAquariumHistory(fresh(seed, orientation), day);
+function atDay(day, { seed = SEED } = {}) {
+  return advanceAquariumHistory(fresh(seed), day);
 }
 
 function individualObject(scene, index, fish) {

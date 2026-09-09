@@ -1,3 +1,5 @@
+> Historical document. Dual-orientation experiments and measurements below are retired. Fish View now has one 800 × 480 landscape aquarium; see the [current architecture](../README.md).
+
 # Repository engineering audit — 2026-09-07
 
 Baseline: `main` at `83246311defeeb231595926c81e440a182b18e68` (PR #27).

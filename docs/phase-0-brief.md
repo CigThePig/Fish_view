@@ -1,3 +1,5 @@
+> Historical document. Dual-orientation experiments and measurements below are retired. Fish View now has one 800 × 480 landscape aquarium; see the [current architecture](../README.md).
+
 # ASCII Aquarium — Phase 0 Brief
 
 **Status:** Phase 0 (web prototype). Architecture for Phase 1 deliberately unresolved — see Open Decisions.

@@ -1,5 +1,5 @@
 import { daylightFactor } from "../sim/tick.js";
-import { DEPTH_LANES, LANE_CLARITY, LANE_HAZE } from "./depth.js?v=visual-depth-20260830";
+import { DEPTH_LANES, LANE_CLARITY, LANE_HAZE } from "./depth.js?v=horizontal-20260909";
 
 const DAY_MASK = Object.freeze({
   c: "#319d9d", C: "#62d5d0", r: "#b85b58", R: "#e77b72",
