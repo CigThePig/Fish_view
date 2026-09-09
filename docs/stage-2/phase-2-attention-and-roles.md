@@ -16,7 +16,7 @@ and then goes. The rest turn toward it and slow, or lean away, or give one flick
 and carry on with their evening.
 
 Measured by the instrument written before Stage 2 began, on the three baseline
-seeds: **one tap used to leave 1 activity standing. It now leaves 9, 7 and 7.**
+seeds: **one tap used to leave 1 activity standing. It now leaves 8, 7 and 7.**
 
 ## Changes made
 
@@ -70,8 +70,9 @@ the fish's most trusted companion is already going, whether its body suits the
 context (a bottom-feeder and a press in the sand), and a small seeded jitter —
 minus how absorbed it is in what it is doing. Roles then fall out of interest,
 commitment and three caps: **2 primary, 2 secondary, 1 delayed**. Everything
-else is passive. Across the 45-scenario sweep that comes to **1–4 fish
-interrupted per press, 3.2 on average, out of fifteen**.
+else is passive. Across the sweep that comes to **1–4 fish interrupted by a
+single press, 3.2 on average, out of fifteen** (a scenario that presses five
+times reaches six, because responders from earlier presses are still finishing).
 
 Two rules make the whole thing safe to build on:
 
@@ -119,15 +120,15 @@ where every fish in every row is converging on one point.
 
 | Claim | How it was checked | Where |
 | --- | --- | --- |
-| One tap no longer synchronises the cast | The pre-Stage-2 instrument, unchanged since before Stage 2: activities left standing one frame after a tap went from **1, 1, 1** to **9, 7, 7** on seeds 5, 147, 1234 | `npm run measure:stage2-baseline` |
-| …across every scenario and seed | 45 observations: distinct activities after the press **1 → 7.2 mean (1–10)**; fish interrupted **15 → 3.2 mean (1–4)** | [`interaction-observation.json`](../assets/stage-2/phase-2/interaction-observation.json) |
-| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 62 investigate, 77 approach, 19 delayed, 71 watch, 78 wary, 214 acknowledge, 112 fish out of range | evidence file, `aquarium.roles` |
+| One tap no longer synchronises the cast | The pre-Stage-2 instrument, unchanged since before Stage 2: activities left standing one frame after a tap went from **1, 1, 1** to **8, 7, 7** on seeds 5, 147, 1234 | `npm run measure:stage2-baseline` |
+| …across every scenario and seed | 45 observations: distinct activities after the press **1 → 7.7 mean (6–10)** for a single press; fish interrupted **15 → 3.2 mean (1–4)** | [`interaction-observation.json`](../assets/stage-2/phase-2/interaction-observation.json) |
+| Multiple fish visibly react differently | **5.8 distinct roles per press** (3–7). Across the sweep: 64 investigate, 80 approach, 22 delayed, 68 watch, 76 wary, 216 acknowledge, 107 fish out of range | evidence file, `aquarium.roles` |
 | Immediate feedback is still guaranteed | A press at any of five points, including a corner and a point with no fish near it, always produces an impulse, a stimulus and at least one investigator — including in a one-fish aquarium | `tests/attention-roles.test.js` |
 | Activities are not indiscriminately cancelled | Every fish not interrupted holds the exact activity and velocity it had; the fish that was feeding when the press landed stays on the sand and resumes | `tests/attention-roles.test.js`, `tests/phase2-activities.test.js`, the feeding scenario |
 | Recovery is readable | A responder's activity at the frame it lets go is the activity it put down; responders release on different frames | `tests/attention-roles.test.js` |
 | Roles are deterministic and bounded | Same aquarium and press give the same roles; caps hold; the vocabulary is closed and every role in it actually occurs | `tests/attention-roles.test.js` |
 | Passive responses have a visible correlate | A passive responder differs from its untouched twin in position, speed or pitch within 1.2 s, without changing activity | `tests/attention-roles.test.js` |
-| The tap is classified by what it landed on | Six contexts, deterministic; over a press-by-press grid of the whole tank: open water 55 %, plant 18 %, fish 12 %, substrate 7 %, surface 5 %, bubble 3 % | `tests/attention-roles.test.js`, `src/sim/interaction-context.js` |
+| The tap is classified by what it landed on | Six contexts, deterministic, measured against each fish's drawn silhouette rather than a fixed radius; over a press-by-press grid of the whole tank: open water 43 %, fish 28 %, plant 10 %, surface 7 %, bubble 6 %, substrate 6 % | `tests/attention-roles.test.js`, `src/sim/interaction-context.js` |
 | Autonomous behaviour is untouched | The ordinary deterministic ten-minute watch is **identical** to the baseline, activity for activity and peck for peck (694) | `npm run measure:readability` |
 | The gate is green | 350 tests (340 before, 10 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify`, 3 min 24 s |
 
@@ -140,24 +141,33 @@ What a single press looks like now, from the sweep (seed 5):
 | tap during feeding | 1 investigate, 1 approach, 1 delayed, 2 watch, 3 wary, 5 acknowledge, 2 out of range | 2 | 10 |
 | tap during a chase | 1 investigate, 2 approach, 1 delayed, 2 watch, 1 wary, 1 acknowledge, 7 out of range | 4 | 7 |
 | tap during rest | 1 investigate, 1 delayed, 2 watch, 2 wary, 9 acknowledge | 1 | 9 |
-| night tap | 1 investigate, 1 wary, 13 acknowledge | 1 | 9 |
+| night tap | 1 investigate, 1 delayed, 13 acknowledge | 1 | 9 |
 
 Response latency has become a measurement rather than a floor. It was **0.1 s
-for every fish at every distance**; it is now 0.1 s at the median 0.4 s, out to
-6.7 s for a delayed investigator, and 39 of 211 measured fish never deviate from
-their untouched twin at all.
+for every fish at every distance**; it is now a median of 0.1 s for the fish
+that answer at once, 0.2 s at the ninetieth percentile, out to 6.7 s for a
+delayed investigator — and 32 of 211 measured fish never deviate from their
+untouched twin at all, because a press across the tank is not their business.
+
+A response is measured in three channels against the untouched twin — where the
+fish ended up, how fast it was going, and how it was held — because Phase 2's
+quietest answers are deliberately cheap. A sheltering fish that lifts its nose
+four degrees without leaving its spot has answered, and a measure that only
+watched position filed exactly those as unaffected. Under the corrected
+instrument **no fish that was given a response role is reported as unaffected**;
+under the positional-only one, seven were.
 
 ## Performance
 
 | Measure | Phase 1 | This phase |
 | --- | --- | --- |
 | Mature untouched avg / max damage | 58.3 / 51.8 / 52.1 % per seed | identical — no stimulus, no change |
-| Interaction avg damage (stocked + mature) | 52.9 % | 53.4 % |
+| Interaction avg damage (stocked + mature) | 52.9 % | 53.5 % |
 | Interaction worst frame | 97.9 % | 98.1 % |
 | Dirty rectangles per frame | 18.2 | 18.7 |
 | Peak scene glyphs | 1 245 | 1 245 |
 | Full redraws | 0 | 0 |
-| Tap damage, pre-Stage-2 instrument | 55.2 / 52.4 / 56.8 % | 53.5 / 52.9 / 55.7 % |
+| Tap damage, pre-Stage-2 instrument | 55.2 / 52.4 / 56.8 % | 55.4 / 52.9 / 55.7 % |
 
 Half a percentage point of average damage, no new peak, no new glyphs, and the
 old instrument reads the touched aquarium as slightly *cheaper* than before —
@@ -167,11 +177,41 @@ this phase is a rounding error; what it spent was thinking, not pixels.
 ## Persistence
 
 Unchanged. `PERSISTENCE_VERSION` is still 2, no field added. A stocked ten-year
-aquarium with fifty taps serialises to 17 863 bytes against 17 853 before — ten
-bytes of difference from fish sitting in slightly different places, not from
+aquarium with fifty taps serialises to 17 868 bytes against 17 853 before —
+fifteen bytes of difference from fish sitting in slightly different places, not from
 anything new being written. Response roles are transient: absent from the
 payload, cleared by a reload and by an offline gap, and the invariants test now
 proves it per fish as well as per aquarium.
+
+## Review findings, and what they changed
+
+Four defects were raised on the pull request and are fixed here, each with a
+test that keeps it fixed:
+
+- **A repeated press cost a responder its way back.** A second press while a
+  fish was still investigating saved `touch-react` over the activity it had put
+  down, so recovery had nothing to resume and the fish was cancelled into an
+  unrelated choice — the exact thing this phase promises not to do. A fish that
+  is already answering now carries its original thread through any number of
+  later presses (`src/sim/state.js`).
+- **A coalesced press handed responders a dead identity.** A near-repeat keeps
+  the identity of the event it refreshes, but `registerTouch` was returning the
+  freshly minted one, so fish were pointed at a stimulus id the aquarium did not
+  hold. It now returns the events as stored (`src/sim/interaction-events.js`).
+- **The harness undercounted the quietest responses.** Classification and
+  latency used positional divergence alone; speed and posture are now measured
+  too (`src/dev/interaction-observation.js`). This changes only how the
+  instrument reports, never what the aquarium did — replaying the Phase 1 commit
+  with the corrected instrument reproduces that phase's committed strong / weak /
+  unaffected counts and its 0.1 s latencies exactly, because under the global
+  response every fish was redirected in the first frame. The earlier phases'
+  evidence therefore stands as measured.
+- **A press on a fish's tail was not a press on the fish.** The context test
+  used a fixed 2.6-cell radius, narrower than the drawn body of a seven-column
+  adult. It now tests against the sprite the fish is currently grown to at the
+  scale its depth draws it (`src/sim/interaction-context.js`), which is what
+  moved the context distribution and the headline reading from 9 to 8 activities
+  on seed 5.
 
 ## Remaining limitations
 
@@ -198,7 +238,7 @@ proves it per fish as well as per aquarium.
 
 | Gate item (plan §8) | Met |
 | --- | --- |
-| One tap no longer synchronises the full persistent cast | Yes — 1 activity standing became 7–10; 3.2 of 15 fish interrupted on average |
+| One tap no longer synchronises the full persistent cast | Yes — 1 activity standing became 6–10; 3.2 of 15 fish interrupted on average |
 | Immediate feedback remains guaranteed | Yes — the impulse rings in the same frame and at least one fish always investigates, tested at the corners, the sand, the surface and in a one-fish tank |
 | Multiple fish visibly react differently | Yes — 5.8 distinct roles per press, six-role vocabulary, all six occurring, with a capture that shows them |
 | Current activities are not indiscriminately cancelled | Yes — every uninterrupted fish keeps its activity and heading; committed fish finish first |

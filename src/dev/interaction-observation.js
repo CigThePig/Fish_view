@@ -36,7 +36,6 @@ import { aquariumPoint } from "../platform/aquarium-input.js";
 import { calculateDamage } from "../render/damage.js";
 import { render } from "../render/render.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
-import { RESPONSE_ROLE_LIST } from "../sim/attention.js";
 import { createBubbleWorldRecords } from "../sim/bubbles.js";
 import { DISPLAY, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { clamp, traitsFromSeed } from "../sim/entities.js";
@@ -63,10 +62,18 @@ export const POINTER_HISTORY_LIMIT = 64;
 // went to look.
 export const NEAR_STIMULUS_RADIUS_CELLS = 4;
 
-// Below this the two runs have not diverged: a fish that differs from its
-// control twin by a hundredth of a cell is floating-point noise, not a
-// response.
+// Below these the two runs have not diverged: a fish that differs from its
+// control twin by a hundredth of a cell, a hundredth of a cell per second, or
+// half a degree of pitch is floating-point noise, not a response.
+//
+// Three channels rather than one because Phase 2's quietest responses are
+// deliberately cheap: a fish that turns its nose toward a disturbance without
+// leaving its line has answered it, and a measure that only watched position
+// would file it as unaffected - undercounting exactly the responses the phase
+// exists to add.
 const DEVIATION_EPSILON_CELLS = 0.01;
+const SPEED_EPSILON_CELLS_PER_SECOND = 0.01;
+const PITCH_EPSILON_DEGREES = 0.5;
 
 // A fish that ends up more than a body length from where it would have been is
 // doing something visibly different. Anything smaller that still exceeds the
@@ -381,9 +388,18 @@ function createFishRecord(fish, stimulus) {
     secondsNearStimulus: 0,
     endingActivity: null,
     peakDeviation: 0,
+    peakSpeedDeviation: 0,
+    peakPitchDeviation: 0,
     endingDeviation: 0,
     outcome: "unaffected",
   };
+}
+
+// Did this fish answer at all, in any channel a person could see?
+function responded(record) {
+  return record.peakDeviation > DEVIATION_EPSILON_CELLS
+    || record.peakSpeedDeviation > SPEED_EPSILON_CELLS_PER_SECOND
+    || record.peakPitchDeviation > PITCH_EPSILON_DEGREES;
 }
 
 /**
@@ -516,6 +532,8 @@ export function observeInteraction(baseState, {
 
       if (!twin) continue;
       const separation = Math.hypot(fish.x - twin.x, fish.y - twin.y);
+      const speedSeparation = Math.abs(speed - Math.hypot(twin.vx, twin.vy));
+      const pitchSeparation = Math.abs((fish.visual?.pitch ?? 0) - (twin.visual?.pitch ?? 0));
       const changedActivity = fish.activity?.current !== twin.activity?.current;
       deviation += separation;
       if (changedActivity) activityDivergence += 1;
@@ -525,9 +543,14 @@ export function observeInteraction(baseState, {
       }
       if (stimulus) response += Math.abs(closingSpeed(fish, stimulus) - closingSpeed(twin, stimulus));
       record.peakDeviation = Math.max(record.peakDeviation, separation);
+      record.peakSpeedDeviation = Math.max(record.peakSpeedDeviation, speedSeparation);
+      record.peakPitchDeviation = Math.max(record.peakPitchDeviation, pitchSeparation);
       record.endingDeviation = separation;
+      const diverged = separation > DEVIATION_EPSILON_CELLS
+        || speedSeparation > SPEED_EPSILON_CELLS_PER_SECOND
+        || pitchSeparation > PITCH_EPSILON_DEGREES;
       if (record.responseLatencySeconds === null && stimulusFrame !== null
-        && (separation > DEVIATION_EPSILON_CELLS || changedActivity)) {
+        && (diverged || changedActivity)) {
         record.responseLatencySeconds = round((frame - stimulusFrame + 1) * stepSeconds, 2);
       }
     }
@@ -599,6 +622,8 @@ export function observeInteraction(baseState, {
     turnDegrees: round(record.turnDegrees, 1),
     secondsNearStimulus: round(record.secondsNearStimulus, 1),
     peakDeviation: round(record.peakDeviation, 3),
+    peakSpeedDeviation: round(record.peakSpeedDeviation, 3),
+    peakPitchDeviation: round(record.peakPitchDeviation, 2),
     endingDeviation: round(record.endingDeviation, 3),
     outcome: classifyOutcome(record),
   }));
@@ -619,14 +644,17 @@ export function observeInteraction(baseState, {
       plants: baseState.plants.length,
       totalDays: round(baseState.totalDays, 1),
       timeOfDayHours: round(baseState.timeOfDayHours, 2),
+      // Strongly: went somewhere it would not otherwise have been. Weakly: any
+      // visible difference at all - a slower line, a turned nose - without
+      // leaving its course.
       respondingStrongly: fish.filter((one) => one.peakDeviation > STRONG_RESPONSE_CELLS).length,
-      respondingWeakly: fish.filter((one) => one.peakDeviation > DEVIATION_EPSILON_CELLS
-        && one.peakDeviation <= STRONG_RESPONSE_CELLS).length,
-      unaffected: fish.filter((one) => one.peakDeviation <= DEVIATION_EPSILON_CELLS).length,
-      roles: Object.fromEntries(RESPONSE_ROLE_LIST
-        .concat("none")
-        .map((role) => [role, fish.filter((one) => one.role === role).length])
-        .filter(([, count]) => count > 0)),
+      respondingWeakly: fish.filter((one) => one.peakDeviation <= STRONG_RESPONSE_CELLS && responded(one)).length,
+      unaffected: fish.filter((one) => !responded(one)).length,
+      // Counted from what was observed rather than from the role vocabulary, so
+      // this harness can also be pointed at an older worktree that has no roles
+      // in it - which is how one phase's numbers are compared with another's.
+      roles: Object.fromEntries([...new Set(fish.map((one) => one.role).filter(Boolean))]
+        .map((role) => [role, fish.filter((one) => one.role === role).length])),
       distinctRoles: new Set(fish.map((one) => one.role).filter(Boolean)).size,
       interrupted: fish.filter((one) => one.activityAfterInput === "touch-react").length,
       activitiesBefore: new Set(fish.map((one) => one.startActivity)).size,
@@ -658,7 +686,7 @@ export function observeInteraction(baseState, {
  * replaced for the whole observation by whatever the input imposed?
  */
 function classifyOutcome(record) {
-  if (record.peakDeviation <= DEVIATION_EPSILON_CELLS) return "unaffected";
+  if (!responded(record)) return "unaffected";
   if (record.endingActivity === record.activityAfterInput
     && record.activityAfterInput !== record.startActivity) return "replaced";
   if (record.endingActivity === record.startActivity) return "resumed";

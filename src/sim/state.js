@@ -139,7 +139,17 @@ export function applyTouch(state, x, y) {
       nearestDistance = distance;
       nearestIndex = index;
     }
-    const role = attention[index];
+    // A fish that is already answering an earlier press keeps the activity it
+    // put down, whatever this press does to it. Overwriting it with the
+    // `touch-react` it is currently in - or dropping the record because the new
+    // press is out of its range - would strand it: recovery would have nothing
+    // to resume, and a second tap would quietly cost the fish its thread.
+    const answering = fish.activity?.current === ACTIVITIES.touchReact;
+    const carried = fish.attention?.resume ?? null;
+    const assigned = attention[index];
+    const role = assigned
+      ? (carried ? { ...assigned, resume: carried } : assigned)
+      : (answering ? fish.attention : null);
     const base = {
       ...fish,
       drives: { ...fish.drives },
@@ -158,12 +168,14 @@ export function applyTouch(state, x, y) {
     if (!attentionInvestigates(role)) return base;
     const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     const glassAffinity = affinitiesFromSeed(fish.seed).glass;
-    const resume = fish.activity ?? createActivityState(defaultActivityForBehavior(fish.behavior.current));
+    // What it was doing when it turned, carried by the response so it has
+    // somewhere to go back to when the response is over - the thread it was
+    // already holding if this is not the first press it has answered.
+    const resume = carried
+      ?? (answering ? null : fish.activity)
+      ?? createActivityState(defaultActivityForBehavior(fish.behavior.current));
     return {
       ...base,
-      // What it was doing when it turned, carried by the response so it has
-      // somewhere to go back to when the response is over. Recovery is a
-      // resumption, not a reset.
       attention: { ...role, resume },
       vx: direction.x * (0.58 + glassAffinity * 0.22),
       vy: direction.y * (0.38 + glassAffinity * 0.14),

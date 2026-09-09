@@ -170,6 +170,32 @@ test("an observed tap carries the per-fish measurements the phase gate asks for"
   assert.ok(cost.objects > 0 && cost.glyphs > 0);
 });
 
+test("a response that only changes posture still counts as a response", () => {
+  const state = aquarium();
+  const observation = observeInteraction(state, {
+    history: pointerHistory(tap(33, 9.5, { at: 0.5 })),
+    observeSeconds: 4,
+  });
+
+  // Phase 2's quietest roles answer without leaving their line, so a measure
+  // that only watched position would file them as unaffected. Anything the
+  // harness calls unaffected has to be unmoved in every channel it measures.
+  for (const fish of observation.fish) {
+    if (fish.outcome !== "unaffected") continue;
+    assert.equal(fish.peakSpeedDeviation <= 0.01, true, `${fish.id} changed speed but was called unaffected`);
+    assert.equal(fish.peakPitchDeviation <= 0.5, true, `${fish.id} changed posture but was called unaffected`);
+    assert.equal(fish.responseLatencySeconds, null);
+  }
+  // And a fish that answered in any channel is counted as responding.
+  const answered = observation.fish.filter((fish) => fish.peakSpeedDeviation > 0.01
+    || fish.peakPitchDeviation > 0.5
+    || fish.peakDeviation > 0.01);
+  assert.equal(
+    answered.length,
+    observation.aquarium.respondingStrongly + observation.aquarium.respondingWeakly,
+  );
+});
+
 test("the semantic moments run in order, inside the observation", () => {
   const observation = observeInteraction(aquarium(), {
     history: pointerHistory(tap(33, 9.5, { at: 0.5 })),

@@ -254,7 +254,11 @@ const FISH_COLUMNS = Object.freeze([
   "glassAffinity", "touches", "startActivity", "role", "activityAfterInput",
   "responseLatencySeconds", "startDistance", "closestDistance", "distanceTravelled",
   "averageSpeed", "peakSpeed", "peakAcceleration", "peakPitch", "turnDegrees",
-  "turnCount", "secondsNearStimulus", "endingActivity", "outcome",
+  "turnCount", "secondsNearStimulus",
+  // The three channels a response is measured in, against the same fish in the
+  // untouched run: where it ended up, how fast it was going, how it was held.
+  "peakDeviation", "peakSpeedDeviation", "peakPitchDeviation",
+  "endingActivity", "outcome",
 ]);
 
 function fishRow(fish) {
@@ -265,6 +269,7 @@ function fishRow(fish) {
     fish.responseLatencySeconds, fish.startDistance, fish.closestDistance,
     fish.distanceTravelled, fish.averageSpeed, fish.peakSpeed, fish.peakAcceleration,
     fish.peakPitch, fish.turnDegrees, fish.turnCount, fish.secondsNearStimulus,
+    fish.peakDeviation, fish.peakSpeedDeviation, fish.peakPitchDeviation,
     fish.endingActivity, fish.outcome,
   ];
 }

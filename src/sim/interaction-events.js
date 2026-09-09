@@ -201,19 +201,25 @@ function coalesceInto(list, event) {
  * cap is full. A refreshed event keeps its identity - the ripple it is drawing
  * carries on rather than restarting as a new scene object - and takes the new
  * position, age and amplitude.
+ *
+ * Returns the stored list *and the event as stored*, which are not always the
+ * event that was passed in: a coalesced press keeps the identity of the one it
+ * refreshed. Callers hand that identity to the fish responding to it, so
+ * returning the freshly minted event instead would point every responder at an
+ * id that is not in the aquarium.
  */
 function admit(list, event, maximum, amplitude) {
   const existing = coalesceInto(list, event);
   if (existing >= 0) {
     const merged = Object.freeze({ ...event, id: list[existing].id });
-    return Object.freeze(list.map((entry, index) => (index === existing ? merged : entry)));
+    return { list: Object.freeze(list.map((entry, index) => (index === existing ? merged : entry))), event: merged };
   }
-  if (list.length < maximum) return Object.freeze([...list, event]);
+  if (list.length < maximum) return { list: Object.freeze([...list, event]), event };
   let faintest = 0;
   for (let index = 1; index < list.length; index += 1) {
     if (amplitude(list[index]) < amplitude(list[faintest])) faintest = index;
   }
-  return Object.freeze(list.map((entry, index) => (index === faintest ? event : entry)));
+  return { list: Object.freeze(list.map((entry, index) => (index === faintest ? event : entry))), event };
 }
 
 /**
@@ -225,14 +231,15 @@ function admit(list, event, maximum, amplitude) {
  */
 export function registerTouch(state, x, y, context = "open-water") {
   const sequence = ((state.interactionSequence ?? 0) + 1) % SEQUENCE_MODULO;
-  const stimulus = touchStimulus(state, x, y, sequence, context);
-  const impulse = touchImpulse(state, x, y, sequence);
+  const stimuli = admit(state.stimuli ?? [], touchStimulus(state, x, y, sequence, context), MAX_STIMULI, stimulusSalience);
+  const impulses = admit(state.impulses ?? [], touchImpulse(state, x, y, sequence), MAX_IMPULSES, impulseStrength);
   return {
-    stimulus,
-    impulse,
+    // The events as the aquarium now holds them, identities included.
+    stimulus: stimuli.event,
+    impulse: impulses.event,
     interactionSequence: sequence,
-    stimuli: admit(state.stimuli ?? [], stimulus, MAX_STIMULI, stimulusSalience),
-    impulses: admit(state.impulses ?? [], impulse, MAX_IMPULSES, impulseStrength),
+    stimuli: stimuli.list,
+    impulses: impulses.list,
   };
 }
 

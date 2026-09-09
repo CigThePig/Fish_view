@@ -21,15 +21,22 @@
  * plant-lovers.
  */
 
+import { spriteDimensions } from "../art/sprites.js";
 import { createBubbleWorldRecords, isInvestigableBubble } from "./bubbles.js";
 import { TOUCH_FLOOR_ROWS } from "./config.js";
+import { spriteForFish } from "./fish-growth.js";
+import { individualVisualScale } from "./fish-motion.js";
 import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
 import { plantGroundY } from "./habitat-depth.js";
 import { plantHeight } from "./plants.js";
 
-// A press this close to a fish is a press *at* that fish. Roughly one grown
-// body length: near enough that a person would say they were pointing at it.
-const FISH_CELLS = 2.6;
+// How far outside a fish's drawn body still counts as a press *at* that fish.
+// The reach is the silhouette itself - the sprite this fish is currently grown
+// to, at the scale its depth draws it - because a seven-column adult reaches
+// three and a half cells from its centre and a fry barely one, and a child
+// pressing a tail has pressed the fish either way. A fixed radius classified
+// half of a grown fish as open water.
+const FISH_MARGIN_CELLS = 0.6;
 // Bubbles are small and move; a press has to be nearly on one.
 const BUBBLE_CELLS = 2;
 // Plants are tall and thin, so the reach is measured across the stem and along
@@ -52,8 +59,16 @@ export const STIMULUS_CONTEXTS = Object.freeze([
 ]);
 
 function nearFish(state, x, y) {
-  for (const fish of state.individuals ?? []) {
-    if (Math.hypot(fish.x - x, fish.y - y) <= FISH_CELLS) return true;
+  const individuals = state.individuals ?? [];
+  for (let index = 0; index < individuals.length; index += 1) {
+    const fish = individuals[index];
+    const { width, height } = spriteDimensions(spriteForFish(fish));
+    const scale = individualVisualScale(fish, index, state);
+    const halfWidth = width / 2 * scale + FISH_MARGIN_CELLS;
+    const halfHeight = height / 2 * scale + FISH_MARGIN_CELLS;
+    const dx = (fish.x - x) / halfWidth;
+    const dy = (fish.y - y) / halfHeight;
+    if (dx * dx + dy * dy <= 1) return true;
   }
   return false;
 }

@@ -22,6 +22,8 @@ import {
   attentionInvestigates,
   isPassiveRole,
 } from "../src/sim/attention.js";
+import { spriteDimensions } from "../src/art/sprites.js";
+import { spriteForFish } from "../src/sim/fish-growth.js";
 import { STIMULUS_CONTEXTS, classifyStimulusContext } from "../src/sim/interaction-context.js";
 import { createStimulus } from "../src/sim/interaction-events.js";
 import { ACTIVITIES, activityCommitment } from "../src/sim/fish-activities.js";
@@ -238,6 +240,48 @@ test("a responder comes back to what it was doing", () => {
   // because that is a fish getting on with its evening rather than a state
   // machine being reset.
   assert.equal(atRelease, before);
+});
+
+test("a second press does not cost a responder its way back", () => {
+  const base = settled(5);
+  const first = applyTouch(base, base.cols / 2, 9.5);
+  const index = first.individuals.findIndex((fish) => fish.attention?.role === RESPONSE_ROLES.investigate);
+  const original = base.individuals[index].activity.current;
+
+  // A near-repeat, which coalesces into the live event, and then a press across
+  // the tank. Neither may overwrite what the fish put down with the
+  // `touch-react` it is now in, or drop the thread by handing it a new role.
+  let state = run(first, 0.5);
+  state = applyTouch(state, base.cols / 2 + 0.4, 9.6);
+  assert.equal(state.individuals[index].attention.resume.current, original);
+  state = applyTouch(run(state, 0.3), 3, 13);
+  assert.equal(state.individuals[index].attention?.resume.current, original);
+
+  let released = null;
+  for (let step = 0; step < 150 && released === null; step += 1) {
+    state = tick(state, 0.1);
+    if (state.individuals[index].activity.current !== ACTIVITIES.touchReact) {
+      released = state.individuals[index].activity.current;
+    }
+  }
+  assert.equal(released, original, "a repeated tap cancelled the recovery it promised");
+});
+
+test("a press anywhere on a fish reads as a press at that fish", () => {
+  const base = settled(5);
+  // The widest adult in the tank: its tail is three and a half cells from its
+  // centre, and pressing it is pressing the fish.
+  const widest = base.individuals.reduce((best, fish) =>
+    (spriteDimensions(spriteForFish(fish)).width > spriteDimensions(spriteForFish(best)).width ? fish : best));
+  const halfWidth = spriteDimensions(spriteForFish(widest)).width / 2;
+  assert.ok(halfWidth >= 2.5, "expected a grown fish to test against");
+  for (const offset of [0, halfWidth * 0.5, halfWidth]) {
+    assert.equal(classifyStimulusContext(base, widest.x + offset, widest.y), "fish",
+      `a press ${offset.toFixed(1)} cells from the centre of a ${halfWidth * 2}-column fish missed it`);
+  }
+  // Well clear of every fish is not a press at one.
+  const empty = base.individuals.every((fish) => Math.hypot(fish.x - 2, fish.y - 3) > 8);
+  if (empty) assert.notEqual(classifyStimulusContext(base, 2, 3), "fish");
 });
 
 test("responders let go at different times", () => {

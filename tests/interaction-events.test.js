@@ -164,6 +164,16 @@ test("a near-repeat refreshes the event it repeats instead of taking another slo
   // Far enough apart is a second event, which is the whole point of the model.
   const elsewhere = applyTouch(aged, 12, 9);
   assert.equal(elsewhere.stimuli.length, 2);
+
+  // And what the responders were pointed at is the event that is actually
+  // there. Handing them the identity of the press that was merged away would
+  // leave every response attached to an event the aquarium does not hold.
+  const live = new Set(again.stimuli.map((stimulus) => stimulus.id));
+  for (const fish of again.individuals) {
+    if (!fish.attention) continue;
+    assert.ok(live.has(fish.attention.stimulusId), `${fish.attention.stimulusId} is not a live stimulus`);
+    if (fish.activity.targetType === "touch") assert.ok(live.has(fish.activity.targetId));
+  }
 });
 
 test("the event lists are capped, and the faintest event is what makes way", () => {
