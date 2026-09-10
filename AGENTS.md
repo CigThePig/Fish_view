@@ -282,9 +282,9 @@ child or leave a fish permanently frightened.
 
 Everything a still press does is unchanged by this. When a contact is not
 moving, all three pursuits collapse onto the point the fish remembers, no wake
-is due, and the gesture is `press`: 57 of the 66 scenarios in the observation
-sweep reproduce field for field against Phase 3's evidence, and the nine that
-differ are the three gestures with motion in them.
+is due, and the gesture is `press`: 56 of the 66 scenarios in the observation
+sweep reproduce field for field against Phase 3's evidence, and nine of the ten
+that differ are the three gestures with motion in them.
 
 ## Working agreement
 

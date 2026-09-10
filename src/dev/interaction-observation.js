@@ -326,6 +326,22 @@ export function confirmContact(state, contact, seconds) {
   return { state: applyContact(state, contact.x, contact.y, heldSeconds), contact };
 }
 
+/**
+ * The finger has gone - the harness's half of `src/app.js`'s `endContact`.
+ *
+ * The last position is confirmed before the release, because a contact is only
+ * told to the aquarium once a frame and a gesture can be over before the next
+ * frame arrives. Without this a swipe delivered inside one tick reaches the
+ * aquarium as a press and a release with nothing in between, and is received as
+ * an ordinary tap - which is exactly the gesture a seven-inch panel is most
+ * likely to be given.
+ */
+export function endContact(state, contact, point, seconds) {
+  if (!contact) return applyRelease(state);
+  const confirmed = confirmContact(state, { ...contact, x: point.x, y: point.y }, seconds);
+  return applyRelease(confirmed.state);
+}
+
 /* ------------------------------------------------------------------ *
  * Aquariums to observe
  * ------------------------------------------------------------------ */
@@ -668,6 +684,10 @@ export function observeInteraction(baseState, {
         contacts.delete(event.pointerId);
         if (contacts.size === 0) primaryPointer = null;
       }
+      // The aquarium as it was before this event, kept for the release path
+      // below, which has to confirm the contact before letting go of it rather
+      // than after.
+      const before = treatment;
       const result = applyPointerEvent(treatment, event, { rect, primary });
       treatment = result.state;
       if (result.reason === "touch") {
@@ -685,10 +705,18 @@ export function observeInteraction(baseState, {
         if (primary) contact = { x: result.point.x, y: result.point.y, startedAt: event.seconds };
       } else if (result.reason === "release") {
         delivery.released += 1;
-        // The finger is off the glass however much of a hold it turned out to
-        // be. When the presence ended is measured from the aquarium below, not
-        // from here, because a hold can also end by wandering out of itself.
-        if (primary) contact = null;
+        // The finger is off the glass however much of a gesture it turned out
+        // to be. When the presence ended is measured from the aquarium below,
+        // not from here, because a contact can also end by going stale.
+        //
+        // The release is re-delivered through `endContact`, which confirms
+        // where the finger was before letting go of it: `applyPointerEvent`
+        // released the contact without that, and a gesture that began and ended
+        // between two frames would have reached the aquarium as a bare press.
+        if (primary) {
+          treatment = endContact(before, contact, result.point, event.seconds);
+          contact = null;
+        }
       } else if (result.reason === "developer-hotspot") delivery.hotspot += 1;
       else if (result.reason === "not-the-primary-pointer") delivery.nonPrimary += 1;
       else {

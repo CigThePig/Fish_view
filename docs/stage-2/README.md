@@ -44,9 +44,9 @@ finger thrown across the glass is water being pushed: stems lean downstream,
 bubbles are carried sideways, the shoal is swept along, and the timid half of
 the cast leans out of the way while the bold half comes to look. The whole
 record of a gesture is six path samples and three live wakes, whether it lasts a
-third of a second or a minute; no gesture forces a full redraw; and 57 of the
-sweep's 66 scenarios reproduce field for field against Phase 3, the nine that
-differ being the three gestures that have motion in them.
+third of a second or a minute; no gesture forces a full redraw; and 56 of the
+sweep's 66 scenarios reproduce field for field against Phase 3, nine of the ten
+that differ being the three gestures that have motion in them.
 
 Phase 3 made a press that stays a **presence**. A finger held against the glass
 past 0.45 s stops being a tap and becomes a held stimulus that is re-read every

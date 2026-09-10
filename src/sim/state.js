@@ -378,13 +378,46 @@ export function applyContact(state, x, y, seconds) {
     curvature: motion.curvature,
   });
 
-  return reviewContact(state, existing, elapsed, {
-    stimuli,
-    // A gesture that has just changed what it is gets an answer this frame
-    // rather than on the next beat. A swipe is over in a third of a second, and
-    // an aquarium that noticed one half a second later did not notice it.
-    becoming: !existing.held || gesture !== existing.gesture,
-    impulses: wakeFor(state, { x: safeX, y: safeY, gesture, motion }),
+  return reviewContact(
+    // Everyone already answering this contact learns where it is now, every
+    // frame, not on the re-read beat. The beat is slow on purpose - it decides
+    // *who* answers - but where a fish believes the disturbance is has to keep
+    // up with a disturbance it can see moving. Left to the beat, a swipe that
+    // is over in a third of a second leaves every responder remembering the
+    // first third of it, and the moment the finger lifts they turn back to
+    // that instead of to where it went. It is also what a watching fish tips
+    // its nose at, so at the beat's pace a passive answer to a drag jerks
+    // rather than follows.
+    { ...state, individuals: followContact(state.individuals, stimuli, existing.id) },
+    existing,
+    elapsed,
+    {
+      stimuli,
+      // A gesture that has just changed what it is gets an answer this frame
+      // rather than on the next beat. A swipe is over in a third of a second,
+      // and an aquarium that noticed one half a second later did not notice it.
+      becoming: !existing.held || gesture !== existing.gesture,
+      impulses: wakeFor(state, { x: safeX, y: safeY, gesture, motion }),
+    },
+  );
+}
+
+/**
+ * Move every answer to this contact to where the contact now is.
+ *
+ * Only the remembered point moves. Which fish are answering, how long they have
+ * been at it, and how much patience they have spent are all the re-read's
+ * business and are left alone - this is the difference between a fish keeping
+ * track of a moving finger and a fish being startled by it afresh every frame.
+ */
+function followContact(individuals, stimuli, id) {
+  const stimulus = stimuli.find((entry) => entry.id === id);
+  if (!stimulus) return individuals;
+  return individuals.map((fish) => {
+    const record = fish.attention;
+    if (!record || record.stimulusId !== id) return fish;
+    if (record.x === stimulus.x && record.y === stimulus.y) return fish;
+    return { ...fish, attention: { ...record, x: stimulus.x, y: stimulus.y } };
   });
 }
 

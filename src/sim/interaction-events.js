@@ -417,15 +417,28 @@ function touchStimulus(state, x, y, sequence, context, pointerX, pointerY) {
   });
 }
 
+/**
+ * What a disturbance at this depth physically reached.
+ *
+ * A press on the sand lifts a bubble burst out of it; Phase 5 gives "surface"
+ * the same kind of meaning. This is deliberately not the same question as what
+ * the press *landed on* (see src/sim/interaction-context.js): the context names
+ * the event for the fish that might find it interesting, and it is a property
+ * of where the gesture began, while this is a property of where the water is
+ * being disturbed right now. A drag that starts on the sand and ends in open
+ * water rings open water when it is let go of.
+ */
+export function impulseContactAt(state, y) {
+  return y >= state.rows - TOUCH_FLOOR_ROWS - 0.01 ? "substrate" : "water";
+}
+
 function touchImpulse(state, x, y, sequence) {
   return createImpulse({
     id: `touch:${sequence}`,
     sequence,
     x,
     y,
-    // What the disturbance reached. A press on the sand lifts a bubble burst
-    // out of it; Phase 5 gives "surface" the same kind of meaning.
-    contact: y >= state.rows - TOUCH_FLOOR_ROWS - 0.01 ? "substrate" : "water",
+    contact: impulseContactAt(state, y),
     // Effects that need their own deterministic variation - the bubble burst is
     // the only one today - derive it from here. It comes from the aquarium seed
     // and the position rather than from the sequence number, so touching the
@@ -629,24 +642,40 @@ export function wakeIsDue(state, x, y, speed = 0) {
 }
 
 /**
+ * The identity the next wake takes: an empty slot if there is one, and
+ * otherwise the oldest wake's, which is what bounds the count.
+ *
+ * "Empty" has to be asked of the slots rather than counted, because wakes
+ * expire in the order they were rung and the ring is filled in the order the
+ * slots come free. Counting them says `wake:2` is next when `wake:0` has
+ * expired and `wake:1` and `wake:2` are still ringing - so the newest
+ * disturbance is overwritten a fifth of the way through its life, the free slot
+ * is never used, and a continuous drag settles at two wakes with one of them
+ * always being cut short.
+ */
+function wakeSlot(live) {
+  const used = new Set(live.map((impulse) => impulse.id));
+  for (let slot = 0; slot < MAX_WAKE_IMPULSES; slot += 1) {
+    if (!used.has(`wake:${slot}`)) return `wake:${slot}`;
+  }
+  return live.reduce((oldest, entry) => (entry.ageSeconds > oldest.ageSeconds ? entry : oldest), live[0]).id;
+}
+
+/**
  * Water pushed along, where the finger has just been.
  *
  * The strength comes from how fast the finger is going, between a drag that a
  * stem leans into and a swipe that carries a bubble sideways, and the radius
  * grows with it: a shove disturbs more water than a stroke. The identity is the
  * slot it occupies rather than the place it happened, because the cap is on how
- * many wakes are in the water at once - the fourth replaces the first, and a
+ * many wakes are in the water at once - a fourth replaces the oldest, and a
  * drag the length of a bedtime story costs what a drag across the tank does.
  */
 export function registerWake(state, { x, y, dirX, dirY, strength, contact = "water", seed = 0 }) {
   const live = wakeImpulses(state.impulses);
   const amount = clamp(strength, 0, 1);
   const impulse = createImpulse({
-    // The oldest wake's slot when the ring is full, and the next free one until
-    // then. Replacing by identity is what bounds the count.
-    id: live.length >= MAX_WAKE_IMPULSES
-      ? live.reduce((oldest, entry) => (entry.ageSeconds > oldest.ageSeconds ? entry : oldest), live[0]).id
-      : `wake:${live.length}`,
+    id: wakeSlot(live),
     source: "wake",
     x,
     y,
@@ -719,7 +748,12 @@ export function releaseStimulus(state, stimulus) {
       y: stimulus.y,
       strength: RELEASE_IMPULSE_STRENGTH,
       durationSeconds: RELEASE_IMPULSE_SECONDS,
-      contact: stimulus.context === "substrate" ? "substrate" : "water",
+      // Where the finger actually left, not where it landed. Asking the
+      // stimulus's context instead let a drag from the sand into open water
+      // raise a burst of bubbles out of the gravel under its mid-water
+      // endpoint, and a drag the other way leave the sand it ended on
+      // undisturbed.
+      contact: impulseContactAt(state, stimulus.y),
       seed: mix32(stimulus.sequence ?? 0),
     }),
     MAX_IMPULSES,

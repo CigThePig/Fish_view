@@ -42,14 +42,25 @@ import {
   MAX_WAKE_IMPULSES,
   createImpulse,
   heldStimulus,
+  registerWake,
+  releaseStimulus,
 } from "../src/sim/interaction-events.js";
+import { TOUCH_FLOOR_ROWS } from "../src/sim/config.js";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
 import { createPlantFrameContext, posePlant } from "../src/sim/plants.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { render } from "../src/render/render.js";
 import { applyContact, applyRelease, applyTouch } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
-import { STOCKED_AQUARIUM_DAY, createObservationAquarium } from "../src/dev/interaction-observation.js";
+import {
+  STOCKED_AQUARIUM_DAY,
+  createObservationAquarium,
+  drag,
+  endContact,
+  observeInteraction,
+  pointerHistory,
+  swipe,
+} from "../src/dev/interaction-observation.js";
 
 const STEP = 0.1;
 const SEEDS = [5, 147, 1234];
@@ -710,4 +721,194 @@ test("a press that does not move is still a press", () => {
       { x: fish.attention.x, y: fish.attention.y },
     );
   }
+});
+
+/* ------------------------------------------------------------------ *
+ * Defects found in review
+ * ------------------------------------------------------------------ */
+
+// A flick across a seven-inch panel can be over inside a hundred milliseconds,
+// which at ten frames a second is one tick. The contact is only confirmed once
+// a frame, so such a gesture reached the aquarium as a press and a release with
+// nothing in between and was received as an ordinary tap: no direction, no
+// wake, no swipe. The final position is now confirmed before the release.
+test("a gesture that begins and ends between two frames is still a gesture", () => {
+  const base = settled(5);
+  const { left, y } = midWater(base);
+  const pressed = applyTouch(base, left, y);
+  const contact = { x: left, y, startedAt: 0 };
+
+  // Released 60 ms later, fifteen cells away: a swipe, and the aquarium has not
+  // had a single frame in which to be told about it.
+  const flicked = endContact(pressed, contact, { x: left + 15, y }, 0.06);
+  const wake = (flicked.impulses ?? []).filter((impulse) => impulse.source === "wake");
+  assert.equal(wake.length, 1, "a sub-frame swipe moved no water");
+  assert.ok(wake[0].dirX > 0.9, "the wake had no direction in it");
+
+  // The control: the same release with the finger where it started is a tap,
+  // and taps must not grow a wake.
+  const tapped = endContact(pressed, contact, { x: left, y }, 0.06);
+  assert.equal((tapped.impulses ?? []).filter((impulse) => impulse.source === "wake").length, 0);
+
+  // And the same thing through the replay, which delivers it the way the app
+  // does: one press and one release inside a single frame.
+  const observation = observeInteraction(base, {
+    history: pointerHistory(swipe({ x: left, y }, { x: left + 15, y }, { at: 1, seconds: 0.06 })),
+    observeSeconds: 4,
+  });
+  assert.ok(observation.gesture.wakesCreated >= 1, "the replayed flick moved no water either");
+});
+
+// Between re-read beats the response records used to keep the position the
+// contact had at the last beat. Nothing reads them while the contact is live -
+// the fish aim through the path - but the moment it is let go of they are the
+// only thing left, so a swipe that was over in a third of a second sent every
+// responder back to the first third of it.
+test("a response to a moving contact remembers where the contact is now", () => {
+  const base = settled(5);
+  const { left, y } = midWater(base);
+  let state = applyTouch(base, left, y);
+  let checked = 0;
+  for (let frame = 1; frame <= 20; frame += 1) {
+    const elapsed = frame * STEP;
+    state = applyContact(state, left + elapsed * 9, y, elapsed);
+    state = tick(state, STEP);
+    const contact = heldStimulus(state);
+    if (!contact || contact.gesture === GESTURES.press) continue;
+    for (const fish of state.individuals) {
+      if (fish.attention?.stimulusId !== contact.id) continue;
+      assert.equal(fish.attention.x, contact.x, "a responder was remembering a stale contact");
+      assert.equal(fish.attention.y, contact.y);
+      checked += 1;
+    }
+  }
+  assert.ok(checked > 0, "no fish ever answered the drag");
+
+  // And after the finger goes, that is where they look: the place it left, not
+  // the place it was when the aquarium last re-read it.
+  const endedAt = heldStimulus(state).x;
+  state = applyRelease(state);
+  for (const fish of state.individuals) {
+    if (!fish.attention || isPassiveRole(fish.attention.role)) continue;
+    assert.ok(
+      Math.abs(fish.attention.x - endedAt) < 0.001,
+      `a responder was left looking ${(endedAt - fish.attention.x).toFixed(1)} cells behind the release`,
+    );
+  }
+});
+
+// The ring a release leaves is water being disturbed, so what it disturbs is a
+// question about where the finger left - not about what the press landed on
+// twenty cells ago. Asking the stimulus's context instead raised a burst of
+// bubbles out of the gravel under a drag's mid-water endpoint, and left the
+// sand a drag ended on undisturbed.
+test("the ring a release leaves is rung where the finger left", () => {
+  const base = settled(5);
+  const floor = base.rows - TOUCH_FLOOR_ROWS;
+  const ring = (stimulus) => releaseStimulus(base, stimulus).impulses
+    .find((impulse) => impulse.id.startsWith("release:"));
+
+  const fromSand = { ...applyTouch(base, 20, floor).stimuli[0], x: 40, y: 8 };
+  assert.equal(fromSand.context, "substrate", "the fixture did not start on the sand");
+  assert.equal(ring(fromSand).contact, "water", "a drag into open water rang the gravel it had left");
+
+  const toSand = { ...applyTouch(base, 40, 8).stimuli[0], x: 20, y: floor };
+  assert.notEqual(toSand.context, "substrate");
+  assert.equal(ring(toSand).contact, "substrate", "a drag onto the sand did not ring it");
+});
+
+// Speed is a distance on the glass, where a row counts double; direction is a
+// unit vector in cells. Multiplied straight together, a finger drawn down the
+// tank was predicted at twice the lead it would actually travel.
+test("an interceptor aims at where the finger will be, in cells", () => {
+  const base = settled(5);
+  const contact = (dirX, dirY, speed) => ({
+    held: true,
+    gesture: GESTURES.drag,
+    x: 30,
+    y: 9,
+    dirX,
+    dirY,
+    speed,
+    curvature: 0,
+    sequence: 1,
+    path: [{ x: 30, y: 9, seconds: 0 }],
+  });
+  const record = { x: 30, y: 9, stimulusId: "touch:1" };
+  const interceptor = base.individuals
+    .find((fish) => attentionPursuit(fish, contact(1, 0, 12)) === PURSUITS.intercept);
+  assert.ok(interceptor, "no fish in this cast cuts a corner");
+  const lead = (dirX, dirY, speed) => {
+    const focus = stimulusFocus(contact(dirX, dirY, speed), record, interceptor);
+    return { x: focus.x - 30, y: focus.y - 9 };
+  };
+
+  // Five rows a second is ten column-widths a second on the glass. Over the
+  // lead window the finger travels 2.25 rows, and that is where the fish aims.
+  const down = lead(0, 1, 10);
+  assert.ok(Math.abs(down.y - 2.25) < 0.01, `a vertical drag was led ${down.y.toFixed(2)} rows`);
+  // The same speed sideways is the same distance on the glass and twice the
+  // cells, which is what a viewer sees.
+  const across = lead(1, 0, 10);
+  assert.ok(Math.abs(across.x - 4.5) < 0.01, `a horizontal drag was led ${across.x.toFixed(2)} cells`);
+  // The cap is a distance on the glass too, so a swipe straight down does not
+  // send a fish a third of the way through the floor.
+  const fast = lead(0, 1, 500);
+  assert.ok(fast.y <= 4.51, `a fast vertical swipe was led ${fast.y.toFixed(2)} rows`);
+});
+
+// Wakes expire in the order they were rung and the ring is refilled in the
+// order the slots come free, so which slot is empty has to be asked rather than
+// counted. Counting them named a slot that was still ringing: the newest wake
+// was cut short a fifth of the way through its life, the free slot was never
+// used, and a continuous drag settled at two.
+test("a wake takes an empty slot before it takes a live one", () => {
+  const base = settled(5);
+  const wake = (id, ageSeconds) => createImpulse({
+    id,
+    source: "wake",
+    x: 10 + Number(id.split(":")[1]) * 10,
+    y: 9,
+    ageSeconds,
+    dirX: 1,
+    dirY: 0,
+  });
+  const ring = (impulses) => registerWake({ ...base, impulses: Object.freeze(impulses) }, {
+    x: 50,
+    y: 9,
+    dirX: 1,
+    dirY: 0,
+    strength: 0.5,
+  });
+
+  // The first slot has expired; the two that are still ringing must survive.
+  const refilled = ring([wake("wake:1", 0.5), wake("wake:2", 0.2)]);
+  assert.deepEqual(
+    refilled.filter((impulse) => impulse.source === "wake").map((impulse) => impulse.id).sort(),
+    ["wake:0", "wake:1", "wake:2"],
+  );
+  assert.equal(refilled.find((impulse) => impulse.id === "wake:2").x, 30, "the newest wake was overwritten");
+
+  // With the ring full it is the oldest that goes, which is the cap.
+  const full = ring([wake("wake:0", 0.1), wake("wake:1", 0.8), wake("wake:2", 0.3)]);
+  const live = full.filter((impulse) => impulse.source === "wake");
+  assert.equal(live.length, MAX_WAKE_IMPULSES);
+  assert.equal(live.find((impulse) => impulse.id === "wake:1").x, 50, "the oldest wake was not the one replaced");
+});
+
+// The whole point of the ring: a drag of any length keeps a full wake behind it
+// rather than degrading to two.
+test("a long drag keeps its wake full", () => {
+  const base = settled(5);
+  let state = applyTouch(base, 4, 9);
+  let seen = 0;
+  for (let frame = 1; frame <= 120; frame += 1) {
+    const elapsed = frame * STEP;
+    state = applyContact(state, 4 + ((Math.sin(elapsed * 0.6) + 1) / 2) * (base.cols - 8), 9, elapsed);
+    state = tick(state, STEP);
+    const live = wakes(state).length;
+    assert.ok(live <= MAX_WAKE_IMPULSES, `${live} wakes against a cap of ${MAX_WAKE_IMPULSES}`);
+    if (live === MAX_WAKE_IMPULSES) seen += 1;
+  }
+  assert.ok(seen > 0, "a twelve-second drag never had a full wake behind it");
 });

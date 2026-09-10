@@ -74,7 +74,7 @@ import {
   stimulusSalience,
 } from "./interaction-events.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
-import { GESTURES, pathPointBefore } from "./pointer-path.js";
+import { GESTURES, ROW_ASPECT, pathPointBefore } from "./pointer-path.js";
 import { sampleRange } from "./prng.js";
 
 export const RESPONSE_ROLES = Object.freeze({
@@ -300,6 +300,8 @@ const TRAIL_BOLDNESS = 0.34;
 // How far ahead an intercepting fish aims, and how far behind a trailing one
 // follows. The lead is capped because a swipe's speed would otherwise send a
 // fish at a point on the far wall, which is not interception, it is leaving.
+// The cap is a distance on the glass rather than in cells, for the same reason
+// the speed it is compared against is - see `interceptLead`.
 const PURSUIT_LEAD_SECONDS = 0.45;
 const PURSUIT_LEAD_CELLS = 9;
 const PURSUIT_TRAIL_SECONDS = 0.35;
@@ -341,7 +343,7 @@ export function stimulusFocus(stimulus, attention, fish) {
   if ((stimulus.speed ?? 0) < PURSUIT_MINIMUM_SPEED) return remembered;
   const pursuit = attentionPursuit(fish, stimulus);
   if (pursuit === PURSUITS.intercept) {
-    const lead = Math.min(PURSUIT_LEAD_CELLS, stimulus.speed * PURSUIT_LEAD_SECONDS);
+    const lead = interceptLead(stimulus);
     return { x: stimulus.x + stimulus.dirX * lead, y: stimulus.y + stimulus.dirY * lead };
   }
   if (pursuit === PURSUITS.trail) {
@@ -351,6 +353,27 @@ export function stimulusFocus(stimulus, attention, fish) {
   // window there is nothing to mark, so a fish that has been left behind is
   // looking at the last thing it saw rather than at an invented trail.
   return stimulus.path?.[0] ?? remembered;
+}
+
+/**
+ * How far ahead of the finger an intercepting fish aims, in cells.
+ *
+ * The two numbers this is made of are measured in different spaces and mixing
+ * them is wrong in a way that only shows up vertically. `speed` is a distance
+ * on the *glass* per second, where a row counts double because a cell is twice
+ * as tall as it is wide; `dirX`/`dirY` is a unit vector in *cells*. Multiplied
+ * straight together, a finger drawn down the tank at five rows a second is
+ * predicted four and a half rows ahead when it will travel two and a quarter -
+ * the interceptor aims at twice the lead it should, and a diagonal one is
+ * skewed toward whichever component is vertical.
+ *
+ * So the speed is converted back into cells along the direction the finger is
+ * going, and the cap stays a distance on the glass: nine column-widths, which
+ * is four and a half rows when the finger is going straight down.
+ */
+function interceptLead(stimulus) {
+  const glassPerCell = Math.hypot(stimulus.dirX, stimulus.dirY * ROW_ASPECT) || 1;
+  return Math.min(PURSUIT_LEAD_CELLS, stimulus.speed * PURSUIT_LEAD_SECONDS) / glassPerCell;
 }
 
 /**
