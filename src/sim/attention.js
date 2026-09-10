@@ -191,6 +191,17 @@ const HOLD_INTEREST_FLOOR_GLASS = 0.45;
 // fish, which reads as indecision rather than as attention.
 const HOLD_ENGAGEMENT_BONUS = 0.08;
 
+// What a fish already at the glass needs to stay there, as a fraction of what
+// a fish somewhere else needs to come over. Deciding to cross the tank and
+// deciding to keep hanging where you already are is not the same decision, and
+// holding both to one bar gets one of them wrong: at the recruitment bar every
+// responder leaves the moment habituation touches it, and a hold has nobody
+// left at it inside half a minute. This is the difference between them, and it
+// is what makes "willingness to remain nearby" a personality trait rather than
+// a timer - a fish that likes the glass stays above the lower bar for as long
+// as the finger is there, and one that does not falls under it and goes.
+const HOLD_INCUMBENT_FRACTION = 0.5;
+
 // A response to a held press lives longer than one to a tap, because it is
 // renewed for as long as the finger is there and because this is also the
 // window it fades over once the finger goes. Seeded per fish, so responders
@@ -430,9 +441,22 @@ export function mergeHoldAttention(previous, assigned, stimulus) {
       holdSeconds: stimulus.holdSeconds,
     };
   }
+  // A fish that stays engaged across a change of role keeps the patience it has
+  // already spent. The record's age *is* that patience - it is what
+  // `attentionEngagement` hands the interest score - so starting it over would
+  // hand a fish that has been at the glass for ten seconds its full appetite
+  // back, and a fish sitting near two thresholds would flip between coming and
+  // hanging back every 0.6 s, moving its standoff instead of habituating.
+  //
+  // A fish that was *not* engaged has spent none of its patience on going, so
+  // one that has just decided to go starts its clock now.
+  const stayedEngaged = Boolean(sameEvent
+    && !isPassiveRole(previous.role)
+    && !isPassiveRole(assigned.role));
   return {
     ...assigned,
     ...carried,
+    ageSeconds: stayedEngaged ? previous.ageSeconds : assigned.ageSeconds,
     // A fish that had gone to look and is now merely watching has not been
     // interrupted - it has had enough. That reads differently from a fish that
     // never went, so it is worth being able to tell them apart.
@@ -515,6 +539,9 @@ export function assignAttention(state, stimulus, {
       affinities,
       commitment: clamp(commitmentFor(one), 0, 1),
       engagedSeconds: attentionEngagement(one, stimulus),
+      // The answer this fish is already giving this presence, if any. A fresh
+      // press never finds one.
+      previousRole: attentionEngagement(one, stimulus) === null ? null : one.attention.role,
       perceives: perceivesStimulus(one, stimulus),
       interest: 0,
       role: null,
@@ -555,6 +582,36 @@ export function assignAttention(state, stimulus, {
   let primary = first ? 1 : 0;
   let secondary = 0;
   let delayed = 0;
+
+  // A fish already answering this presence keeps the answer it is giving, as
+  // long as it still wants to give it. Roles otherwise fall out of a ranking
+  // against a cap, and two engaged fish either side of a threshold swap
+  // `investigate` and `approach` between them on consecutive re-reads - which a
+  // viewer sees as one fish jerking 2.7 cells in and out every half second
+  // rather than as two fish hanging at the glass. Interest still decides
+  // whether it keeps answering at all: a fish whose patience has run out fails
+  // the threshold here and falls through to the ordinary assignment below, the
+  // same as any other fish.
+  for (const candidate of rank(ordered)) {
+    if (candidate.role || !candidate.previousRole || !available(candidate)) continue;
+    const { previousRole, interest } = candidate;
+    const stays = (threshold) => interest >= threshold * HOLD_INCUMBENT_FRACTION;
+    if (previousRole === RESPONSE_ROLES.investigate
+      && stays(INVESTIGATE_THRESHOLD) && primary < MAX_INVESTIGATORS) {
+      candidate.role = RESPONSE_ROLES.investigate;
+      primary += 1;
+      investigators.add(candidate.fish.seed);
+    } else if (previousRole === RESPONSE_ROLES.approach
+      && stays(APPROACH_THRESHOLD) && secondary < MAX_SECONDARY) {
+      candidate.role = RESPONSE_ROLES.approach;
+      secondary += 1;
+    } else if (previousRole === RESPONSE_ROLES.delayed
+      && stays(DELAYED_THRESHOLD) && delayed < MAX_DELAYED) {
+      candidate.role = RESPONSE_ROLES.delayed;
+      delayed += 1;
+    }
+  }
+
   for (const candidate of rank(ordered)) {
     if (candidate.role) continue;
     const { interest, commitment } = candidate;

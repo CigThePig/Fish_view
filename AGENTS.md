@@ -156,13 +156,22 @@ offline gap. `tests/interaction-events.test.js` guards those rules.
 
 A press that stays put past `HOLD_THRESHOLD_SECONDS` becomes a **held
 stimulus** — the same event, refreshed in place, carrying a hold clock instead
-of decaying. There is at most one, it is never re-registered, and it lets go of
-itself after `HOLD_STALE_SECONDS` without a refresh, so a lost `pointerup`
-cannot leave a permanent disturbance. Release turns it into a short decaying
-aftermath and rings the water once more, gently. The water is otherwise still
-for the whole hold: a finger resting on glass is not a continuous impulse, and
-making it one would repaint the same patch for as long as a child cared to lean
-on it.
+of decaying. There is at most one and it is never re-registered. Release turns
+it into a short decaying aftermath and rings the water once more, gently. The
+water is otherwise still for the whole hold: a finger resting on glass is not a
+continuous impulse, and making it one would repaint the same patch for as long
+as a child cared to lean on it.
+
+**Ending a contact is the platform's job, and it is deliberately
+over-covered.** `HOLD_STALE_SECONDS` lets a held stimulus go when nothing
+confirms it, but that only protects a caller that *stops calling* — it cannot
+help while `src/app.js` is still confirming a contact every frame, which is
+exactly what a lost `pointerup` leaves it doing. So `src/app.js` ends a contact
+on the release, on a cancel from the same pointer, on `lostpointercapture`, on
+a release delivered anywhere else on the page, when the drawer opens, when the
+tab goes away — and, needing no event at all, from the frame loop once the
+contact passes `MAX_HOLD_SECONDS`. If you add another way for a press to begin,
+give it a way to end that does not depend on an event arriving.
 
 The Phase 2 response model sits on top:
 
@@ -201,6 +210,14 @@ that has not had its turn. Two rules make it bounded and readable:
   curiosity, glass affinity and boldness (2.4 s to about 14.5 s), so a cautious
   fish is not a slow bold one — it arrives later, stops further out and gives up
   sooner.
+- **Staying costs less interest than coming.** A fish already answering keeps
+  the answer it is giving at `HOLD_INCUMBENT_FRACTION` of the bar a fish
+  somewhere else has to clear to come over. Both halves matter: at one bar, two
+  engaged fish either side of a threshold swap roles every re-read (a fish
+  jerking 2.7 cells in and out of the glass twice a second), and every responder
+  leaves the moment habituation touches it, so a hold has nobody at it inside
+  half a minute. The gap between the two bars is what makes "willingness to
+  remain nearby" a trait rather than a timer.
 - **A re-read carries no guarantee.** The *press* must always be answered; a
   press that is still going on need not be. That is what lets a long hold end in
   the plan's last stage — everyone settles — and it is why a sixty-second hold

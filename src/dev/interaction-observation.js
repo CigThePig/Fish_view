@@ -271,7 +271,15 @@ export function applyPointerEvent(state, event, { rect = displayRect(), primary 
   if (!primary) return { state, delivered: false, reason: "not-the-primary-pointer" };
   if (button !== 0) return { state, delivered: false, reason: "not-the-primary-button" };
   const point = aquariumPoint(pointerEventForWorldPoint(event.x, event.y, rect), rect);
-  if (point.hotspot) return { state, delivered: false, reason: "developer-hotspot" };
+  // The hotspot rejects *presses*. It is not part of the aquarium's interaction
+  // surface, so a press there starts nothing - but a finger that started in the
+  // aquarium and happens to lift over the corner has still lifted, and
+  // `src/app.js` ends the contact before it looks at hotspot tap semantics at
+  // all. Rejecting the release here instead would leave the replay confirming a
+  // finger that is no longer down for the rest of the run.
+  if (point.hotspot && event.type === "down") {
+    return { state, delivered: false, reason: "developer-hotspot", point };
+  }
   if (event.type === "down") {
     return { state: applyTouch(state, point.x, point.y), delivered: true, reason: "touch", point };
   }

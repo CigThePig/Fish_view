@@ -5,6 +5,7 @@ import { clearPersistedState, loadPersistedState, savePersistedState } from "./p
 import { VisibilityClock } from "./platform/visibility-clock.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
 import { DEFAULT_SEED } from "./sim/config.js";
+import { MAX_HOLD_SECONDS } from "./sim/interaction-events.js";
 import { topAffinities } from "./sim/fish-personality.js";
 import { hashSeed } from "./sim/prng.js";
 import {
@@ -174,7 +175,16 @@ function frame(timestamp) {
     // A finger resting on the glass is told to the aquarium once per tick,
     // before the tick, so the presence the fish read is the one that is there
     // now. The clock lives here because a simulation may not have one.
-    if (contact) state = applyHold(state, contact.x, contact.y, (timestamp - contact.time) / 1000);
+    if (contact) {
+      const heldSeconds = (timestamp - contact.time) / 1000;
+      // Past the longest hold the simulation will describe, stop confirming it.
+      // A pointer event can go missing - a lost `pointerup`, a contact the
+      // browser stopped telling us about - and a contact nothing ever clears
+      // would pin a fish to the glass for as long as the page was open. This
+      // needs no event to arrive, which is the point of it.
+      if (heldSeconds > MAX_HOLD_SECONDS) endContact();
+      else state = applyHold(state, contact.x, contact.y, heldSeconds);
+    }
     state = tick(state, delta);
     accumulator = 0;
     drawVisible();
@@ -197,10 +207,17 @@ function syncControls() {
 syncControls();
 let pointerStart = null;
 // The finger currently on the aquarium, in world cells, and when it landed.
-// There is at most one because the aquarium answers the primary pointer only;
-// it is cleared by the release, by a cancelled contact and by the drawer
-// opening, and a hold whose clearing is somehow missed is let go of by the
-// simulation itself after HOLD_STALE_SECONDS.
+// There is at most one because the aquarium answers the primary pointer only.
+//
+// Ending it is the platform's job and it is deliberately over-covered, because
+// the simulation's own staleness guard cannot help while this file is still
+// confirming a finger every frame: a `pointerup` the page never receives leaves
+// `contact` set, and a hold that is refreshed forever is never stale. So the
+// contact is ended by the release, by a cancelled contact, by the pointer
+// capture being lost, by a release that landed anywhere else on the page, by
+// the drawer opening, by the tab going away - and, whatever any of those did,
+// by the frame loop once the contact passes the longest hold the simulation
+// will describe. That last one needs no event to arrive at all.
 let contact = null;
 function endContact() {
   if (!contact) return;
@@ -244,7 +261,28 @@ canvas.addEventListener("pointerup", (event) => {
   if (gesture.tap(point.hotspot, now)) setDebugOpen(true);
 });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-canvas.addEventListener("pointercancel", () => { pointerStart = null; endContact(); gesture.reset(); });
+canvas.addEventListener("pointercancel", (event) => {
+  pointerStart = null;
+  // Only the finger that owns the contact may end it. A second finger on the
+  // five-point panel reaches nothing, and that has to include the way it
+  // leaves: cancelling any pointer used to release the primary hold.
+  if (contact && event.pointerId === contact.id) endContact();
+  gesture.reset();
+});
+// The browser tells us the contact is no longer ours - which it does after an
+// ordinary release too, and, unlike `pointerup`, in the cases where the release
+// itself never reaches the canvas.
+canvas.addEventListener("lostpointercapture", (event) => {
+  if (contact && event.pointerId === contact.id) endContact();
+});
+// A finger that went up somewhere other than the aquarium is still a finger
+// that went up. Without capture - a synthetic pointer, a browser that declined
+// it - the canvas handler never hears about it.
+for (const type of ["pointerup", "pointercancel"]) {
+  document.addEventListener(type, (event) => {
+    if (event.target !== canvas && contact && event.pointerId === contact.id) endContact();
+  });
+}
 document.addEventListener("pointerdown", (event) => {
   if (event.target !== canvas) gesture.reset();
 });

@@ -136,7 +136,7 @@ export function applyTouch(state, x, y) {
   // acknowledged, and because a response chosen a frame later would be a
   // response to an aquarium that had already moved.
   const context = classifyStimulusContext(state, pressX, pressY);
-  const events = registerTouch(state, safeX, safeY, context);
+  const events = registerTouch(state, safeX, safeY, context, { pressX, pressY });
   const stimulus = events.stimulus;
   const attention = assignAttention({ ...state, stimuli: events.stimuli }, stimulus, {
     commitmentFor: (fish) => activityCommitment(fish.activity?.current),
@@ -283,10 +283,18 @@ export function applyHold(state, x, y, holdSeconds) {
   if (!existing || existing.released) return state;
   if (!existing.held && seconds < HOLD_THRESHOLD_SECONDS) return state;
 
-  // How far the finger has travelled from where it landed - not from where it
-  // was a frame ago, which every finger is always nearly at.
-  const { safeX, safeY } = pressPoint(state, x, y);
-  if (Math.hypot(safeX - existing.x, safeY - existing.y) > HOLD_MOVEMENT_CELLS) {
+  // How far the finger has travelled from where it landed - measured on the
+  // point the viewer actually touched, not on the one the aquarium acts on.
+  // Two reasons, and both of them are bugs otherwise: it is measured from the
+  // *landing* point rather than from where the finger was a frame ago, which
+  // every finger is always nearly at; and it is measured on the *raw* point,
+  // because the acted-on point is clamped into the band a fish can be sent to,
+  // so a finger drawn three rows through the gravel moves it not at all and a
+  // drag along the sand would be promoted to a stationary hold.
+  const { pressX, pressY } = pressPoint(state, x, y);
+  const anchorX = existing.pressX ?? existing.x;
+  const anchorY = existing.pressY ?? existing.y;
+  if (Math.hypot(pressX - anchorX, pressY - anchorY) > HOLD_MOVEMENT_CELLS) {
     return existing.held ? applyRelease(state) : state;
   }
 

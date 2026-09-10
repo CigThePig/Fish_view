@@ -219,6 +219,14 @@ export function createStimulus({
   // who finds the event interesting, and it is deliberately not the same
   // question as what the water physically touched.
   context = "open-water",
+  // Where the viewer actually pressed, before the point was clamped into the
+  // band a fish can be sent to. It is what the hold's movement allowance is
+  // measured against: `x` and `y` are clamped, so a finger travelling three
+  // rows inside the gravel band moves them not at all, and a drag across the
+  // sand would be promoted to a stationary hold. Defaults to the clamped point,
+  // which is right for the labs and fixtures that build a stimulus directly.
+  pressX = x,
+  pressY = y,
   // Which press this was, for ordering events that are otherwise equal.
   sequence = 0,
   // The hold, in three numbers and two flags. `held` is a finger currently on
@@ -236,6 +244,8 @@ export function createStimulus({
     source,
     x,
     y,
+    pressX,
+    pressY,
     intensity,
     radius,
     ageSeconds,
@@ -266,12 +276,14 @@ export function createImpulse({
   return Object.freeze({ id, source, x, y, strength, radius, ageSeconds, durationSeconds, contact, seed, sequence });
 }
 
-function touchStimulus(state, x, y, sequence, context) {
+function touchStimulus(state, x, y, sequence, context, pressX, pressY) {
   return createStimulus({
     id: `touch:${sequence}`,
     sequence,
     x,
     y,
+    pressX,
+    pressY,
     context,
     radius: TOUCH_STIMULUS_RADIUS_CELLS,
   });
@@ -336,9 +348,14 @@ function admit(list, event, maximum, amplitude) {
  * applies the immediate response - a press has to be answered in the frame it
  * arrives, never on the next tick.
  */
-export function registerTouch(state, x, y, context = "open-water") {
+export function registerTouch(state, x, y, context = "open-water", { pressX = x, pressY = y } = {}) {
   const sequence = ((state.interactionSequence ?? 0) + 1) % SEQUENCE_MODULO;
-  const stimuli = admit(state.stimuli ?? [], touchStimulus(state, x, y, sequence, context), MAX_STIMULI, stimulusSalience);
+  const stimuli = admit(
+    state.stimuli ?? [],
+    touchStimulus(state, x, y, sequence, context, pressX, pressY),
+    MAX_STIMULI,
+    stimulusSalience,
+  );
   const impulses = admit(state.impulses ?? [], touchImpulse(state, x, y, sequence), MAX_IMPULSES, impulseStrength);
   return {
     // The events as the aquarium now holds them, identities included.
@@ -361,14 +378,27 @@ export function heldStimulus(state) {
   return (state.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
 }
 
-/** The most recent live touch stimulus, which is the one a gesture is about. */
+/**
+ * The most recent live touch stimulus, which is the one a gesture is about.
+ *
+ * "Most recent" is the press that *is* the aquarium's current sequence number,
+ * not the press with the largest one. Those are the same thing 65 535 times out
+ * of 65 536, and on the wrap they are opposites: the counter goes back to 0
+ * while a press from a moment ago still carries 65 535, and picking the larger
+ * number would hand the gesture an event it has nothing to do with - measuring
+ * the hold's movement allowance against the wrong position, and refreshing the
+ * wrong stimulus if it cleared it. Sequence numbers wrap on purpose (they must
+ * not grow over months of touching), so anything comparing them has to.
+ */
 export function latestTouchStimulus(state) {
-  let best = null;
+  const current = state.interactionSequence ?? 0;
+  let fallback = null;
   for (const stimulus of state.stimuli ?? []) {
     if (stimulus.source !== "touch") continue;
-    if (!best || (stimulus.sequence ?? 0) > (best.sequence ?? 0)) best = stimulus;
+    if ((stimulus.sequence ?? 0) === current) return stimulus;
+    if (!fallback || (stimulus.sequence ?? 0) > (fallback.sequence ?? 0)) fallback = stimulus;
   }
-  return best;
+  return fallback;
 }
 
 /**

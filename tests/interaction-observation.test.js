@@ -126,6 +126,15 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(hotspot.delivered, false);
   assert.equal(hotspot.reason, "developer-hotspot");
   assert.equal(hotspot.state, state);
+
+  // The corner rejects presses, not releases. A finger that started in the
+  // aquarium and happens to lift over it has still lifted, and `src/app.js`
+  // ends the contact before it looks at hotspot tap semantics at all -
+  // rejecting the release here would leave a replay confirming a finger that is
+  // no longer down for the rest of the run.
+  const cornerRelease = applyPointerEvent(held, { type: "up", x: DISPLAY.cols - 1, y: 0.5, seconds: 1 });
+  assert.equal(cornerRelease.reason, "release");
+  assert.equal(heldStimulus(cornerRelease.state), null);
 });
 
 test("only the primary pointer reaches the aquarium", () => {

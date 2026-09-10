@@ -19,10 +19,13 @@ import test from "node:test";
 import {
   HOLD_PHASES,
   HOLD_PHASE_LIST,
+  RESPONSE_ROLES,
   attentionInvestigates,
   attentionPatience,
+  createAttention,
   holdPhase,
   isPassiveRole,
+  mergeHoldAttention,
 } from "../src/sim/attention.js";
 import {
   HOLD_MOVEMENT_CELLS,
@@ -31,8 +34,15 @@ import {
   MAX_HOLD_SECONDS,
   MAX_IMPULSES,
   MAX_STIMULI,
+  RELEASE_IMPULSE_SECONDS,
+  RELEASE_IMPULSE_STRENGTH,
+  createImpulse,
+  createStimulus,
   heldStimulus,
+  latestTouchStimulus,
 } from "../src/sim/interaction-events.js";
+import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
+import { TOUCH_FLOOR_ROWS, WATERLINE_ROWS } from "../src/sim/config.js";
 import { affinitiesFromSeed } from "../src/sim/fish-personality.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
 import { ACTIVITIES } from "../src/sim/fish-activities.js";
@@ -73,6 +83,12 @@ function holdFor(state, x, y, holdSeconds, { afterSeconds = 0, onFrame = null } 
 
 function engaged(state) {
   return state.individuals.filter((fish) => attentionInvestigates(fish.attention)).length;
+}
+
+// The row a press at this row is actually acted on, which is where the aquarium
+// can send a fish rather than where the viewer touched.
+function clampedRow(state, y) {
+  return Math.min(Math.max(y, WATERLINE_ROWS), state.rows - TOUCH_FLOOR_ROWS);
 }
 
 function phases(state) {
@@ -320,9 +336,21 @@ test("letting go does not twitch the fish that had stopped watching", () => {
       );
     }
     // And the fish that had not stopped are visibly affected by it, so this is
-    // a test about who reacts rather than about nothing reacting.
+    // a test about who reacts rather than about nothing reacting. A fish
+    // hovering at the glass answers the release by drifting off it rather than
+    // by swinging its head, so this reads position and speed as well.
+    const place = (state) => new Map(state.individuals.map((fish) => [fish.seed, fish]));
+    const releasedFish = place(released);
+    const heldFish = place(stillHeld);
+    const moved = (seedOf) => {
+      const a = heldFish.get(seedOf);
+      const b = releasedFish.get(seedOf);
+      return Math.hypot(a.x - b.x, a.y - b.y)
+        + Math.abs(Math.hypot(a.vx, a.vy) - Math.hypot(b.vx, b.vy))
+        + turn(without.get(seedOf), withRelease.get(seedOf)) / 90;
+    };
     assert.ok(
-      stayers.some((seedOf) => turn(without.get(seedOf), withRelease.get(seedOf)) > 1),
+      stayers.some((seedOf) => moved(seedOf) > 0.01),
       `seed ${seed}: nothing at the glass noticed the finger leaving`,
     );
   }
@@ -469,6 +497,174 @@ test("holding the same place twice does not replay the same performance", () => 
   // same result, which is what makes the difference above a property of the
   // state rather than of a clock.
   assert.equal(performance(base, 33, 9.5, 8), performance(base, 33, 9.5, 8));
+});
+
+/* ------------------------------------------------------------------ *
+ * Defects found in review
+ * ------------------------------------------------------------------ */
+
+// A fish that stays engaged across a change of role keeps the patience it has
+// already spent. The record's age is that patience, so rebuilding the record
+// handed a ten-second veteran its full appetite back - and a fish sitting near
+// a threshold flipped investigate/approach on consecutive 0.6 s reviews,
+// jerking 2.7 cells in and out of the glass instead of habituating.
+test("an engaged fish keeps the patience it has spent, and its answer", () => {
+  const stimulus = createStimulus({ id: "touch:1", x: 30, y: 9, held: true, holdSeconds: 8 });
+  const fish = { seed: 12345, x: 31, y: 9, attention: null };
+  const going = { ...createAttention(fish, stimulus, RESPONSE_ROLES.investigate), ageSeconds: 8, resume: { current: "cruise" } };
+
+  // Same event, different active role: the clock carries.
+  const hangingBack = createAttention(fish, stimulus, RESPONSE_ROLES.approach);
+  const merged = mergeHoldAttention(going, hangingBack, stimulus);
+  assert.equal(merged.role, RESPONSE_ROLES.approach);
+  assert.equal(merged.ageSeconds, 8);
+  assert.equal(merged.resume.current, "cruise");
+
+  // A fish that was not engaged has spent nothing on going, so deciding to go
+  // starts its clock now.
+  const watching = { ...createAttention(fish, stimulus, RESPONSE_ROLES.watch), ageSeconds: 8 };
+  const decides = mergeHoldAttention(watching, createAttention(fish, stimulus, RESPONSE_ROLES.investigate), stimulus);
+  assert.equal(decides.ageSeconds, 0);
+
+  // And across the whole gesture, on the production path, an engaged fish does
+  // not change its mind about how close it means to get.
+  for (const seed of [5, 147, 1234]) {
+    const last = new Map();
+    const flips = new Map();
+    holdFor(settled(seed), 33, 9.5, 40, {
+      onFrame: (state) => {
+        for (const one of state.individuals) {
+          const role = one.attention?.role;
+          if (!role) continue;
+          const previous = last.get(one.seed);
+          if (previous && previous !== role && !isPassiveRole(previous) && !isPassiveRole(role)) {
+            flips.set(one.seed, (flips.get(one.seed) ?? 0) + 1);
+          }
+          last.set(one.seed, role);
+        }
+      },
+    });
+    const worst = Math.max(0, ...flips.values());
+    assert.ok(worst <= 1, `seed ${seed}: a fish changed its standoff ${worst} times during one hold`);
+  }
+});
+
+// A fish that likes the glass stays with a finger that will not go away. It
+// used to, for the wrong reason - a role change reset its patience - so this
+// pins the behaviour to the thing that is meant to produce it.
+test("some fish are still at the glass a minute in, and most are not", () => {
+  for (const seed of [5, 147, 1234]) {
+    const samples = [];
+    const held = holdFor(settled(seed), 33, 9.5, 60, {
+      onFrame: (state, seconds) => {
+        if ([30, 45, 59].some((mark) => Math.abs(seconds - mark) < 0.001)) samples.push(engaged(state));
+      },
+    });
+    assert.equal(samples.length, 3);
+    for (const count of samples) {
+      assert.ok(count >= 1, `seed ${seed}: nothing was left at a finger that never moved`);
+      assert.ok(count <= 4, `seed ${seed}: ${count} fish were still committed at a minute`);
+    }
+    // The ones that stay are the ones that like the glass. Not every one of
+    // them individually - a fish that happened to be right beside the finger
+    // stays on proximity alone, which is as it should be - but as a group they
+    // are drawn from the top of the cast on the trait that is supposed to
+    // decide it, and by a wide margin.
+    const stayed = held.individuals.filter((fish) => attentionInvestigates(fish.attention));
+    const mean = (values) => values.reduce((total, value) => total + value, 0) / values.length;
+    const glassOf = (one) => affinitiesFromSeed(one.seed).glass;
+    assert.ok(
+      mean(stayed.map(glassOf)) > mean(held.individuals.map(glassOf)) + 0.1,
+      `seed ${seed}: the fish that stayed were no fonder of the glass than the cast`,
+    );
+  }
+});
+
+// Sequence numbers wrap on purpose - they must not grow over months of
+// touching - so anything that compares them has to. On the wrap the newest
+// press carries the smallest number, and picking the largest handed the gesture
+// an unrelated event to measure its movement allowance against.
+test("a hold finds its own press across the sequence wraparound", () => {
+  const base = settled(5);
+  // The counter is one press away from wrapping, and an earlier press is still
+  // live at the far end of the tank.
+  const wrapping = { ...base, interactionSequence: 65_535, stimuli: Object.freeze([]) };
+  const pressed = applyTouch(wrapping, 10, 9);
+  assert.equal(pressed.interactionSequence, 0);
+  const withElder = {
+    ...pressed,
+    stimuli: Object.freeze([
+      createStimulus({ id: "touch:65535", sequence: 65_535, x: 55, y: 9 }),
+      ...pressed.stimuli,
+    ]),
+  };
+
+  assert.equal(latestTouchStimulus(withElder).sequence, 0);
+  const holding = applyHold(withElder, 10, 9, HOLD_THRESHOLD_SECONDS + 0.1);
+  assert.equal(heldStimulus(holding).x, 10, "the hold formed on the wrong press");
+  assert.equal(heldStimulus(holding).sequence, 0);
+});
+
+// The movement allowance is about the viewer's finger, and the point the
+// aquarium acts on is clamped into the band a fish can be sent to. Measured on
+// the clamped point, a finger drawn three rows through the gravel does not move
+// at all, and a drag along the sand is promoted to a stationary hold.
+test("a finger drawn through the clamped bands is not a stationary hold", () => {
+  const base = settled(5);
+  // Down in the gravel, and up above the waterline: the two bands where the
+  // point a fish can be sent to stops following the finger.
+  for (const [from, to] of [[19, 16], [0.05, 1.95]]) {
+    let holding = applyHold(applyTouch(base, 30, from), 30, from, HOLD_THRESHOLD_SECONDS + 0.1);
+    const anchor = heldStimulus(holding);
+    assert.ok(anchor, `a press at row ${from} did not become a presence`);
+    // The presence remembers where the viewer touched, not only where the
+    // aquarium can act - which is the whole point of the two coordinates.
+    assert.equal(anchor.pressY, from);
+    // Both ends of this drag are acted on at the same row, so measuring the
+    // movement there would see a finger that never moved.
+    assert.equal(
+      clampedRow(base, from),
+      clampedRow(base, to),
+      `rows ${from} and ${to} were expected to clamp together`,
+    );
+    assert.ok(Math.abs(to - from) > HOLD_MOVEMENT_CELLS);
+    holding = applyHold(holding, 30, to, HOLD_THRESHOLD_SECONDS + 0.6);
+    assert.equal(heldStimulus(holding), null, `a ${Math.abs(to - from)}-row drag stayed a hold`);
+  }
+
+  // A fingertip's worth of wander inside the same band is still a hold.
+  let steady = applyHold(applyTouch(base, 30, 19), 30, 19, HOLD_THRESHOLD_SECONDS + 0.1);
+  steady = applyHold(steady, 30, 18.4, HOLD_THRESHOLD_SECONDS + 0.6);
+  assert.ok(heldStimulus(steady), "a small wander ended the hold");
+});
+
+// The ring a release makes is meant to be the gentler of the two. The substrate
+// bubble source read every substrate impulse as the same event, so letting go
+// on the sand raised a second full burst - which reads as another press.
+test("letting go of the sand lifts less than pressing it did", () => {
+  const base = settled(5);
+  const y = base.rows - 5;
+  const raised = (impulse) => {
+    const ids = new Set();
+    for (let age = 0; age < impulse.durationSeconds; age += 0.05) {
+      const state = { ...base, impulses: Object.freeze([createImpulse({ ...impulse, ageSeconds: age })]) };
+      for (const record of createBubbleWorldRecords(state)) {
+        if (record.kind === "touch") ids.add(record.id);
+      }
+    }
+    return ids.size;
+  };
+  const press = { id: "touch:1", x: 20, y, contact: "substrate", seed: 12_345, durationSeconds: 3.2 };
+  const release = { ...press, id: "release:1", strength: RELEASE_IMPULSE_STRENGTH, durationSeconds: RELEASE_IMPULSE_SECONDS };
+  const pressBubbles = raised(press);
+  assert.ok(pressBubbles >= 3, "a press on the sand stopped raising a burst");
+  assert.ok(
+    raised(release) < pressBubbles,
+    "the release raised as much silt as the press did",
+  );
+  // A press is a full-strength impulse and must raise exactly what it always
+  // did, so nothing about the tap changed here.
+  assert.equal(raised({ ...press, strength: 1 }), pressBubbles);
 });
 
 test("a hold does not turn the aquarium into a crowd at the glass", () => {

@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, INITIAL_INDIVIDUAL_COUNT } from "../src/sim/config.js
 import { createAquariumState } from "../src/sim/state.js";
 import { ARRIVAL_INTERVAL_DAYS } from "../src/sim/fish-roster.js";
 import { savePersistedState } from "../src/platform/storage.js";
+import { MAX_HOLD_SECONDS } from "../src/sim/interaction-events.js";
 
 test("the application resumes one aquarium after suspension and displays restored/reset controls", async (t) => {
   // Load the actual entry point with a small event host and real Canvas. This
@@ -106,6 +107,49 @@ test("the application resumes one aquarium after suspension and displays restore
   canvas.listeners.get('keydown')({key:' ', repeat:false, preventDefault(){}});
   assert.equal(panel.hidden,false);
   nodes.get('#debug-close').listeners.get('click')();
+
+  // A finger left on the glass, and the three ways this file has of letting go
+  // of one. The simulation's own staleness guard cannot help while the app is
+  // still confirming a contact every frame, so ending it is the platform's job
+  // and every path out of a press has to take it.
+  const centreX = bounds.left + bounds.width / 2;
+  const centreY = bounds.top + bounds.height / 2;
+  const advance = (steps, ms = 250) => {
+    for (let step = 0; step < steps; step += 1) { now += ms; animationFrame(now); }
+  };
+  // The app's own window onto what the fish are doing. A press is answered by
+  // at least one fish going to look, and a response outlives its stimulus by a
+  // second or two, so five seconds without one is a released contact.
+  const answering = () => nodes.get("#personality-output").textContent.includes("touch-react");
+
+  pointer("pointerdown", centreX, centreY);
+  advance(8);
+  assert.equal(answering(), true, "a press was not answered");
+
+  // A second finger on the five-point panel reaches nothing, and that has to
+  // include the way it leaves: cancelling it must not release the primary hold.
+  pointer("pointercancel", centreX, centreY, { pointerId: 2, isPrimary: false });
+  advance(20);
+  assert.equal(answering(), true, "another finger's cancellation released the hold");
+
+  // The browser saying the contact is no longer ours does end it - and it says
+  // so in the cases where the release itself never reaches the canvas.
+  canvas.listeners.get("lostpointercapture")({ pointerId: 1 });
+  advance(24);
+  assert.equal(answering(), false, "losing the pointer capture did not release the hold");
+
+  // And with no event of any kind - a `pointerup` the page simply never
+  // received - the frame loop stops confirming the contact by itself once it
+  // passes the longest hold the simulation will describe. Nothing else in this
+  // file can rescue that case, and a contact nothing ever clears would pin a
+  // fish to the glass for as long as the page stayed open.
+  pointer("pointerdown", centreX, centreY);
+  advance(8);
+  assert.equal(answering(), true, "a second press was not answered");
+  advance(1, MAX_HOLD_SECONDS * 1000 + 1000);
+  advance(24);
+  assert.equal(answering(), false, "an abandoned contact was still being confirmed");
+
   // Clear touch bookkeeping before the existing offline lifecycle assertions.
   nodes.get("#reset-simulation").listeners.get("click")();
     const hiddenAt = now;
