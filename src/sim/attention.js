@@ -35,12 +35,32 @@
  * The record each fish carries is fixed-size and transient - never serialised,
  * cleared by an offline gap, replaced by the next press - and there is exactly
  * one per fish, so fifteen of them is the aquarium's hard maximum.
+ *
+ * Phase 3 adds the arc a *held* press has that a tap cannot. A tap is answered
+ * once; a finger that stays is answered continuously, and the answer has stages
+ * in it - notice, orient, approach, inspect, linger, settle, and a departure
+ * once the finger goes. None of that is a new state machine: the stages are
+ * read from the record and the fish, the roles are the same six, and the thing
+ * that ends a hold is not the disturbance fading but each fish's own patience
+ * with it running out. That is why a cautious fish is not a slow bold one. It
+ * arrives later, stops further out, and gives up sooner, because patience,
+ * standoff and latency all come off different traits.
+ *
+ * The hold is re-read on a slow beat rather than every frame (see `applyHold`
+ * in src/sim/state.js), which is what lets a fish arrive late, follow a
+ * companion to the glass, or quietly hand over to a fish that has not yet had
+ * its turn. Everything a hold can do it does inside the same caps a tap has.
  */
 
 import { clamp, traitsFromSeed } from "./entities.js";
 import { speciesCanBottomFeed } from "./fish-growth.js";
 import { contextAffinityKey } from "./interaction-context.js";
-import { perceivesStimulus, stimulusSalience } from "./interaction-events.js";
+import {
+  MAX_HOLD_SECONDS,
+  holdFalloff,
+  perceivesStimulus,
+  stimulusSalience,
+} from "./interaction-events.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
 import { sampleRange } from "./prng.js";
 
@@ -111,6 +131,153 @@ const WATCH_TURN_RADIANS = 0.85;
 const ACKNOWLEDGE_TURN_RADIANS = 0.4;
 const WARY_TURN_RADIANS = 0.5;
 
+/* ------------------------------------------------------------------ *
+ * A held press
+ * ------------------------------------------------------------------ */
+
+/**
+ * The stages of an answer to a finger that stays.
+ *
+ * These are read from the response and the fish, never stored and never
+ * advanced by a timer, so a phase cannot get stuck and there is no machine to
+ * keep in step with the roles. A fish may stop at any of them - most stop at
+ * `orient` - and only the ones that went get the later ones.
+ */
+export const HOLD_PHASES = Object.freeze({
+  // It has registered, and has not done anything about it yet.
+  notice: "notice",
+  // It has turned toward the presence but is not leaving its line.
+  orient: "orient",
+  // On its way, still further out than it means to stop.
+  approach: "approach",
+  // Arrived: nosing at the glass where the finger is.
+  inspect: "inspect",
+  // Still there, and has been for a while. The stayers.
+  linger: "linger",
+  // The finger has not gone, but this fish is done with it.
+  settle: "settle",
+  // The finger has gone and the fish is still finishing its answer.
+  depart: "depart",
+});
+
+export const HOLD_PHASE_LIST = Object.freeze(Object.values(HOLD_PHASES));
+
+// How long a fish stays interested in a finger that is not going anywhere,
+// before habituation starts taking its interest away. Curiosity is most of it,
+// glass affinity nearly as much, and boldness a little: a bold incurious fish
+// comes straight over and gets bored, a timid curious one arrives late and
+// stays. Two and a half seconds to about fourteen.
+const HOLD_PATIENCE_SECONDS = 2.4;
+const HOLD_PATIENCE_CURIOSITY = 4.5;
+const HOLD_PATIENCE_GLASS = 5.2;
+const HOLD_PATIENCE_BOLDNESS = 2.4;
+
+// A finger that stays is worth more than a tap that is already fading, and it
+// is worth it immediately: the first thing a hold has to do is be more
+// interesting than the press it grew out of, or holding still would be a way of
+// asking the aquarium for less.
+const HOLD_PRESENCE_INTEREST = 1.2;
+
+// Habituation never reaches zero for a fish that likes the glass. This is what
+// keeps one or two of them hanging at a held finger long after the rest have
+// gone back to their evening, and it is the difference between a hold that
+// decays into a tap and a hold that is a presence.
+const HOLD_INTEREST_FLOOR = 0.15;
+const HOLD_INTEREST_FLOOR_GLASS = 0.45;
+
+// A fish already answering this presence is a little more likely to go on
+// answering it than a fish of equal interest that is not. Without it the
+// re-read below swaps investigators back and forth between two near-identical
+// fish, which reads as indecision rather than as attention.
+const HOLD_ENGAGEMENT_BONUS = 0.08;
+
+// A response to a held press lives longer than one to a tap, because it is
+// renewed for as long as the finger is there and because this is also the
+// window it fades over once the finger goes. Seeded per fish, so responders
+// peel off the glass one at a time rather than together.
+const HOLD_RESPONSE_SECONDS_MINIMUM = 1.6;
+const HOLD_RESPONSE_SECONDS_MAXIMUM = 3;
+
+// A delayed responder to a held press takes longer to come than one answering a
+// tap: there is no hurry, the thing is still there.
+const HOLD_DELAY_SCALE = 1.9;
+
+// Inside this of where it believes the presence is, plus its own standoff, a
+// fish counts as having arrived.
+const INSPECT_RADIUS_CELLS = 2.4;
+
+// Arrived, and still arrived this much later: the difference between a fish
+// that came to look and one that has decided to stay.
+const LINGER_SECONDS = 2.2;
+
+// Before this much of its response has passed, a fish that has not left its
+// line has noticed rather than oriented.
+const NOTICE_SECONDS = 0.4;
+
+// Below this much habituation left, a passive answer is no longer visible and
+// the fish has settled.
+const HABITUATION_SPENT = 0.02;
+
+// How long a fish is credited with having hovered at a presence. It is bounded
+// for the same reason the hold clock is: nothing reads it past `LINGER_SECONDS`
+// and a number that only grows is a leak.
+const MAX_NEAR_SECONDS = 30;
+
+// How far a departing responder drifts back off the glass as its answer drains.
+// A response that simply stopped would leave the fish parked at the point; this
+// is what makes the release read as peeling away rather than as switching off.
+const DEPARTURE_STANDOFF_CELLS = 3.4;
+
+/** How long this fish stays interested in a finger that does not move. */
+export function attentionPatience(traits, affinities) {
+  return HOLD_PATIENCE_SECONDS
+    + traits.curiosity * HOLD_PATIENCE_CURIOSITY
+    + affinities.glass * HOLD_PATIENCE_GLASS
+    + traits.boldness * HOLD_PATIENCE_BOLDNESS;
+}
+
+/**
+ * What is left of this fish's interest once it has habituated to a hold.
+ *
+ * Patience is spent on the fish's own answer where it has one, and on the hold
+ * itself where it does not. That distinction is the whole difference between a
+ * fish losing interest and a fish never having any: a fish crossing the tank
+ * has not been staring at a finger for ten seconds, it has been swimming, and
+ * running its patience down on the hold clock would have it give up halfway
+ * every time. A fish that has been ignoring the presence, meanwhile, has been
+ * ignoring it for exactly as long as it has been there, and should not suddenly
+ * find it fascinating.
+ */
+function holdInterestScale(stimulus, traits, affinities, engagedSeconds = null) {
+  if (!stimulus?.held) return 1;
+  const spent = engagedSeconds ?? stimulus.holdSeconds;
+  return HOLD_PRESENCE_INTEREST * holdFalloff(
+    spent,
+    attentionPatience(traits, affinities),
+    HOLD_INTEREST_FLOOR + affinities.glass * HOLD_INTEREST_FLOOR_GLASS,
+  );
+}
+
+/**
+ * How long this fish has been answering this presence, or null if it is not.
+ *
+ * A passive answer does not count as being engaged: a fish that turned its head
+ * once has not committed anything to the finger, and it habituates on the same
+ * clock as a fish that ignored it entirely.
+ */
+export function attentionEngagement(fish, stimulus) {
+  // Only a held press has anything to be engaged *with*. Repeated taps at one
+  // point coalesce into a single event, so without this a fish already
+  // answering that event would collect the engagement bonus from a tap - which
+  // would quietly change how the aquarium answers drumming fingers, a Phase 2
+  // behaviour this phase has no business touching.
+  if (!stimulus?.held) return null;
+  const record = fish.attention;
+  if (!record || record.stimulusId !== stimulus.id) return null;
+  if (isPassiveRole(record.role)) return null;
+  return record.ageSeconds;
+}
+
 function attentionSalt(stimulus) {
   // Same fish, same press, same role - and a different press produces a
   // different draw, so tapping the same spot twice does not summon the same
@@ -139,6 +306,10 @@ export function attentionInterest(fish, stimulus, {
   affinities = affinitiesFromSeed(fish.seed),
   commitment = 0.3,
   companion = false,
+  // How long this fish has already been answering this presence, or null if it
+  // is not. Only a held press can produce it, and only on a re-read - the first
+  // press finds nobody engaged.
+  engagedSeconds = null,
 } = {}) {
   const proximity = clamp(1 - distance / Math.max(1, stimulus.radius), 0, 1);
   const contextTaste = affinities[contextAffinityKey(stimulus.context)] ?? affinities.glass;
@@ -154,6 +325,7 @@ export function attentionInterest(fish, stimulus, {
     + 0.12 * traits.curiosity
     + 0.08 * energy
     + (companion ? 0.08 : 0)
+    + (engagedSeconds === null ? 0 : HOLD_ENGAGEMENT_BONUS)
     + bodySuits
     // Being busy makes a fish a little less curious, but mostly it decides
     // *when* it goes rather than whether it cares: an absorbed fish that is
@@ -161,7 +333,13 @@ export function attentionInterest(fish, stimulus, {
     // is small and the hesitation is a role.
     - 0.10 * clamp(commitment, 0, 1)
     + jitter;
-  return clamp(interest, 0, 1) * stimulusSalience(stimulus);
+  // Habituation is the last word, and it is the only term that is about how
+  // long the disturbance has been going on rather than about what it is. A tap
+  // is over before it matters; a held finger is eventually just furniture, and
+  // it becomes furniture at a different moment for every fish.
+  return clamp(interest, 0, 1)
+    * stimulusSalience(stimulus)
+    * holdInterestScale(stimulus, traits, affinities, engagedSeconds);
 }
 
 function passiveRole(fish, distance, traits, affinities) {
@@ -176,30 +354,134 @@ function passiveRole(fish, distance, traits, affinities) {
  * than hand-writing the shape.
  */
 export function createAttention(fish, stimulus, role, distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y)) {
-  const seconds = stimulus.durationSeconds * sampleRange(
-    fish.seed,
-    attentionSalt(stimulus) + 1,
-    RESPONSE_SECONDS_MINIMUM,
-    RESPONSE_SECONDS_MAXIMUM,
-  );
+  const held = Boolean(stimulus.held);
+  const seconds = held
+    ? sampleRange(
+      fish.seed,
+      attentionSalt(stimulus) + 1,
+      HOLD_RESPONSE_SECONDS_MINIMUM,
+      HOLD_RESPONSE_SECONDS_MAXIMUM,
+    )
+    : stimulus.durationSeconds * sampleRange(
+      fish.seed,
+      attentionSalt(stimulus) + 1,
+      RESPONSE_SECONDS_MINIMUM,
+      RESPONSE_SECONDS_MAXIMUM,
+    );
   return {
     stimulusId: stimulus.id,
     role,
     // Where the fish believes the disturbance was. Kept on the record rather
     // than read from the stimulus every frame, so a responder can still be
     // finishing its answer after the event itself is over - an aftermath, not
-    // an instant cancellation.
+    // an instant cancellation. For a hold this is also where the fish goes
+    // looking once the finger has gone: the last place it was, not nowhere.
     x: stimulus.x,
     y: stimulus.y,
     distance,
     ageSeconds: 0,
-    durationSeconds: role === RESPONSE_ROLES.acknowledge
+    durationSeconds: role === RESPONSE_ROLES.acknowledge && !held
       ? Math.min(ACKNOWLEDGE_SECONDS, seconds)
       : seconds,
     delaySeconds: role === RESPONSE_ROLES.delayed
       ? sampleRange(fish.seed, attentionSalt(stimulus) + 2, DELAY_SECONDS_MINIMUM, DELAY_SECONDS_MAXIMUM)
+        * (held ? HOLD_DELAY_SCALE : 1)
       : 0,
+    // The hold, as this fish sees it. `held` is a finger that is still there;
+    // `released` is one that has gone while this answer was still running;
+    // `settled` is this fish having finished with a finger that has not.
+    // `nearSeconds` is how long it has hovered at the presence, and it is the
+    // only number here that accumulates - bounded at MAX_NEAR_SECONDS.
+    held,
+    released: false,
+    settled: false,
+    holdSeconds: held ? stimulus.holdSeconds : 0,
+    nearSeconds: 0,
   };
+}
+
+/**
+ * Carry an answer already under way across a re-read of a held press.
+ *
+ * A hold is re-assessed every so often (see `applyHold`), and most of the time
+ * the assessment comes back saying what it said before. Rebuilding the record
+ * then would restart the response, reset the beat a delayed responder is
+ * counting down, and forget how long the fish has been hovering - the fish
+ * would read as being startled afresh several times a second. So an unchanged
+ * role keeps its record and only learns where the finger is now; a changed one
+ * is rebuilt, keeping the thread the fish put down and the time it has spent
+ * at the glass.
+ */
+export function mergeHoldAttention(previous, assigned, stimulus) {
+  if (!assigned) return previous ?? null;
+  const sameEvent = previous && previous.stimulusId === assigned.stimulusId;
+  const carried = {
+    resume: previous?.resume,
+    nearSeconds: sameEvent ? previous.nearSeconds ?? 0 : 0,
+  };
+  if (sameEvent && previous.role === assigned.role) {
+    return {
+      ...previous,
+      ...carried,
+      x: stimulus.x,
+      y: stimulus.y,
+      held: true,
+      released: false,
+      holdSeconds: stimulus.holdSeconds,
+    };
+  }
+  return {
+    ...assigned,
+    ...carried,
+    // A fish that had gone to look and is now merely watching has not been
+    // interrupted - it has had enough. That reads differently from a fish that
+    // never went, so it is worth being able to tell them apart.
+    settled: Boolean(sameEvent && attentionInvestigates(previous) && isPassiveRole(assigned.role)),
+  };
+}
+
+/**
+ * Which stage of a held press's arc this fish is in, or null for a tap.
+ *
+ * Derived, every frame, from the record and where the fish actually is. There
+ * is nothing to keep in step and nothing that can be left behind: a fish that
+ * turns back toward the glass is inspecting again, and one whose finger has
+ * gone is departing from the moment it goes.
+ */
+export function holdPhase(attention, fish) {
+  if (!attention) return null;
+  // A fish that only ever glanced has nothing to depart from. The departure is
+  // for the ones that were still answering when the finger went.
+  if (attention.released) return isPassiveRole(attention.role) ? null : HOLD_PHASES.depart;
+  if (!attention.held) return null;
+  if (attention.settled) return HOLD_PHASES.settle;
+  if (!attentionInvestigates(attention)) {
+    // A watching fish that has run its patience out has straightened up and
+    // gone back to its evening. The finger is still there; this fish is done
+    // with it, which is a different thing from never having noticed it.
+    if (holdHabituation(attention, fish) <= HABITUATION_SPENT) return HOLD_PHASES.settle;
+    return attention.ageSeconds < NOTICE_SECONDS ? HOLD_PHASES.notice : HOLD_PHASES.orient;
+  }
+  const distance = Math.hypot(attention.x - fish.x, attention.y - fish.y);
+  if (distance > INSPECT_RADIUS_CELLS + attentionStandoff(attention)) return HOLD_PHASES.approach;
+  return attention.nearSeconds >= LINGER_SECONDS ? HOLD_PHASES.linger : HOLD_PHASES.inspect;
+}
+
+/**
+ * How much of a held press this fish is still giving, in 0..1.
+ *
+ * The same patience that decides whether it goes over decides how long it holds
+ * a turned head, so a fish does not go on staring at a finger it has stopped
+ * finding interesting - and a hold cannot leave the cast bent toward the glass
+ * for as long as a viewer cares to lean on it.
+ */
+export function holdHabituation(attention, fish) {
+  if (!attention?.held) return 1;
+  return holdFalloff(
+    attention.holdSeconds,
+    attentionPatience(traitsFromSeed(fish.seed, fish.history), affinitiesFromSeed(fish.seed)),
+    0,
+  );
 }
 
 /**
@@ -210,7 +492,16 @@ export function createAttention(fish, stimulus, role, distance = Math.hypot(stim
  * absorbed a fish is in what it is doing - it lives with the activities, which
  * is why it arrives as a function rather than a table read from here.
  */
-export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } = {}) {
+export function assignAttention(state, stimulus, {
+  commitmentFor = () => 0.3,
+  // Whether a fish is forced to answer whatever its interest. A press must
+  // always be answered, which is what this guarantees. A *re-read* of a press
+  // that is still going on must not be: forcing an investigator every time the
+  // aquarium looks at a finger it has already got used to would mean a hold
+  // could never be ignored, and being able to ignore it is the last stage of
+  // the arc and the reason a long hold costs nothing.
+  guarantee = true,
+} = {}) {
   const fish = state.individuals ?? [];
   const candidates = fish.map((one, index) => {
     const distance = Math.hypot(stimulus.x - one.x, stimulus.y - one.y);
@@ -223,6 +514,7 @@ export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } =
       traits,
       affinities,
       commitment: clamp(commitmentFor(one), 0, 1),
+      engagedSeconds: attentionEngagement(one, stimulus),
       perceives: perceivesStimulus(one, stimulus),
       interest: 0,
       role: null,
@@ -243,9 +535,11 @@ export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } =
   // the whole aquarium, and it never costs a fish something it cannot repeat.
   const available = (candidate) => candidate.commitment < UNAVAILABLE_COMMITMENT;
   const ordered = rank(perceiving);
-  const first = ordered.find(available)
-    ?? candidates.filter(available).sort((left, right) => left.distance - right.distance
-      || left.fish.seed - right.fish.seed)[0];
+  const first = guarantee
+    ? ordered.find(available)
+      ?? candidates.filter(available).sort((left, right) => left.distance - right.distance
+        || left.fish.seed - right.fish.seed)[0]
+    : null;
   if (first) first.role = RESPONSE_ROLES.investigate;
 
   // A fish whose most trusted companion is already going is more likely to go
@@ -296,12 +590,68 @@ export function assignAttention(state, stimulus, { commitmentFor = () => 0.3 } =
     : null));
 }
 
-/** One frame older, or gone. */
-export function ageAttention(attention, realDelta) {
+/**
+ * One frame older, or gone - and, for a held press, the place the fish finds
+ * out that the finger has lifted.
+ *
+ * An answer to a presence does not expire while the presence is there: it is
+ * renewed by every re-read, and between re-reads it simply keeps running. What
+ * ends it is the stimulus no longer being held, which happens when the viewer
+ * lifts their finger and also when the gesture stops confirming it at all (a
+ * lost release, a cancelled contact). Both arrive here as the same thing, which
+ * is why a dropped browser event cannot leave a fish attending forever.
+ *
+ * `stimulus` is the event this record points at, as the aquarium currently
+ * holds it, or null once it has expired.
+ */
+export function ageAttention(attention, realDelta, { fish = null, stimulus = null } = {}) {
   if (!attention) return null;
   const ageSeconds = attention.ageSeconds + realDelta;
+  if (attention.held) {
+    if (stimulus?.held) {
+      return {
+        ...attention,
+        // Bounded for the same reason the hold clock is: this one is read as
+        // how much of its patience the fish has spent, and a number that only
+        // grows is a leak however slowly it does it.
+        ageSeconds: Math.min(MAX_HOLD_SECONDS, ageSeconds),
+        holdSeconds: stimulus.holdSeconds,
+        nearSeconds: nextNearSeconds(attention, fish, realDelta),
+      };
+    }
+    // The finger has gone. The answer is not cancelled - it drains over the
+    // window it was given, which is seeded per fish, so the responders leave
+    // the glass one at a time. A delayed responder keeps whatever is left of
+    // its beat rather than starting it again.
+    //
+    // A *passive* answer resumes draining from wherever its habituation had got
+    // to, rather than from full. Starting it over would hand every fish that
+    // had long since straightened up a fresh full-strength turn toward a
+    // disturbance that had just stopped existing - fifteen animals twitching in
+    // the same frame, which is the synchronised cast Stage 2 exists to end. A
+    // fish whose patience was already spent simply lets the record go.
+    const remaining = isPassiveRole(attention.role) && fish
+      ? clamp(holdHabituation(attention, fish), 0, 1)
+      : 1;
+    return {
+      ...attention,
+      held: false,
+      released: true,
+      ageSeconds: attention.durationSeconds * (1 - remaining),
+      delaySeconds: Math.max(0, attention.delaySeconds - attention.ageSeconds),
+      nearSeconds: nextNearSeconds(attention, fish, realDelta),
+    };
+  }
   if (ageSeconds >= attention.durationSeconds) return null;
-  return { ...attention, ageSeconds };
+  return { ...attention, ageSeconds, nearSeconds: nextNearSeconds(attention, fish, realDelta) };
+}
+
+function nextNearSeconds(attention, fish, realDelta) {
+  const near = attention.nearSeconds ?? 0;
+  if (!fish) return near;
+  const distance = Math.hypot(attention.x - fish.x, attention.y - fish.y);
+  if (distance > INSPECT_RADIUS_CELLS + attentionStandoff(attention)) return near;
+  return Math.min(MAX_NEAR_SECONDS, near + realDelta);
 }
 
 /** Whether this fish is on its way to the disturbance right now. */
@@ -313,9 +663,15 @@ export function attentionInvestigates(attention) {
 
 /** How far short of the disturbance this responder stops. */
 export function attentionStandoff(attention) {
-  if (!attention || attention.role === RESPONSE_ROLES.investigate) return 0;
+  if (!attention) return 0;
   // A delayed investigator arrives late and hangs back like a secondary one.
-  return SECONDARY_STANDOFF_CELLS;
+  const base = attention.role === RESPONSE_ROLES.investigate ? 0 : SECONDARY_STANDOFF_CELLS;
+  if (!attention.released) return base;
+  // The finger has gone. The fish still goes to where it was - that is the
+  // searching part - but the place it settles for opens out as its answer
+  // drains, so it drifts back off the glass rather than switching off at it.
+  const drained = clamp(attention.ageSeconds / Math.max(0.001, attention.durationSeconds), 0, 1);
+  return base + DEPARTURE_STANDOFF_CELLS * drained;
 }
 
 function angleDifference(from, to) {
@@ -342,9 +698,17 @@ export function shapeTargetForAttention(target, fish, attention) {
   if (!target || !attention || attentionInvestigates(attention)) return target;
   const progress = clamp(attention.ageSeconds / attention.durationSeconds, 0, 1);
   const role = attention.role;
-  const envelope = role === RESPONSE_ROLES.acknowledge
-    ? Math.sin(progress * Math.PI)
-    : 1 - progress;
+  // A passive answer to a tap fades with the tap. A passive answer to a finger
+  // that stays fades with the fish instead: it holds its turned head for as
+  // long as it is interested and then quietly straightens out, which is the
+  // same habituation that decides whether it goes over at all. Without this a
+  // watching fish would hold an 0.85 radian bend for as long as the viewer
+  // leant on the glass, and swim in a circle doing it.
+  const envelope = attention.held
+    ? holdHabituation(attention, fish)
+    : role === RESPONSE_ROLES.acknowledge
+      ? Math.sin(progress * Math.PI)
+      : 1 - progress;
   if (envelope <= 0.001) return target;
 
   const away = role === RESPONSE_ROLES.wary;

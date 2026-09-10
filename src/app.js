@@ -7,7 +7,14 @@ import { historyDiagnostics } from "./sim/aquarium-history.js";
 import { DEFAULT_SEED } from "./sim/config.js";
 import { topAffinities } from "./sim/fish-personality.js";
 import { hashSeed } from "./sim/prng.js";
-import { advanceOffline, applyTouch, createAquariumState, withSettings } from "./sim/state.js";
+import {
+  advanceOffline,
+  applyHold,
+  applyRelease,
+  applyTouch,
+  createAquariumState,
+  withSettings,
+} from "./sim/state.js";
 import { tick } from "./sim/tick.js";
 
 const TICK_INTERVAL = 1 / 10;
@@ -164,6 +171,10 @@ function frame(timestamp) {
   accumulator += elapsed;
   if (accumulator >= TICK_INTERVAL) {
     const delta = Math.min(accumulator, 0.25);
+    // A finger resting on the glass is told to the aquarium once per tick,
+    // before the tick, so the presence the fish read is the one that is there
+    // now. The clock lives here because a simulation may not have one.
+    if (contact) state = applyHold(state, contact.x, contact.y, (timestamp - contact.time) / 1000);
     state = tick(state, delta);
     accumulator = 0;
     drawVisible();
@@ -185,6 +196,18 @@ function syncControls() {
 
 syncControls();
 let pointerStart = null;
+// The finger currently on the aquarium, in world cells, and when it landed.
+// There is at most one because the aquarium answers the primary pointer only;
+// it is cleared by the release, by a cancelled contact and by the drawer
+// opening, and a hold whose clearing is somehow missed is let go of by the
+// simulation itself after HOLD_STALE_SECONDS.
+let contact = null;
+function endContact() {
+  if (!contact) return;
+  contact = null;
+  state = applyRelease(state);
+  drawVisible();
+}
 canvas.addEventListener("pointerdown", (event) => {
   if (!event.isPrimary || event.button !== 0 || !debugPanel.hidden) return;
   event.preventDefault();
@@ -194,12 +217,21 @@ canvas.addEventListener("pointerdown", (event) => {
   if (!point.hotspot) {
     gesture.reset();
     state = applyTouch(state, point.x, point.y);
+    contact = { id: event.pointerId, x: point.x, y: point.y, time: pointerStart.time };
     drawVisible();
   }
+});
+canvas.addEventListener("pointermove", (event) => {
+  if (!contact || event.pointerId !== contact.id) return;
+  // Where the finger is now. Whether it has moved far enough to stop being a
+  // hold is the simulation's judgement, not this file's.
+  const point = aquariumPoint(event, canvas.getBoundingClientRect());
+  contact = { ...contact, x: point.x, y: point.y };
 });
 canvas.addEventListener("pointerup", (event) => {
   const start = pointerStart;
   pointerStart = null;
+  if (contact && event.pointerId === contact.id) endContact();
   if (!start || start.id !== event.pointerId) return;
   const point = aquariumPoint(event, canvas.getBoundingClientRect());
   const now = performance.now();
@@ -212,12 +244,15 @@ canvas.addEventListener("pointerup", (event) => {
   if (gesture.tap(point.hotspot, now)) setDebugOpen(true);
 });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-canvas.addEventListener("pointercancel", () => { pointerStart = null; gesture.reset(); });
+canvas.addEventListener("pointercancel", () => { pointerStart = null; endContact(); gesture.reset(); });
 document.addEventListener("pointerdown", (event) => {
   if (event.target !== canvas) gesture.reset();
 });
 function setDebugOpen(open) {
   gesture.reset();
+  // Opening the drawer takes the viewer's attention off the aquarium; leaving a
+  // presence pinned to the glass behind it would hold a fish there.
+  if (open) endContact();
   debugPanel.hidden = !open;
   canvas.setAttribute("aria-expanded", String(open));
   if (open) { syncControls(); document.querySelector("#debug-close").focus(); }
@@ -276,6 +311,10 @@ function saveAquarium() {
 setInterval(saveAquarium, 12_000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
+    // The frame loop stops here, so a contact left on the glass would come back
+    // claiming however long the tab was away. Let go of it instead; a gesture
+    // does not survive the aquarium not being looked at.
+    endContact();
     visibilityClock.pause(Date.now());
     saveAquarium();
   } else {

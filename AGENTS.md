@@ -63,6 +63,18 @@ so the headroom is thin: features that continuously change the background
 signature, or force full redraws, are regressions regardless of how they look
 on a desktop.
 
+> **The tap animation is a placeholder.** The expanding ring of `O o . '`
+> glyphs a press draws — `drawImpulseRipples` in `src/render/render.js`, and the
+> gentler ring a release draws through the same code — is a stand-in, not the
+> final artwork. It exists so that an impulse has *some* visible correlate while
+> the interaction layer is being built, and it is expected to be replaced. Do
+> not treat its current look, timing or glyph vocabulary as settled, do not
+> build a measurement or a phase gate on top of exactly how it looks, and do not
+> spend effort polishing it. What is settled underneath it is the impulse: a
+> position, a strength, a radius, an envelope and what it touched
+> (`src/sim/interaction-events.js`). A replacement should read that and nothing
+> else.
+
 **Nothing dies and interaction cannot punish the child.** No interaction may
 kill, remove, permanently harm or permanently frighten a fish, create chores or
 guilt, or make the aquarium worse for having been touched. Moderate repetition
@@ -82,21 +94,21 @@ plausible.
 | Area | Where | Notes |
 | --- | --- | --- |
 | World constants | `src/sim/config.js` | `DISPLAY`, cell metrics, clearances |
-| State, save, restore | `src/sim/state.js` | `createAquariumState`, `applyTouch`, `serializePersistentState`, `restorePersistentState`, `advanceOffline` |
+| State, save, restore | `src/sim/state.js` | `createAquariumState`, `applyTouch`, `applyHold`, `applyRelease`, `serializePersistentState`, `restorePersistentState`, `advanceOffline` |
 | Tick | `src/sim/tick.js` | `tick(state, dt)`; behaviour utilities, daylight |
 | Activity selection | `src/sim/fish-activities.js` | `ACTIVITIES`, utilities, target resolution, dwell |
 | Locomotion | `src/sim/fish-motion.js` | steering, forage geometry, clearances |
 | Choreography | `src/sim/fish-choreography.js`, `src/sim/choreography-tuning.js` | chase evasion, per-activity motion shaping |
 | Identity | `src/sim/fish-personality.js`, `src/sim/fish-roster.js`, `src/sim/fish-growth.js` | traits and growth derived from seeds |
 | Long horizon | `src/sim/aquarium-history.js` | arrivals, propagation, offline progression |
-| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring |
-| Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, what a press landed on |
+| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring; the held stimulus and its clock |
+| Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, the hold arc and per-fish patience, what a press landed on |
 | Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts |
 | Scene | `src/render/render.js` → `render(state)` | glyph scene: `objects`, `glyphs`, `background` |
 | Damage | `src/render/damage.js` → `calculateDamage(previous, next)` | dirty rectangles between two scenes |
 | Canvas | `src/render/canvas-renderer.js` | draws a scene; used by app and capture tools |
 | Input | `src/platform/aquarium-input.js` | pointer → world coordinates, developer hotspot |
-| App | `src/app.js` | pointer events, frame loop, developer drawer |
+| App | `src/app.js` | pointer events, the contact clock, frame loop, developer drawer |
 | Labs | `src/behavior-lab.js`, `src/sprite-sheet.js`, `src/plant-lab.js` | `behaviors.html`, `sprites.html`, `plants.html` |
 | Dev fixtures | `src/dev/behavior-showcase.js` | `SHOWCASE_SCENARIOS`, forced scenario states |
 | Interaction observation | `src/dev/interaction-observation.js` | pointer histories, controlled replay, per-fish and whole-aquarium measurements, semantic moments |
@@ -107,17 +119,26 @@ growth; real time drives locomotion and activities. Keep that distinction.
 
 ### The interaction path as it stands today
 
-Phase 3 will give a held press meaning; until then this is the whole path, so
-know what it does before you change it.
+Phase 4 will give pointer *motion* meaning; until then this is the whole path,
+so know what it does before you change it.
 
-`src/app.js` handles `pointerdown` for the **primary pointer only** — a second
-finger on the five-point panel reaches nothing — maps the event through
-`aquariumPoint`, and outside the developer hotspot calls `applyTouch`.
-`applyTouch` in `src/sim/state.js` classifies what the press landed on,
-registers **one stimulus and one impulse**
-(`src/sim/interaction-events.js`), assigns every fish a **response role**
-(`src/sim/attention.js`), and turns only the fish that are actually going
-somewhere. Pointer movement, hold duration and release still have no meaning.
+`src/app.js` handles the **primary pointer only** — a second finger on the
+five-point panel reaches nothing — maps each event through `aquariumPoint`, and
+outside the developer hotspot drives three verbs in `src/sim/state.js`:
+
+- `pointerdown` → **`applyTouch`**, which classifies what the press landed on,
+  registers **one stimulus and one impulse**
+  (`src/sim/interaction-events.js`), assigns every fish a **response role**
+  (`src/sim/attention.js`), and turns only the fish that are actually going
+  somewhere.
+- while the contact is down, once per tick and *before* the tick →
+  **`applyHold`**, given the point and how long the press has lasted. The app
+  owns that clock, because the simulation may not have one.
+- `pointerup`, `pointercancel`, or the drawer opening → **`applyRelease`**.
+
+Pointer movement is still not a disturbance of its own. It moves the contact,
+and a contact that has moved more than `HOLD_MOVEMENT_CELLS` from where it
+landed stops being a hold — a gesture with a direction in it is Phase 4's.
 
 The two event types are the Phase 1 architecture and the distinction is
 load-bearing:
@@ -132,6 +153,16 @@ load-bearing:
 Both are transient: capped at six each, coalesced when a press repeats within
 1.2 cells, dropped the frame they are spent, never serialised, and cleared by an
 offline gap. `tests/interaction-events.test.js` guards those rules.
+
+A press that stays put past `HOLD_THRESHOLD_SECONDS` becomes a **held
+stimulus** — the same event, refreshed in place, carrying a hold clock instead
+of decaying. There is at most one, it is never re-registered, and it lets go of
+itself after `HOLD_STALE_SECONDS` without a refresh, so a lost `pointerup`
+cannot leave a permanent disturbance. Release turns it into a short decaying
+aftermath and rings the water once more, gently. The water is otherwise still
+for the whole hold: a finger resting on glass is not a continuous impulse, and
+making it one would repaint the same patch for as long as a child cared to lean
+on it.
 
 The Phase 2 response model sits on top:
 
@@ -156,6 +187,30 @@ The Phase 2 response model sits on top:
 One tap now leaves seven to ten activities standing where it used to leave one.
 Reproduce it with `npm run observe:interaction`, or look at it with
 `npm run capture:interaction -- --roles`.
+
+The Phase 3 hold arc sits on top of that again. While a finger is held the
+aquarium **re-reads** the press every `HOLD_REVIEW_SECONDS`, running the same
+Phase 2 assignment against a disturbance that has not gone away — which is what
+lets a fish arrive late, follow a companion to the glass, or hand over to one
+that has not had its turn. Two rules make it bounded and readable:
+
+- **Patience is per fish, and it is spent on the fish's own answer.** A fish
+  crossing the tank has not been staring at a finger, so habituation runs on its
+  response, not on the hold clock; a fish that ignored the presence habituates on
+  the hold clock and does not suddenly find it fascinating. Patience comes from
+  curiosity, glass affinity and boldness (2.4 s to about 14.5 s), so a cautious
+  fish is not a slow bold one — it arrives later, stops further out and gives up
+  sooner.
+- **A re-read carries no guarantee.** The *press* must always be answered; a
+  press that is still going on need not be. That is what lets a long hold end in
+  the plan's last stage — everyone settles — and it is why a sixty-second hold
+  costs what a fifteen-second one does.
+
+`holdPhase` in `src/sim/attention.js` derives which of `notice`, `orient`,
+`approach`, `inspect`, `linger`, `settle` and `depart` a fish is in, every
+frame, from the record and where the fish actually is. Nothing stores a phase.
+See it with `npm run observe:interaction -- --scenario=long-hold
+--detail=long-hold`.
 
 ## Working agreement
 
@@ -212,11 +267,13 @@ npm run measure:readability               # per-activity motion signatures and d
 npm run measure:stage2-baseline           # tap synchronisation, damage headroom, save size
 npm run observe:interaction               # replay pointer histories; per-fish and whole-aquarium response
 npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap
+npm run observe:interaction -- --scenario=long-hold --detail=long-hold --seconds=38
 npm run measure:screen                    # panel legibility
 npm run measure:living                    # long observation summary
 npm run capture:behaviors -- --scenario playful-chase --scale 1 --gif
 npm run capture:interaction -- --scenario=open-water-tap --scale=1 --gif
 npm run capture:interaction -- --scenario=rest-tap --roles     # response roles drawn over the frame
+npm run capture:interaction -- --scenario=long-hold --roles   # roles plus the hold phase each fish is in
 npm run capture:depth
 npm run capture:living
 npm run build:pages
