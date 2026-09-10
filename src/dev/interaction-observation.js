@@ -337,9 +337,47 @@ export function confirmContact(state, contact, seconds) {
  * likely to be given.
  */
 export function endContact(state, contact, point, seconds) {
-  if (!contact) return applyRelease(state);
+  if (!contact) return { state: applyRelease(state), gesture: null };
   const confirmed = confirmContact(state, { ...contact, x: point.x, y: point.y }, seconds);
-  return applyRelease(confirmed.state);
+  // The contact as the aquarium classified it, handed back before it is let go
+  // of. A gesture that began and ended between two frames is never `held` at a
+  // frame boundary, so without this the observation reports a wake it cannot
+  // account for: no gesture kind, no speed, no path, no pursuit.
+  const gesture = (confirmed.state.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
+  return { state: applyRelease(confirmed.state), gesture };
+}
+
+/**
+ * Advance a set of per-subject proximity runs by one frame.
+ *
+ * `near` is the ids that are inside the radius this frame; everything else has
+ * its run ended. It is a function rather than four lines in the loop because
+ * the reading it produces is a claim in the phase report - "the longest
+ * unbroken time any *one* fish spent within a body length of a moving contact"
+ * - and a claim that cannot be tested on its own has a way of drifting from
+ * what it says.
+ *
+ * Two things it must not do, both of which a single counter does. Taken on
+ * whichever subject happens to be nearest, a drag that passes one fish and then
+ * another reports one long ride that neither of them took. And left running
+ * across frames with nothing to be near, two separate gestures are joined into
+ * one. Passing an empty `near` - which is what a frame with no moving contact
+ * does - clears every run.
+ *
+ * Returns the longest run now standing, in frames.
+ */
+export function extendProximityRuns(runs, near) {
+  const present = new Set(near);
+  for (const id of [...runs.keys()]) {
+    if (!present.has(id)) runs.delete(id);
+  }
+  let longest = 0;
+  for (const id of present) {
+    const run = (runs.get(id) ?? 0) + 1;
+    runs.set(id, run);
+    longest = Math.max(longest, run);
+  }
+  return longest;
 }
 
 /* ------------------------------------------------------------------ *
@@ -616,6 +654,21 @@ export function observeInteraction(baseState, {
   const disturbedBubbles = new Set();
   const disturbedResidents = new Set();
 
+  /**
+   * What the aquarium currently makes of the contact.
+   *
+   * Called once a frame for a contact that is still down, and once more for a
+   * gesture that began and ended between two frames - which has no frame of its
+   * own and would otherwise leave a wake in the water that nothing in this
+   * report accounts for.
+   */
+  const sampleGesture = (stimulus) => {
+    gestureFrames[stimulus.gesture] = (gestureFrames[stimulus.gesture] ?? 0) + 1;
+    peakSpeed = Math.max(peakSpeed, stimulus.speed ?? 0);
+    peakCurvature = Math.max(peakCurvature, stimulus.curvature ?? 0);
+    peakPathSamples = Math.max(peakPathSamples, stimulus.path?.length ?? 0);
+  };
+
   let cursor = 0;
   let stimulusFrame = null;
   // The most recent press to land, and the frame it landed on. A history with
@@ -649,16 +702,21 @@ export function observeInteraction(baseState, {
   let peakCurvature = 0;
   let peakPathSamples = 0;
   let peakLiveWakes = 0;
-  const wakesCreated = new Set();
+  // Wake slots are reused on purpose, so counting distinct slots or distinct
+  // places undercounts: four alternating swipes ring the same water from the
+  // same three slots. A generation is counted where a slot appears, or where
+  // the wake in it got younger, which only happens when it was replaced.
+  let wakesCreated = 0;
+  const wakeAges = new Map();
   // Where the nearest fish was while the contact was moving, and whether any
   // fish was ever close enough to be riding it rather than chasing it.
   let followFrames = 0;
   let followLagTotal = 0;
   let closestToMovingContact = Number.POSITIVE_INFINITY;
-  // The longest unbroken stretch a fish spent inside the puppet radius, not the
-  // total: a fish crossing the finger's path is inside it for a frame or two,
-  // and only a fish being *driven* is inside it for the length of a gesture.
-  let puppetRun = 0;
+  // The longest unbroken stretch a *single* fish spent inside the puppet
+  // radius, not the total and not the nearest-whoever-that-is. See
+  // `extendProximityRuns`.
+  const puppetRuns = new Map();
   let longestPuppetRun = 0;
   // The environment answering a direction rather than a point: stems and
   // bubbles that moved the way the water was going, against those that did not.
@@ -714,8 +772,12 @@ export function observeInteraction(baseState, {
         // released the contact without that, and a gesture that began and ended
         // between two frames would have reached the aquarium as a bare press.
         if (primary) {
-          treatment = endContact(before, contact, result.point, event.seconds);
+          const ended = endContact(before, contact, result.point, event.seconds);
+          treatment = ended.state;
           contact = null;
+          // Measured here because there is no frame in which to measure it: a
+          // gesture this short was over before the next one arrived.
+          if (ended.gesture) sampleGesture(ended.gesture);
         }
       } else if (result.reason === "developer-hotspot") delivery.hotspot += 1;
       else if (result.reason === "not-the-primary-pointer") delivery.nonPrimary += 1;
@@ -801,10 +863,18 @@ export function observeInteraction(baseState, {
       // What this fish was doing about a contact that was moving. Both are
       // recorded the first time they are true, because they are properties of
       // the fish and the gesture rather than of the frame.
-      if (held && held.gesture !== GESTURES.press && fish.attention?.stimulusId === held.id) {
+      //
+      // The event is looked up by what the fish is answering rather than taken
+      // from the contact currently on the glass, because a gesture that began
+      // and ended between two frames is already released by the time this runs
+      // - and the fish answering it are the whole of what it did.
+      const answered = fish.attention
+        ? (treatment.stimuli ?? []).find((entry) => entry.id === fish.attention.stimulusId) ?? null
+        : null;
+      if (answered && answered.gesture !== GESTURES.press) {
         if (!record.movingRole) record.movingRole = fish.attention.role;
         if (!record.pursuit && attentionInvestigates(fish.attention)) {
-          record.pursuit = attentionPursuit(fish, held);
+          record.pursuit = attentionPursuit(fish, answered);
         }
       }
       if (phase === "inspect" || phase === "linger") holdInspecting += 1;
@@ -883,33 +953,42 @@ export function observeInteraction(baseState, {
     // What the contact currently is, and what it is doing to the water. A
     // gesture is measured from the aquarium's own reading of it, so a scenario
     // that asks for a swipe and produces a drag says so.
-    if (held) {
-      gestureFrames[held.gesture] = (gestureFrames[held.gesture] ?? 0) + 1;
-      peakSpeed = Math.max(peakSpeed, held.speed ?? 0);
-      peakCurvature = Math.max(peakCurvature, held.curvature ?? 0);
-      peakPathSamples = Math.max(peakPathSamples, held.path?.length ?? 0);
-      if (held.gesture !== GESTURES.press) {
-        // How far behind the finger the aquarium's closest answer is. A puppet
-        // would sit on it; a fish chases it, catches the water it went through,
-        // or is left behind.
-        let nearest = Number.POSITIVE_INFINITY;
-        for (const fish of treatment.individuals) {
-          nearest = Math.min(nearest, Math.hypot(held.x - fish.x, held.y - fish.y));
-        }
-        if (Number.isFinite(nearest)) {
-          followFrames += 1;
-          followLagTotal += nearest;
-          closestToMovingContact = Math.min(closestToMovingContact, nearest);
-          puppetRun = nearest <= PUPPET_RADIUS_CELLS ? puppetRun + 1 : 0;
-          longestPuppetRun = Math.max(longestPuppetRun, puppetRun);
-        }
+    if (held) sampleGesture(held);
+
+    // How far behind the finger the aquarium's closest answer is, and how long
+    // any one fish stayed inside a body length of it. Measured on the frame
+    // rather than in `sampleGesture`, because both are about where the fish are
+    // and a sub-frame gesture has no frame of its own. A frame with no moving
+    // contact hands `extendProximityRuns` nothing, which ends every run - so
+    // two gestures in one history are two gestures.
+    const moving = held && held.gesture !== GESTURES.press;
+    let nearest = Number.POSITIVE_INFINITY;
+    const riding = [];
+    if (moving) {
+      for (const fish of treatment.individuals) {
+        const distance = Math.hypot(held.x - fish.x, held.y - fish.y);
+        nearest = Math.min(nearest, distance);
+        if (distance <= PUPPET_RADIUS_CELLS) riding.push(fish.seed);
+      }
+      if (Number.isFinite(nearest)) {
+        followFrames += 1;
+        followLagTotal += nearest;
+        closestToMovingContact = Math.min(closestToMovingContact, nearest);
       }
     }
+    longestPuppetRun = Math.max(longestPuppetRun, extendProximityRuns(puppetRuns, riding));
+
     const liveWakes = (treatment.impulses ?? []).filter((impulse) => impulse.source === "wake");
     peakLiveWakes = Math.max(peakLiveWakes, liveWakes.length);
-    // Wake identities are a rotating ring of three, so the same id is a
-    // different disturbance once it has moved: counted by where it was rung.
-    for (const wake of liveWakes) wakesCreated.add(`${wake.id}@${round(wake.x, 1)},${round(wake.y, 1)}`);
+    // A slot that was empty, or whose wake got younger, is a disturbance that
+    // was not there before. Ageing is the only thing that happens to a wake
+    // that survives, so a drop can only mean it was replaced.
+    const ages = new Map(liveWakes.map((wake) => [wake.id, wake.ageSeconds]));
+    for (const [id, age] of ages) {
+      if (!wakeAges.has(id) || age <= wakeAges.get(id)) wakesCreated += 1;
+    }
+    wakeAges.clear();
+    for (const [id, age] of ages) wakeAges.set(id, age);
 
     const engaged = treatment.individuals.filter((fish) => attentionInvestigates(fish.attention)).length;
     peakEngaged = Math.max(peakEngaged, engaged);
@@ -1115,7 +1194,7 @@ export function observeInteraction(baseState, {
       // second number is the one that cannot be allowed to grow with the
       // gesture; the first is allowed to, and is bounded by the aquarium's
       // width rather than by the viewer's patience.
-      wakesCreated: wakesCreated.size,
+      wakesCreated,
       peakLiveWakes,
       // Autonomy: how far behind the finger the nearest fish was on average, the
       // closest one ever got, and the longest unbroken time any fish spent

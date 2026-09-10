@@ -20,6 +20,7 @@ import {
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
 import { createImpulse } from "../sim/interaction-events.js";
+import { ROW_ASPECT } from "../sim/pointer-path.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
@@ -852,9 +853,24 @@ function drawImpulseRipples(builder, state, palette, metrics) {
     const progress = clamp(impulse.ageSeconds / impulse.durationSeconds, 0, 1);
     const radius = 0.62 + smoothstep(progress) * 5.15;
     const directed = Boolean(impulse.dirX || impulse.dirY);
-    const drift = directed ? smoothstep(progress) * radius * WAKE_DRIFT : 0;
+    // The ring is drawn as a circle on the *glass*: a row is twice as tall as a
+    // column, so its vertical radius is halved. Which means the direction has to
+    // be carried into that basis too, and halving the vertical component of a
+    // cell-space unit vector is not the same thing. On the axes the two agree;
+    // on a diagonal they do not, and the ripple drifted and stretched at a
+    // shallower angle than the water and the finger were travelling at.
+    //
+    // `glassPerCell` is how far a cell goes on the glass along this direction.
+    // Dividing by it turns the drift, which is a fraction of a radius and so a
+    // distance on the glass, back into cells; multiplying the vertical
+    // component by it gives the flow as a unit vector in glass space, which is
+    // the basis the ring's own points are in.
+    const glassPerCell = Math.hypot(impulse.dirX ?? 0, (impulse.dirY ?? 0) * ROW_ASPECT) || 1;
+    const drift = directed ? smoothstep(progress) * radius * WAKE_DRIFT / glassPerCell : 0;
+    const flowX = (impulse.dirX ?? 0) / glassPerCell;
+    const flowY = (impulse.dirY ?? 0) * ROW_ASPECT / glassPerCell;
     const centreX = impulse.x + (impulse.dirX ?? 0) * drift;
-    const centreY = impulse.y + (impulse.dirY ?? 0) * drift * 0.5;
+    const centreY = impulse.y + (impulse.dirY ?? 0) * drift;
     const samples = 16;
     const glyphs = [];
     for (let index = 0; index < samples; index += 1) {
@@ -864,9 +880,7 @@ function drawImpulseRipples(builder, state, palette, metrics) {
       // Stretched downstream and gathered upstream, so the ring reads as
       // something the water carried rather than as a circle that happens to be
       // somewhere else.
-      const stretch = directed
-        ? 1 + WAKE_STRETCH * (cosine * (impulse.dirX ?? 0) + sine * (impulse.dirY ?? 0))
-        : 1;
+      const stretch = directed ? 1 + WAKE_STRETCH * (cosine * flowX + sine * flowY) : 1;
       const char = progress < 0.3 ? "O" : progress < 0.68 ? "o" : index % 2 ? "." : "'";
       glyphs.push(positionedGlyph(metrics, {
         char,

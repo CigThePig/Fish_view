@@ -47,6 +47,7 @@ import {
 } from "../src/sim/interaction-events.js";
 import { TOUCH_FLOOR_ROWS } from "../src/sim/config.js";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
+import { render as renderScene } from "../src/render/render.js";
 import { createPlantFrameContext, posePlant } from "../src/sim/plants.js";
 import { calculateDamage } from "../src/render/damage.js";
 import { render } from "../src/render/render.js";
@@ -57,6 +58,7 @@ import {
   createObservationAquarium,
   drag,
   endContact,
+  extendProximityRuns,
   observeInteraction,
   pointerHistory,
   swipe,
@@ -741,22 +743,32 @@ test("a gesture that begins and ends between two frames is still a gesture", () 
   // Released 60 ms later, fifteen cells away: a swipe, and the aquarium has not
   // had a single frame in which to be told about it.
   const flicked = endContact(pressed, contact, { x: left + 15, y }, 0.06);
-  const wake = (flicked.impulses ?? []).filter((impulse) => impulse.source === "wake");
+  const wake = (flicked.state.impulses ?? []).filter((impulse) => impulse.source === "wake");
   assert.equal(wake.length, 1, "a sub-frame swipe moved no water");
   assert.ok(wake[0].dirX > 0.9, "the wake had no direction in it");
+  // The contact as it was classified, handed back so that a gesture with no
+  // frame of its own can still be measured.
+  assert.equal(flicked.gesture.gesture, GESTURES.swipe);
+  assert.ok(flicked.gesture.speed > SWIPE_ENTER_SPEED);
 
   // The control: the same release with the finger where it started is a tap,
   // and taps must not grow a wake.
   const tapped = endContact(pressed, contact, { x: left, y }, 0.06);
-  assert.equal((tapped.impulses ?? []).filter((impulse) => impulse.source === "wake").length, 0);
+  assert.equal((tapped.state.impulses ?? []).filter((impulse) => impulse.source === "wake").length, 0);
 
   // And the same thing through the replay, which delivers it the way the app
-  // does: one press and one release inside a single frame.
+  // does: one press and one release inside a single frame. The observation has
+  // to account for the water it moved rather than reporting a wake from
+  // nowhere, so the gesture reads as a swipe even though it was never held at
+  // a frame boundary.
   const observation = observeInteraction(base, {
     history: pointerHistory(swipe({ x: left, y }, { x: left + 15, y }, { at: 1, seconds: 0.06 })),
     observeSeconds: 4,
   });
   assert.ok(observation.gesture.wakesCreated >= 1, "the replayed flick moved no water either");
+  assert.ok(observation.gesture.kinds.swipe >= 1, "the replayed flick was not reported as a swipe");
+  assert.ok(observation.gesture.peakSpeed > SWIPE_ENTER_SPEED, "the replayed flick reported no speed");
+  assert.ok(observation.gesture.peakPathSamples >= 2, "the replayed flick reported no path");
 });
 
 // Between re-read beats the response records used to keep the position the
@@ -911,4 +923,186 @@ test("a long drag keeps its wake full", () => {
     if (live === MAX_WAKE_IMPULSES) seen += 1;
   }
   assert.ok(seen > 0, "a twelve-second drag never had a full wake behind it");
+});
+
+// The autonomy reading is a claim about one fish staying with the finger, so it
+// has to be counted per fish: taken on whichever fish happens to be nearest, a
+// drag that passes one fish and then another reports a long ride that neither
+// of them took. It also has to be cleared between gestures, or two swipes in
+// one history are joined into one.
+// The autonomy reading is a claim about one fish staying with the finger, so it
+// is counted per fish and cleared between gestures. Both are properties of the
+// measurement rather than of the aquarium, which is why they are checked here
+// rather than through a scenario: a fixture that happens to produce two fish
+// passed in succession is a fixture, and this is the rule.
+test("a proximity run belongs to one subject and ends when it is not near", () => {
+  const runs = new Map();
+  // Two subjects passed in succession, each near for two frames. A counter kept
+  // on "whichever is nearest" reports one run of four.
+  assert.equal(extendProximityRuns(runs, ["a"]), 1);
+  assert.equal(extendProximityRuns(runs, ["a"]), 2);
+  assert.equal(extendProximityRuns(runs, ["b"]), 1, "one subject's run was handed to another");
+  assert.equal(extendProximityRuns(runs, ["b"]), 2);
+  assert.equal(runs.has("a"), false, "a run that ended was kept");
+
+  // A frame with nothing near ends everything, which is what a frame with no
+  // moving contact hands it.
+  assert.equal(extendProximityRuns(runs, []), 0);
+  assert.equal(runs.size, 0);
+  assert.equal(extendProximityRuns(runs, ["b"]), 1, "two gestures were joined into one run");
+
+  // Several at once are several runs, and the longest is the reading.
+  extendProximityRuns(runs, ["b", "c"]);
+  assert.equal(extendProximityRuns(runs, ["b", "c"]), 3);
+});
+
+test("the puppet reading is one fish's, and does not bridge two gestures", () => {
+  const base = settled(5);
+  const y = 9;
+  // Two fish parked in the finger's way, close enough together that the drag is
+  // within a body length of *one or the other* for twice as long as it is
+  // within a body length of either. Everyone else is moved out of the way, so
+  // the reading is about these two.
+  const posed = {
+    ...base,
+    individuals: base.individuals.map((fish, index) => {
+      if (index === 0) return { ...fish, x: 14, y, vx: 0, vy: 0 };
+      if (index === 1) return { ...fish, x: 16.4, y, vx: 0, vy: 0 };
+      return { ...fish, x: base.cols - 3, y: 4, vx: 0, vy: 0 };
+    }),
+  };
+  const passing = observeInteraction(posed, {
+    history: pointerHistory(drag([{ x: 10, y }, { x: 30, y }], { at: 0.5, seconds: 2 })),
+    observeSeconds: 4,
+  });
+  // The finger covers the 2.4 cells between them in a quarter of a second, so
+  // neither fish can be beside it for much longer than that. Measured on
+  // whichever fish happens to be nearest, the two passes run together into one
+  // ride that neither of them took.
+  assert.ok(
+    passing.gesture.puppetSeconds <= 0.4,
+    `two fish passed in succession reported one ${passing.gesture.puppetSeconds}s ride`,
+  );
+  assert.ok(passing.gesture.closestApproach < 1.2, "the fixture never brought the finger near either fish");
+
+  // And two gestures with stillness between them are two gestures: a run in
+  // progress ends with the contact that was moving.
+  const twice = observeInteraction(posed, {
+    history: pointerHistory(
+      drag([{ x: 10, y }, { x: 18, y }], { at: 0.5, seconds: 0.8 }),
+      drag([{ x: 10, y }, { x: 18, y }], { at: 3, seconds: 0.8 }),
+    ),
+    observeSeconds: 6,
+  });
+  assert.ok(
+    twice.gesture.puppetSeconds <= 0.8,
+    `two 0.8 s drags were joined into a ${twice.gesture.puppetSeconds}s ride`,
+  );
+});
+
+// Wake slots are reused on purpose, so a count keyed on the slot - or on where
+// it was rung - collapses every later generation into the first. The evidence
+// is meant to say how many disturbances a gesture made.
+test("the wake count counts disturbances, not slots", () => {
+  const base = settled(5);
+  const { left, right, y } = midWater(base);
+  const swipes = 4;
+  const observation = observeInteraction(base, {
+    history: pointerHistory(...Array.from({ length: swipes }, (_, index) => (index % 2
+      ? swipe({ x: right, y }, { x: left, y }, { at: 1 + index * 1.2, seconds: 0.3 })
+      : swipe({ x: left, y }, { x: right, y }, { at: 1 + index * 1.2, seconds: 0.3 })))),
+    observeSeconds: 10,
+  });
+  // Every swipe rings the water at least once, and they ring the same slots at
+  // the same places, so a count keyed on either reports fewer than there were.
+  assert.ok(
+    observation.gesture.wakesCreated >= swipes * 2,
+    `four swipes reported only ${observation.gesture.wakesCreated} disturbances`,
+  );
+  // It is still bounded by what is in the water at once.
+  assert.ok(observation.gesture.peakLiveWakes <= MAX_WAKE_IMPULSES);
+});
+
+// Two live disturbances can share a seed on purpose - it comes from the
+// aquarium and the place, so the same shelf of sand lifts the same grit twice -
+// but two scene objects sharing an *id* collapse in the damage calculator's
+// maps and leave one burst's old pixels unrepainted.
+test("two disturbances in the same water draw two sets of bubbles", () => {
+  const base = settled(5);
+  const floor = base.rows - TOUCH_FLOOR_ROWS;
+  // A press on the sand, drawn away and brought back to the same column while
+  // the press's own impulse is still live. The pauses are what make it happen:
+  // the wake between has to expire so the water is clear enough to be rung
+  // again *exactly* where the press was, which is where the seeds collide.
+  const away = [34, 38, 42, 46];
+  const path = [...away, ...Array(10).fill(46), 40, ...Array(10).fill(40), 30, 30];
+
+  let state = applyTouch(base, 30, floor);
+  let collided = false;
+  path.forEach((x, index) => {
+    state = applyContact(state, x, floor, (index + 1) * STEP);
+    state = tick(state, STEP);
+    const live = state.impulses.filter((impulse) => impulse.contact === "substrate");
+    if (live.length > 1 && new Set(live.map((impulse) => impulse.seed)).size < live.length) {
+      collided = true;
+    }
+    const bubbles = createBubbleWorldRecords(state).map((record) => record.id);
+    assert.equal(new Set(bubbles).size, bubbles.length, "two bubbles shared a scene identity");
+    const objects = renderScene(state).objects.map((object) => object.id);
+    assert.equal(new Set(objects).size, objects.length, "two scene objects shared an identity");
+  });
+  // The fixture has to actually produce the collision, or it is proving nothing.
+  // Two live substrate disturbances sharing a seed is deliberate - it comes from
+  // the aquarium and the place - and it is exactly the case that used to give
+  // their bubbles the same scene identity.
+  assert.ok(collided, "the fixture never rang the same sand twice while both were live");
+});
+
+// The ring is drawn as a circle on the glass, so its vertical radius is halved.
+// Halving the vertical component of a cell-space direction is a different thing,
+// and it made a diagonal wake drift and stretch at a shallower angle than the
+// water and the finger were travelling at.
+test("a diagonal wake drifts the way the water is going", () => {
+  const base = settled(5);
+  const centre = (ageSeconds, dirX, dirY) => {
+    const state = {
+      ...base,
+      impulses: Object.freeze([createImpulse({
+        id: "wake:0",
+        source: "wake",
+        x: 30,
+        y: 9,
+        ageSeconds,
+        durationSeconds: 0.95,
+        dirX,
+        dirY,
+      })]),
+    };
+    const scene = renderScene(state);
+    const object = scene.objects.find((entry) => entry.id === "reaction:ripple:wake:0");
+    assert.ok(object, "the wake drew no ripple");
+    // The last glyph of the ring is its centre.
+    return scene.glyphs[object.glyphStart + object.glyphCount - 1];
+  };
+  const drift = (dirX, dirY) => {
+    const early = centre(0.05, dirX, dirY);
+    const late = centre(0.6, dirX, dirY);
+    return { x: late.x - early.x, y: late.y - early.y };
+  };
+
+  // A cell is twice as tall as it is wide, so water going equally far in both
+  // in *cells* covers twice as many pixels down as across. The ripple has to go
+  // with it.
+  const diagonal = drift(Math.SQRT1_2, Math.SQRT1_2);
+  assert.ok(diagonal.x > 1 && diagonal.y > 1, "a diagonal wake did not drift");
+  const slope = diagonal.y / diagonal.x;
+  assert.ok(Math.abs(slope - 2) < 0.15, `a diagonal wake drifted at a slope of ${slope.toFixed(2)}, not 2`);
+
+  // On the axes there is nothing to get wrong, and both drift the same distance
+  // on the glass - which is what makes this a fix to the diagonal alone.
+  const across = drift(1, 0);
+  const down = drift(0, 1);
+  assert.equal(across.y, 0);
+  assert.equal(down.x, 0);
+  assert.ok(Math.abs(across.x - down.y) < 1, "a sideways wake and a downward one travelled different distances");
 });

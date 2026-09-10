@@ -298,7 +298,13 @@ function touchBubbleRecords(state) {
       if (ageSeconds < 0 || ageSeconds > impulse.durationSeconds) continue;
       const speed = sampleRange(seed, 62, 0.5, 0.76);
       records.push({
-        id: `bubble:touch:${impulse.seed}:${index}`,
+        // Identity comes from the impulse, appearance from its seed. Two live
+        // disturbances can share a seed - it is derived from the aquarium and
+        // the place, so a drag that returns to the sand it started on is rung
+        // twice with the same one on purpose - and two scene objects sharing an
+        // id collapse in the damage calculator's maps, which leaves one burst's
+        // old pixels unrepainted.
+        id: `bubble:${impulse.id}:${index}`,
         seed,
         kind: "touch",
         phase: "rise",

@@ -84,8 +84,8 @@ required captures, minus the two that already existed).
 `capture:interaction --roles` draws the bounded path, the wake's direction and
 each chasing fish's pursuit.
 
-**Tests:** `tests/drag-swipe.test.js` (twenty-three, six of them the review
-findings below). Four Phase 3 tests changed what
+**Tests:** `tests/drag-swipe.test.js` (twenty-eight, eleven of them the two
+review rounds below). Four Phase 3 tests changed what
 they assert — see [Defects and changed expectations](#what-phase-3-asserted-that-is-no-longer-true).
 
 ## Architecture
@@ -188,15 +188,15 @@ All readings are from `npm run observe:interaction` over three seeds
 
 | Claim | How it was checked | Where |
 | --- | --- | --- |
-| A slow drag and a fast swipe are different gestures | The same path over 3 s and over 0.3 s: **11.1** against **73.9** column-widths a second, classified `drag` for 28 frames and `swipe` for 2, on all three seeds | `tests/drag-swipe.test.js`, evidence `gesture.kinds` |
+| A slow drag and a fast swipe are different gestures | The same path over 3 s and over 0.3 s: **13.9** against **110.8** column-widths a second, classified `drag` for 28 frames and `swipe` for 2, on all three seeds | `tests/drag-swipe.test.js`, evidence `gesture.kinds` |
 | …and they are visibly different in the water | Peak wake strength **0.90 against 0.46**, and a swipe's wake reaches **7.5 cells** where the same path drawn slowly reaches **5.2** | `tests/drag-swipe.test.js` |
-| …and in what the cast does about them | A drag is chased by **6 / 7 / 6** fish, a swipe by **4 / 4 / 4** and a diagonal swipe by **2 / 3 / 4**. Fish leaning away while the gesture was happening: **7** across three drags, **14** across three swipes, **16** across three diagonal swipes | evidence `gesture.chasing`, `gesture.roles` |
+| …and in what the cast does about them | A drag is chased by **7 / 7 / 7** fish, a swipe by **4 / 5 / 4** and a diagonal swipe by **2 / 4 / 4**. Fish leaning away while the gesture was happening: **7** across three drags, **14** across three swipes, **16** across three diagonal swipes | evidence `gesture.chasing`, `gesture.roles` |
 | The bands do not flip as a hand changes speed | A swipe slowed to mid-band stays a swipe; a drag sped up to the same mid-band speed stays a drag | `tests/drag-swipe.test.js` |
 | A pointer history stays bounded | A minute of dragging back and forth across the whole tank: the path peaks at **6 samples against a cap of 6**, one stimulus, ≤6 impulses, ≤3 live wakes, ≤15 records. Every scenario in the sweep peaks at 6 or under | `tests/drag-swipe.test.js`, evidence `gesture.peakPathSamples` |
 | …and the window it describes does not depend on the frame rate | The same half second of history at 10 fps and at 30 fps; a caller confirming twice a second keeps two samples rather than a stale one | `tests/drag-swipe.test.js` |
 | Repeated gestures cannot run away | Six swipes back and forth through the same water: the sixth costs what the first did in impulses, scene objects and glyphs. The `repeated-swipes` scenario holds ≤2 live wakes across four swipes | `tests/drag-swipe.test.js`, evidence `repeated-swipes` |
-| Fish reactions retain autonomy | The longest unbroken time any fish spent within a body length of a moving contact is **0–0.6 s** out of gestures 2–3.5 s long, and the nearest fish averages **1.7–6.1 cells behind** the finger. No fish exceeds the aquarium's own speed ceiling. At least four activities stand throughout | `tests/drag-swipe.test.js`, evidence `gesture.puppetSeconds`, `followLag` |
-| …and they chase in more than one way | **26 of the 27 runs** divide the responders across at least two of `intercept` / `trail` / `mark`, and **19** use all three. Every one of the fifteen drags uses at least two; the exception is `diagonal-swipe` on seed 5, where only two fish chased it at all | evidence `gesture.pursuits` |
+| Fish reactions retain autonomy | The longest unbroken time any *one* fish spent within a body length of a moving contact is **0–0.4 s** out of gestures 2–3.5 s long, and the nearest fish averages **1.7–6.1 cells behind** the finger. No fish exceeds the aquarium's own speed ceiling. At least four activities stand throughout | `tests/drag-swipe.test.js`, evidence `gesture.puppetSeconds`, `followLag` |
+| …and they chase in more than one way | **26 of the 27 runs** divide the responders across at least two of `intercept` / `trail` / `mark`, and **21** use all three. Every one of the fifteen drags uses at least two; the exception is `diagonal-swipe` on seed 5, where only two fish chased it at all | evidence `gesture.pursuits` |
 | …with the difference coming from the gesture as well as the fish | A curled drag (curvature 1.39 rad) is intercepted by fewer fish than a straight one on the same aquarium, because heading off a turning finger does not work | `tests/drag-swipe.test.js`, `curved-drag` |
 | The nearby environment responds directionally | Across the sweep, **79 stems leant downstream against 19 upstream**, and **54 bubbles** were carried the way the water was going. Exactly: a rightward wake bends every stem in reach right, a leftward one bends every one left, a vertical one bends none, and an undirected press pushes the two sides apart | `tests/drag-swipe.test.js`, evidence `gesture.plantsDownstream` / `plantsUpstream` / `bubblesCarried` |
 | A gesture reads as disturbance → displacement → settling | A swipe moves water for **1.4 s** and none is moving 2.5 s later; three seconds after the finger there are no stimuli, no impulses and no response records at all | `tests/drag-swipe.test.js` |
@@ -208,22 +208,22 @@ All readings are from `npm run observe:interaction` over three seeds
 | Autonomous behaviour is untouched | The deterministic ten-minute watch is identical activity for activity and peck for peck (694); every per-activity motion signature, `touch-react` included (0.67/0.77 speed, 13.2/22.2 pitch), matches Phase 3 | `npm run measure:readability` |
 | A presence that starts moving is read from the motion, not from its anchor | The path is written for every contact, moving or not; one frame of swipe-speed movement off a five-second hold reads **9.5 cells/s** where a stale anchor would read about 1, and the contact is a swipe within three frames | `tests/drag-swipe.test.js` |
 | Determinism holds | The same gesture replayed on the same aquarium gives the same fish in the same places doing the same things | `tests/drag-swipe.test.js`, `npm run audit:simulation` |
-| The gate is green | 411 tests (388 before, 23 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify` |
+| The gate is green | 416 tests (388 before, 28 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify` |
 
 What the nine Phase 4 scenarios read on seed 5 (`w` wakes created / live at
 once, `c` fish that chased it, `lag` mean cells behind the finger):
 
 | Scenario | Gesture | Peak speed | Wakes | Chased | Lag | Stems ↓/↑ | Damage |
 | --- | --- | ---: | --- | ---: | ---: | --- | ---: |
-| slow-drag | drag | 11.1 | 6 / 2 | 6 | 3.4 | 2 / 0 | 57.9 / 94.6 % |
-| curved-drag | drag | 15.0 | 8 / 3 | 4 | 4.1 | 3 / 1 | 59.2 / 98.1 % |
-| fish-drag | drag | 5.7 | 3 / 2 | 5 | 3.1 | 3 / 0 | 54.6 / 71.8 % |
-| plant-drag | drag | 5.0 | 3 / 1 | 5 | 4.4 | 3 / 1 | 54.2 / 70.3 % |
-| bubble-drag | drag | 6.0 | 3 / 2 | 4 | 3.3 | 5 / 1 | 54.4 / 74.3 % |
-| fast-swipe | swipe | 73.9 | 3 / 3 | 4 | 5.6 | 2 / 0 | 55.4 / 97.1 % |
-| diagonal-swipe | swipe | 79.6 | 3 / 3 | 2 | 5.4 | 7 / 3 | 55.7 / 96.9 % |
-| repeated-swipes | swipe ×4 | 58.8 | 4 / 2 | 9 | 4.9 | 2 / 0 | 55.4 / 98.1 % |
-| chase-swipe | swipe | 52.8 | 2 / 2 | 3 | 2.9 | 0 / 0 | 63.7 / 99.0 % |
+| slow-drag | drag | 13.9 | 6 / 2 | 7 | 3.4 | 2 / 0 | 57.9 / 94.6 % |
+| curved-drag | drag | 15.0 | 8 / 3 | 5 | 4.1 | 3 / 1 | 59.5 / 98.1 % |
+| fish-drag | drag | 7.1 | 3 / 2 | 5 | 3.1 | 3 / 0 | 54.6 / 71.8 % |
+| plant-drag | drag | 6.3 | 3 / 1 | 5 | 4.4 | 3 / 1 | 54.2 / 70.3 % |
+| bubble-drag | drag | 7.5 | 3 / 2 | 4 | 3.3 | 5 / 1 | 54.4 / 74.3 % |
+| fast-swipe | swipe | 110.8 | 3 / 3 | 4 | 5.6 | 2 / 0 | 55.4 / 97.1 % |
+| diagonal-swipe | swipe | 119.5 | 3 / 3 | 2 | 5.4 | 7 / 3 | 55.6 / 96.9 % |
+| repeated-swipes | swipe ×4 | 88.3 | 8 / 2 | 9 | 4.9 | 2 / 0 | 55.4 / 98.1 % |
+| chase-swipe | swipe | 79.1 | 2 / 2 | 4 | 2.9 | 0 / 0 | 63.7 / 99.0 % |
 
 `chase-swipe` reads 0 stems either way on this seed because the chase it was
 aimed at was in open water, nowhere near a plant. That is the scenario being
@@ -238,16 +238,16 @@ ordinary aquarium life in it and differs only by what was done to the glass.
 
 | Measure | Untouched | Tap | Slow drag | Fast swipe |
 | --- | --- | --- | --- | --- |
-| Average damage (seeds 5 / 147 / 1234) | 56.8 / 51.6 / 47.5 % | 53.9 / 52.9 / 49.5 % | 56.5 / 54.6 / 51.2 % | 57.6 / 55.3 / 51.0 % |
-| Mean of those | 52.0 % | 52.1 % | **54.1 %** | **54.6 %** |
-| Worst frame | 96.9 / 74.7 / 63.8 % | 96.9 / 69.4 / 72.9 % | 94.6 / 86.0 / 97.1 % | 97.1 / 82.7 / 95.6 % |
-| Dirty rectangles per frame | 18.7 / 22.7 / 20.7 | 18.9 / 24.0 / 20.2 | 17.1 / 23.6 / 17.5 | 15.2 / 21.1 / 20.4 |
+| Average damage (seeds 5 / 147 / 1234) | 56.8 / 51.6 / 47.5 % | 53.9 / 52.9 / 49.5 % | 56.8 / 54.8 / 51.2 % | 57.6 / 55.3 / 51.0 % |
+| Mean of those | 52.0 % | 52.1 % | **54.3 %** | **54.7 %** |
+| Worst frame | 96.9 / 74.7 / 63.8 % | 96.9 / 69.4 / 72.9 % | 98.1 / 96.5 / 97.1 % | 97.1 / 82.8 / 95.6 % |
+| Dirty rectangles per frame | 18.7 / 22.7 / 20.7 | 18.9 / 24.0 / 20.2 | 16.9 / 23.6 / 17.5 | 15.2 / 21.1 / 20.4 |
 | Peak scene glyphs | 1 190 / 1 102 / 1 123 | 1 194 / 1 102 / 1 131 | 1 244 / 1 141 / 1 171 | 1 261 / 1 163 / 1 202 |
 | Peak scene objects | 256 / 241 / 237 | 256 / 242 / 237 | 256 / 242 / 236 | 256 / 245 / 238 |
 | Full redraws | 0 | 0 | 0 | 0 |
 
-A three-second drag costs **2.1 percentage points of average damage over an
-aquarium nobody is touching**, and a swipe 2.6. Both use *fewer* dirty
+A three-second drag costs **2.3 percentage points of average damage over an
+aquarium nobody is touching**, and a swipe 2.7. Both use *fewer* dirty
 rectangles per frame than the untouched aquarium on two of the three seeds — a
 wake is a handful of small objects, and a fish that has been drawn to one place
 is a fish that is not somewhere else. The peak glyph count rises by 54 (drag)
@@ -281,8 +281,12 @@ byte-identical here, and it is still not this phase's to close.
 
 ## Defects found in review
 
-Five were raised on the pull request by the automated reviewer. All five were
-real and all five are fixed here, each with a test that fails without the fix.
+Ten were raised on the pull request by the automated reviewer, over two rounds.
+All ten were real and all ten are fixed here, each with a test that fails
+without the fix.
+
+### First round
+
 
 - **A gesture that began and ended between two ticks was received as a tap.**
   The frame loop confirms a contact once per tick; `pointermove` only moved the
@@ -334,6 +338,54 @@ classified as a `fish` press but rests *on* the substrate — under the old rule
 its release rang open water. It now rings the sand it was resting on and raises
 two bubbles. Its hold arc, engagement times and phases are identical; that is
 why the comparison against Phase 3 reads 56 of 66 rather than 57.
+
+### Second round
+
+Three of these are defects in the **measurements** rather than in the aquarium,
+which matters: two of them were inflating or deflating numbers this report
+quotes.
+
+- **The autonomy reading was taken on whichever fish happened to be nearest.**
+  A drag that passes one fish and then another would report a single long ride
+  that neither of them took, and the run was not cleared on frames with no
+  moving contact, so two gestures in one history could be joined into one. It is
+  now a run per fish, cleared by any frame with nothing beside the contact. The
+  measurement is `extendProximityRuns`, pulled out of the loop so that a claim
+  the report makes can be tested on its own rather than through a fixture that
+  happens to produce it. The reading it was inflating is the one in the gate
+  table: **0.4 s**, not 0.6 (`src/dev/interaction-observation.js`).
+- **A gesture with no frame of its own reported a wake from nowhere.** The
+  first round's sub-frame fix classifies the contact and rings the water inside
+  the release, so by the time the frame-level measurement looks, the stimulus is
+  released: the observation reported `wakesCreated: 1` with every gesture field
+  at zero. `endContact` now hands back the contact as it was classified, and
+  the per-fish role and pursuit are looked up from the event each fish is
+  *answering* rather than from the contact still on the glass. This is why the
+  peak speeds in the tables above went up — a 0.3 s swipe's fastest sample is
+  its last one, and that sample had never been counted
+  (`src/dev/interaction-observation.js`).
+- **The wake count counted slots, not disturbances.** Slots are reused on
+  purpose, so four alternating swipes ringing the same water from the same three
+  slots were counted as three. It now counts generations — a slot appearing, or
+  the wake in it getting younger, which only happens when it was replaced. The
+  `repeated-swipes` scenario went from 4 reported disturbances to **8**
+  (`src/dev/interaction-observation.js`).
+- **Two live disturbances could give their bubbles the same scene identity.**
+  The wake's seed is derived from the aquarium and the place, deliberately, so
+  a drag that returns to the sand it started on is rung twice with the same
+  seed while the press's own 3.2-second impulse is still live. The bubble ids
+  were built from that seed, so both bursts drew objects with the same id, which
+  the damage calculator collapses in its maps — leaving one burst's old pixels
+  unrepainted. Identity now comes from the impulse, appearance still from the
+  seed (`src/sim/bubbles.js`).
+- **A diagonal wake drifted at the wrong angle.** The ripple is drawn as a
+  circle on the *glass*, so its vertical radius is halved — but halving the
+  vertical component of a cell-space direction is a different operation. On the
+  axes the two agree; on a diagonal the ripple drifted and stretched at a 1:1
+  screen slope where the water and the finger were travelling at 2:1. Measured
+  on the drawn scene: the centre of a 45° wake now moves 7.9 px across and 15.5
+  px down where it used to move 12.4 and 12.3, and the sideways and downward
+  cases are unchanged to the pixel (`src/render/render.js`).
 
 ## What Phase 3 asserted that is no longer true
 
@@ -390,22 +442,22 @@ Phase 3's evidence.
 - **The wake's artwork is the acknowledged placeholder.** It is the same ring
   `AGENTS.md` says not to build a gate on, drawn out along the flow.
 - **Still one finger.** Two-finger gestures reach nothing, exactly as before.
-- The longest a fish spent within a body length of a moving contact was 0.6 s,
-  on the slowest drag in the sweep (5.7 cells a second, drawn past a resting
-  fish). That is a fish being brushed past rather than a fish being driven, and
-  the test's ceiling is one second; if a later phase makes drags slower still,
-  the reading is the one to watch.
+- The longest any one fish spent within a body length of a moving contact was
+  0.4 s, on the slowest drag in the sweep (7.1 cells a second, drawn past a
+  resting fish). That is a fish being brushed past rather than a fish being
+  driven, and the test's ceiling is one second; if a later phase makes drags
+  slower still, the reading is the one to watch.
 
 ## Gate decision
 
 | Acceptance-gate item | Met | Reading |
 | --- | --- | --- |
-| Slow drag and fast swipe are visually distinct | ✅ | 11.1 vs 73.9 cells/s; wake strength 0.46 vs 0.90; chased by 6–7 fish vs 2–4; 7 vs 14–16 fish leaning away |
-| Fish reactions retain autonomy | ✅ | Longest ride 0.6 s of a 2.6 s gesture, mean lag 1.7–6.1 cells, no fish over the aquarium's own speed ceiling, ≥4 activities standing, three pursuit styles in play |
+| Slow drag and fast swipe are visually distinct | ✅ | 13.9 vs 110.8 cells/s; wake strength 0.46 vs 0.90; chased by 7 fish vs 2–4; 7 vs 14–16 fish leaning away |
+| Fish reactions retain autonomy | ✅ | Longest ride 0.4 s of a 2.6 s gesture, mean lag 1.7–6.1 cells, no fish over the aquarium's own speed ceiling, ≥4 activities standing, three pursuit styles in play |
 | Nearby environment responds directionally | ✅ | 79 stems downstream against 19 upstream, 54 bubbles carried, the school swept along; exact per-stem signs proved in test |
 | Effects settle cleanly | ✅ | Water still 2.5 s after a swipe; nothing at all — stimuli, impulses, records — three seconds after the finger |
 | Pointer histories remain bounded | ✅ | 6 samples against a cap of 6 after a minute of dragging; window fixed at 0.54 s across frame rates |
 | Repeated gestures cannot create runaway object counts | ✅ | Six swipes: the sixth equals the first in impulses, objects and glyphs; ≤3 live wakes always |
-| Repaint remains localized | ✅ | 0 full redraws everywhere; +2.1–2.6 pp average damage over untouched; fewer dirty rectangles than untouched on two seeds of three |
+| Repaint remains localized | ✅ | 0 full redraws everywhere; +2.3–2.7 pp average damage over untouched; fewer dirty rectangles than untouched on two seeds of three |
 
 **PASS — phase complete; proceed.**
