@@ -424,7 +424,22 @@ export function createAttention(fish, stimulus, role, distance = Math.hypot(stim
  * at the glass.
  */
 export function mergeHoldAttention(previous, assigned, stimulus) {
-  if (!assigned) return previous ?? null;
+  if (!assigned) {
+    // Nothing was assigned because this fish cannot perceive the presence - but
+    // it may already be crossing the tank to it. The guarantee that answers a
+    // press can hand the event to a fish beyond the perception radius (in a
+    // founder-only aquarium, the only fish there is), and a re-read carries no
+    // guarantee, so without this its answer simply expires a few seconds in and
+    // the presence goes unanswered for as long as the viewer holds it. An
+    // answer already under way is promoted into the hold instead. It is not
+    // unbounded: the fish habituates on its own engagement clock like any
+    // other, and once it comes within range it is assigned normally.
+    const crossing = previous
+      && previous.stimulusId === stimulus.id
+      && !isPassiveRole(previous.role);
+    if (!crossing) return previous ?? null;
+    return { ...previous, held: true, released: false, holdSeconds: stimulus.holdSeconds };
+  }
   const sameEvent = previous && previous.stimulusId === assigned.stimulusId;
   const carried = {
     resume: previous?.resume,

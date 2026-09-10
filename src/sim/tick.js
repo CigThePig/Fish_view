@@ -20,7 +20,7 @@ import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
 import {
   ageInteractionEvents,
   dominantStimulus,
-  holdFalloff,
+  holdAttenuation,
   stimulusSalience,
 } from "./interaction-events.js";
 import {
@@ -139,9 +139,10 @@ function tickSchool(state, realDelta, motionScale) {
   // A school is the first thing in the tank to notice a disturbance and the
   // first to stop caring about one. It drifts at the arrival and then treats a
   // finger that stays as part of the furniture, which is why a held press
-  // gathers a fish or two at the glass and not a cloud of thirty.
+  // gathers a fish or two at the glass and not a cloud of thirty. The
+  // habituation outlives the finger: see `holdAttenuation`.
   const reactionStrength = 1.35 * stimulusSalience(stimulus)
-    * (stimulus?.held ? holdFalloff(stimulus.holdSeconds, SCHOOL_HOLD_PATIENCE_SECONDS, SCHOOL_HOLD_FLOOR) : 1);
+    * holdAttenuation(stimulus, SCHOOL_HOLD_PATIENCE_SECONDS, SCHOOL_HOLD_FLOOR);
 
   return source.map((fish, index) => {
     const journey = schoolJourney(state, index);

@@ -36,17 +36,26 @@ import {
   MAX_STIMULI,
   RELEASE_IMPULSE_SECONDS,
   RELEASE_IMPULSE_STRENGTH,
+  TOUCH_STIMULUS_RADIUS_CELLS,
   createImpulse,
   createStimulus,
   heldStimulus,
+  holdAttenuation,
   latestTouchStimulus,
+  stimulusSalience,
 } from "../src/sim/interaction-events.js";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
 import { TOUCH_FLOOR_ROWS, WATERLINE_ROWS } from "../src/sim/config.js";
 import { affinitiesFromSeed } from "../src/sim/fish-personality.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
 import { ACTIVITIES } from "../src/sim/fish-activities.js";
-import { applyHold, applyRelease, applyTouch, serializePersistentState } from "../src/sim/state.js";
+import {
+  applyHold,
+  applyRelease,
+  applyTouch,
+  createAquariumState,
+  serializePersistentState,
+} from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 import { STOCKED_AQUARIUM_DAY, createObservationAquarium } from "../src/dev/interaction-observation.js";
 
@@ -617,9 +626,9 @@ test("a finger drawn through the clamped bands is not a stationary hold", () => 
     let holding = applyHold(applyTouch(base, 30, from), 30, from, HOLD_THRESHOLD_SECONDS + 0.1);
     const anchor = heldStimulus(holding);
     assert.ok(anchor, `a press at row ${from} did not become a presence`);
-    // The presence remembers where the viewer touched, not only where the
+    // The presence remembers where the pointer actually was, not only where the
     // aquarium can act - which is the whole point of the two coordinates.
-    assert.equal(anchor.pressY, from);
+    assert.equal(anchor.pointerY, from);
     // Both ends of this drag are acted on at the same row, so measuring the
     // movement there would see a finger that never moved.
     assert.equal(
@@ -665,6 +674,97 @@ test("letting go of the sand lifts less than pressing it did", () => {
   // A press is a full-strength impulse and must raise exactly what it always
   // did, so nothing about the tap changed here.
   assert.equal(raised({ ...press, strength: 1 }), pressBubbles);
+});
+
+// A captured pointer goes on reporting after the finger leaves the canvas, so
+// the movement allowance has to be measured on coordinates that are not clamped
+// to the aquarium's own bounds either. Clamped, a finger dragged off the side of
+// the glass parks at the boundary and a ten-cell drag reads as standing still.
+test("a finger dragged off the edge of the glass is not a stationary hold", () => {
+  const base = settled(5);
+  const edge = base.cols - 1.2;
+  const holding = applyHold(applyTouch(base, edge, 9.5), edge, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  assert.ok(heldStimulus(holding), "a press near the edge did not become a presence");
+  assert.equal(heldStimulus(holding).pointerX, edge);
+
+  // Ten cells beyond the right-hand wall: outside the aquarium, but a real
+  // pointer position the browser really does deliver.
+  const offGlass = applyHold(holding, base.cols + 9, 9.5, HOLD_THRESHOLD_SECONDS + 0.6);
+  assert.equal(heldStimulus(offGlass), null, "a drag off the edge stayed a hold");
+
+  // The same journey inside the tank has always ended it; this is the control.
+  const inside = applyHold(holding, edge - 5, 9.5, HOLD_THRESHOLD_SECONDS + 0.6);
+  assert.equal(heldStimulus(inside), null);
+});
+
+// Release clears `held` but keeps the hold clock. Anything reading `held` alone
+// treats the aftermath of a long hold as a brand new tap - and for the school
+// that was a ninefold jump in attraction at the moment of release: thirty fish
+// that had ignored the finger for a minute surging at the spot it left.
+test("letting go does not summon the school it had stopped interesting", () => {
+  const base = settled(5);
+  let held = applyTouch(base, 33, 9.5);
+  for (let frame = 1; frame <= 200; frame += 1) {
+    held = applyHold(held, 33, 9.5, frame * STEP);
+    held = tick(held, STEP);
+  }
+
+  const pull = (state) => {
+    const stimulus = state.stimuli.find((one) => one.held || one.released);
+    return stimulus ? stimulusSalience(stimulus) * holdAttenuation(stimulus, 1.8, 0.12) : 0;
+  };
+  const whileHeld = pull(held);
+  const afterRelease = pull(applyRelease(held));
+  assert.ok(whileHeld < 0.25, `the school was still fully drawn to a 20 s hold (${whileHeld})`);
+  assert.ok(
+    afterRelease <= whileHeld * 1.05,
+    `letting go raised the school's attraction from ${whileHeld} to ${afterRelease}`,
+  );
+
+  // And in the water: the school moves the same whether the finger left or not.
+  const closing = (state) => {
+    let total = 0;
+    for (const fish of state.school) {
+      const dx = 33 - fish.x;
+      const dy = 9.5 - fish.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 30 || distance < 0.001) continue;
+      total += (dx * fish.vx + dy * fish.vy) / distance;
+    }
+    return total;
+  };
+  const released = tick(applyRelease(held), STEP);
+  const stillHeld = tick(applyHold(held, 33, 9.5, 20.1), STEP);
+  assert.ok(
+    Math.abs(closing(released) - closing(stillHeld)) < 0.5,
+    "the school surged when the finger left",
+  );
+});
+
+// The guarantee that answers a press can hand the event to a fish beyond the
+// perception radius - in a founder-only aquarium, the only fish there is. A
+// re-read carries no guarantee, so that answer used to expire mid-crossing and
+// leave the presence unanswered for as long as the viewer held it.
+test("a fish crossing the tank to a presence is not dropped on the way", () => {
+  let solo = createAquariumState({ seed: 5 });
+  for (let frame = 0; frame < 300; frame += 1) solo = tick(solo, STEP);
+  assert.equal(solo.individuals.length, 1, "expected the founder-only aquarium");
+
+  const fish = solo.individuals[0];
+  const x = fish.x > solo.cols / 2 ? 2 : solo.cols - 2;
+  assert.ok(
+    Math.hypot(x - fish.x, 9.5 - fish.y) > TOUCH_STIMULUS_RADIUS_CELLS,
+    "the press was meant to be out of perception range",
+  );
+
+  let state = applyTouch(solo, x, 9.5);
+  assert.equal(engaged(state), 1, "the press was not answered at all");
+  for (let frame = 1; frame <= 120; frame += 1) {
+    state = applyHold(state, x, 9.5, frame * STEP);
+    state = tick(state, STEP);
+  }
+  assert.ok(heldStimulus(state), "the presence went away on its own");
+  assert.equal(engaged(state), 1, "the only fish in the aquarium gave up on the finger");
 });
 
 test("a hold does not turn the aquarium into a crowd at the glass", () => {

@@ -109,17 +109,30 @@ function normalizeVector(x, y) {
   return { x: x / length, y: y / length };
 }
 
-// Where the viewer pressed, and where the aquarium can act on it. They are not
-// the same point: a press above the visible waterline or down in the gravel is
-// clamped into the band a fish can be sent to, but what it *landed on* is
-// decided by the raw point. Classifying the clamped one made a press on the
-// surface read as open water whenever the wave happened to sit a hundredth of a
-// row too low - and a hold measures its movement allowance against the point it
-// can act on, so both callers need both.
+/*
+ * A press is three points, not one, and every clamp between them loses
+ * something a different caller needs.
+ *
+ * `pointerX/Y` is where the pointer actually is, unclamped and possibly outside
+ * the aquarium entirely - a captured pointer goes on reporting after the finger
+ * leaves the canvas. Only the hold's movement allowance reads it, and it has to:
+ * measured on anything clamped, a finger dragged off the edge of the glass sits
+ * still at the boundary and a ten-cell drag reads as a stationary hold.
+ *
+ * `pressX/Y` is that point brought inside the aquarium. It decides what the
+ * press *landed on*, which is a question about the world and so cannot be asked
+ * about a point outside it.
+ *
+ * `safeX/Y` is where a fish can actually be sent, clamped out of the gravel and
+ * up off the waterline. Classifying this one made a press on the surface read as
+ * open water whenever the wave sat a hundredth of a row too low.
+ */
 function pressPoint(state, x, y) {
   const pressX = clamp(x, 0, state.cols - 1);
   const pressY = clamp(y, 0, state.rows - 1);
   return {
+    pointerX: x,
+    pointerY: y,
     pressX,
     pressY,
     safeX: pressX,
@@ -128,7 +141,7 @@ function pressPoint(state, x, y) {
 }
 
 export function applyTouch(state, x, y) {
-  const { pressX, pressY, safeX, safeY } = pressPoint(state, x, y);
+  const { pointerX, pointerY, pressX, pressY, safeX, safeY } = pressPoint(state, x, y);
 
   // A press is three things: water that moves, something the inhabitants can
   // notice, and - now - a role for each of them. All of it happens in the frame
@@ -136,7 +149,7 @@ export function applyTouch(state, x, y) {
   // acknowledged, and because a response chosen a frame later would be a
   // response to an aquarium that had already moved.
   const context = classifyStimulusContext(state, pressX, pressY);
-  const events = registerTouch(state, safeX, safeY, context, { pressX, pressY });
+  const events = registerTouch(state, safeX, safeY, context, { pointerX, pointerY });
   const stimulus = events.stimulus;
   const attention = assignAttention({ ...state, stimuli: events.stimuli }, stimulus, {
     commitmentFor: (fish) => activityCommitment(fish.activity?.current),
@@ -283,18 +296,18 @@ export function applyHold(state, x, y, holdSeconds) {
   if (!existing || existing.released) return state;
   if (!existing.held && seconds < HOLD_THRESHOLD_SECONDS) return state;
 
-  // How far the finger has travelled from where it landed - measured on the
-  // point the viewer actually touched, not on the one the aquarium acts on.
-  // Two reasons, and both of them are bugs otherwise: it is measured from the
-  // *landing* point rather than from where the finger was a frame ago, which
-  // every finger is always nearly at; and it is measured on the *raw* point,
-  // because the acted-on point is clamped into the band a fish can be sent to,
-  // so a finger drawn three rows through the gravel moves it not at all and a
-  // drag along the sand would be promoted to a stationary hold.
-  const { pressX, pressY } = pressPoint(state, x, y);
-  const anchorX = existing.pressX ?? existing.x;
-  const anchorY = existing.pressY ?? existing.y;
-  if (Math.hypot(pressX - anchorX, pressY - anchorY) > HOLD_MOVEMENT_CELLS) {
+  // How far the finger has travelled from where it landed, measured on the
+  // unclamped pointer at both ends. Three things are wrong with any other
+  // reading. From where the finger was a *frame* ago, every finger is always
+  // nearly still. On the point the aquarium *acts* on, a finger drawn three
+  // rows through the gravel does not move at all. And on the point clamped to
+  // the aquarium's own bounds, a captured pointer dragged off the edge of the
+  // glass parks at the boundary - so a ten-cell drag off the side of the tank
+  // reads as a stationary hold.
+  const { pointerX, pointerY } = pressPoint(state, x, y);
+  const anchorX = existing.pointerX ?? existing.x;
+  const anchorY = existing.pointerY ?? existing.y;
+  if (Math.hypot(pointerX - anchorX, pointerY - anchorY) > HOLD_MOVEMENT_CELLS) {
     return existing.held ? applyRelease(state) : state;
   }
 

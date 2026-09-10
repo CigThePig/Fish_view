@@ -162,6 +162,12 @@ water is otherwise still for the whole hold: a finger resting on glass is not a
 continuous impulse, and making it one would repaint the same patch for as long
 as a child cared to lean on it.
 
+A hold's habituation **outlives the finger**. Release clears `held` but keeps
+the hold clock, so anything that reads `held` alone treats the aftermath of a
+minute-long hold as a brand new tap — which is how the school came to surge at a
+contact it had spent the whole hold ignoring. Read `holdAttenuation`, not
+`stimulus.held`, wherever a hold is allowed to make something care less.
+
 **Ending a contact is the platform's job, and it is deliberately
 over-covered.** `HOLD_STALE_SECONDS` lets a held stimulus go when nothing
 confirms it, but that only protects a caller that *stops calling* — it cannot

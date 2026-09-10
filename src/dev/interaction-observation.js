@@ -49,6 +49,7 @@ import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { livingWorldRecords } from "../sim/living-world.js";
 import { createPlantFrameContext, plantSpecies, posePlant } from "../sim/plants.js";
 import { HOLD_PHASE_LIST, attentionInvestigates, holdPhase } from "../sim/attention.js";
+import { MAX_HOLD_SECONDS } from "../sim/interaction-events.js";
 import { applyHold, applyRelease, applyTouch, createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 
@@ -294,11 +295,20 @@ export function applyPointerEvent(state, event, { rect = displayRect(), primary 
  *
  * This is the other half of `src/app.js`'s pointer handling: the app runs a
  * clock and hands `applyHold` the elapsed time before each tick, and so does
- * this, off the replay's own seconds rather than off a wall clock.
+ * this, off the replay's own seconds rather than off a wall clock — including
+ * the app's ceiling. `applyHold` alone would never let go of a contact whose
+ * release is missing or late, because it only clamps the clock and clears the
+ * staleness; the app stops confirming such a contact once it passes
+ * `MAX_HOLD_SECONDS`, and a harness that did not would be measuring a gesture
+ * the product cannot produce.
+ *
+ * Returns the contact as it stands, which is `null` once it has been ended.
  */
 export function holdContact(state, contact, seconds) {
-  if (!contact) return state;
-  return applyHold(state, contact.x, contact.y, seconds - contact.startedAt);
+  if (!contact) return { state, contact: null };
+  const heldSeconds = seconds - contact.startedAt;
+  if (heldSeconds > MAX_HOLD_SECONDS) return { state: applyRelease(state), contact: null };
+  return { state: applyHold(state, contact.x, contact.y, heldSeconds), contact };
 }
 
 /* ------------------------------------------------------------------ *
@@ -641,7 +651,9 @@ export function observeInteraction(baseState, {
     // The finger, if it is still there, told to the aquarium before the tick -
     // the order `src/app.js` uses, so the presence the fish read this frame is
     // the one that is there this frame.
-    treatment = holdContact(treatment, contact, seconds);
+    const confirmed = holdContact(treatment, contact, seconds);
+    treatment = confirmed.state;
+    contact = confirmed.contact;
     treatment = tick(treatment, stepSeconds);
     control = tick(control, stepSeconds);
     const nextScene = render(treatment);
@@ -777,17 +789,25 @@ export function observeInteraction(baseState, {
     // The frame the presence stopped being one, whether that was a finger
     // lifting or a finger wandering out of the allowance. A tap never had a
     // presence, so it never has a release and never reports an aftermath.
-    if (wasHolding && !held && releaseFrame === null) {
+    //
+    // A history with two holds in it has two releases, and the aftermath is the
+    // tail of *a* release rather than the span since the first one: measured
+    // from the first, an 8-second hold repeated after a gap reported sixteen
+    // seconds of aftermath, almost all of it the second hold happening. Each
+    // release restarts the measurement, and the longest one is what is
+    // reported.
+    if (wasHolding && !held) {
       releaseFrame = frame;
       engagedAtRelease = engaged;
     }
     wasHolding = Boolean(held);
     // How long the aquarium goes on answering a presence that has gone. The
     // aftermath is the point of releasing rather than cancelling, so it is
-    // measured rather than asserted.
-    if (releaseFrame !== null && frame > releaseFrame
+    // measured rather than asserted - and it stops the moment a new finger
+    // lands, because what happens then is a new interaction and not a tail.
+    if (releaseFrame !== null && frame > releaseFrame && !held
       && treatment.individuals.some((fish) => fish.attention)) {
-      aftermathFrames = frame - releaseFrame;
+      aftermathFrames = Math.max(aftermathFrames, frame - releaseFrame);
     }
 
     const treatmentCentroid = centroid(treatment.school);

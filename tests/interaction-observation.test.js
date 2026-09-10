@@ -31,7 +31,7 @@ import {
   tap,
 } from "../src/dev/interaction-observation.js";
 import { DISPLAY } from "../src/sim/config.js";
-import { HOLD_THRESHOLD_SECONDS, heldStimulus } from "../src/sim/interaction-events.js";
+import { HOLD_THRESHOLD_SECONDS, MAX_HOLD_SECONDS, heldStimulus } from "../src/sim/interaction-events.js";
 import { applyHold, applyTouch } from "../src/sim/state.js";
 
 // Settled far less than a measurement run settles for: these tests need a tank
@@ -116,9 +116,16 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   // A contact that is still down is told to the aquarium once per frame, which
   // is the other half of what `src/app.js` does with a pointer.
   const contact = { x: 33, y: 9.5, startedAt: 0 };
-  assert.equal(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS - 0.1)), null);
-  assert.ok(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS + 0.1)));
-  assert.equal(holdContact(press.state, null, 5), press.state);
+  assert.equal(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS - 0.1).state), null);
+  assert.ok(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS + 0.1).state));
+  assert.equal(holdContact(press.state, null, 5).state, press.state);
+
+  // …including the app's ceiling. A replay whose release is missing or late
+  // must let go where the app lets go, or a long-contact observation measures a
+  // gesture the product cannot produce.
+  const abandoned = holdContact(held, contact, MAX_HOLD_SECONDS + 1);
+  assert.equal(abandoned.contact, null);
+  assert.equal(heldStimulus(abandoned.state), null);
 
   // The hidden developer corner is not part of the aquarium's interaction
   // surface, and a scenario cannot accidentally tap through it.

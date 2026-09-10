@@ -138,7 +138,11 @@ export function createInteractionState() {
 export function stimulusSalience(stimulus) {
   if (!stimulus || stimulus.durationSeconds <= 0) return 0;
   if (stimulus.held) return stimulus.intensity * holdPresence(stimulus.holdSeconds);
-  return stimulus.intensity * clamp(1 - stimulus.ageSeconds / stimulus.durationSeconds, 0, 1);
+  const decayed = stimulus.intensity * clamp(1 - stimulus.ageSeconds / stimulus.durationSeconds, 0, 1);
+  // A released hold fades from where its presence had settled, never from full.
+  // Letting go of the glass does not make the disturbance louder than it was
+  // while the finger was on it.
+  return stimulus.released ? decayed * holdPresence(stimulus.holdSeconds) : decayed;
 }
 
 /** The settling curve: full at the moment of arrival, a plateau thereafter. */
@@ -159,6 +163,23 @@ export function holdFalloff(holdSeconds, patienceSeconds, floor = 0) {
   const patience = Math.max(0.1, patienceSeconds);
   const past = clamp(((holdSeconds ?? 0) - patience) / patience, 0, 1);
   return floor + (1 - floor) * (1 - past * past * (3 - 2 * past));
+}
+
+/**
+ * How much of a hold's habituation still applies - and it still applies after
+ * the finger goes.
+ *
+ * Release clears `held` but keeps the hold clock, so anything that reads
+ * `held` alone treats the aftermath of a minute-long hold as a brand new tap.
+ * For the school that meant a ninefold jump in attraction at the moment of
+ * release: thirty fish that had spent the whole hold ignoring the finger surged
+ * at the spot the instant it left, which is precisely the synchronised summons
+ * this habituation exists to prevent. Whatever a hold has habituated to, it
+ * stays habituated to while it fades.
+ */
+export function holdAttenuation(stimulus, patienceSeconds, floor = 0) {
+  if (!stimulus?.held && !stimulus?.released) return 1;
+  return holdFalloff(stimulus.holdSeconds, patienceSeconds, floor);
 }
 
 /**
@@ -219,14 +240,16 @@ export function createStimulus({
   // who finds the event interesting, and it is deliberately not the same
   // question as what the water physically touched.
   context = "open-water",
-  // Where the viewer actually pressed, before the point was clamped into the
-  // band a fish can be sent to. It is what the hold's movement allowance is
-  // measured against: `x` and `y` are clamped, so a finger travelling three
-  // rows inside the gravel band moves them not at all, and a drag across the
-  // sand would be promoted to a stationary hold. Defaults to the clamped point,
+  // Where the pointer actually was: unclamped, and possibly outside the
+  // aquarium, because a captured pointer goes on reporting after the finger
+  // leaves the canvas. It exists for one reader - the hold's movement allowance
+  // - and it has to be unclamped for it: `x` and `y` are clamped into the band
+  // a fish can be sent to *and* to the aquarium's own bounds, so measured on
+  // them a finger drawn three rows through the gravel, or ten cells off the
+  // side of the glass, has not moved at all. Defaults to the event's own point,
   // which is right for the labs and fixtures that build a stimulus directly.
-  pressX = x,
-  pressY = y,
+  pointerX = x,
+  pointerY = y,
   // Which press this was, for ordering events that are otherwise equal.
   sequence = 0,
   // The hold, in three numbers and two flags. `held` is a finger currently on
@@ -244,8 +267,8 @@ export function createStimulus({
     source,
     x,
     y,
-    pressX,
-    pressY,
+    pointerX,
+    pointerY,
     intensity,
     radius,
     ageSeconds,
@@ -276,14 +299,14 @@ export function createImpulse({
   return Object.freeze({ id, source, x, y, strength, radius, ageSeconds, durationSeconds, contact, seed, sequence });
 }
 
-function touchStimulus(state, x, y, sequence, context, pressX, pressY) {
+function touchStimulus(state, x, y, sequence, context, pointerX, pointerY) {
   return createStimulus({
     id: `touch:${sequence}`,
     sequence,
     x,
     y,
-    pressX,
-    pressY,
+    pointerX,
+    pointerY,
     context,
     radius: TOUCH_STIMULUS_RADIUS_CELLS,
   });
@@ -348,11 +371,11 @@ function admit(list, event, maximum, amplitude) {
  * applies the immediate response - a press has to be answered in the frame it
  * arrives, never on the next tick.
  */
-export function registerTouch(state, x, y, context = "open-water", { pressX = x, pressY = y } = {}) {
+export function registerTouch(state, x, y, context = "open-water", { pointerX = x, pointerY = y } = {}) {
   const sequence = ((state.interactionSequence ?? 0) + 1) % SEQUENCE_MODULO;
   const stimuli = admit(
     state.stimuli ?? [],
-    touchStimulus(state, x, y, sequence, context, pressX, pressY),
+    touchStimulus(state, x, y, sequence, context, pointerX, pointerY),
     MAX_STIMULI,
     stimulusSalience,
   );

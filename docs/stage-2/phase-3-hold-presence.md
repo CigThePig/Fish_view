@@ -60,7 +60,7 @@ ones for a hold. Seven hold scenarios were added. `npm run observe:interaction`
 gained a hold column and a per-fish arc column; `capture:interaction --roles`
 draws the phase under the role.
 
-**Tests:** `tests/hold-presence.test.js` (eighteen), plus the contact-release
+**Tests:** `tests/hold-presence.test.js` (twenty-one), plus the contact-release
 paths in `tests/app-lifecycle.test.js` and the record-shape and
 gesture-seam expectations in `tests/attention-roles.test.js` and
 `tests/interaction-observation.test.js`.
@@ -168,14 +168,14 @@ contact. The tap has five moments and no arc; the hold has eight, and the
 | A fish finishes its mouthful, then comes | `feeding-hold`: the fish that chose to work the sand is given `delayed`, converts, and runs `orient>approach>inspect>linger>depart` over 15.4 s before resuming `substrate-search`. The same press as a tap gives it 3.2 s and it never arrives | evidence file, `feeding-hold` |
 | Release has a readable aftermath | Responders depart rather than stopping: each ends further from the contact than it was when the finger left, they let go on **different frames**, and the presence is remembered for 2 s so a fish still crossing arrives at the place something was | `tests/hold-presence.test.js` |
 | …and a responder gets its evening back | Most responders resume the exact activity they put down | `tests/hold-presence.test.js` |
-| A 30–60 second hold creates nothing unbounded | A 60 s hold: peak **1 stimulus**, ≤1 impulse, ≤15 records, ≤5 fish interrupted; hold clock, record age and hover time all clamped; **nothing at all** 10 s after release. The 60 s and 24 s holds produce the same readings — 3–5 peak engaged, 11–13 settled, 3.2–4.6 s aftermath | `tests/hold-presence.test.js`, evidence file `endurance-hold` vs `long-hold` |
+| A 30–60 second hold creates nothing unbounded | A 60 s hold: peak **1 stimulus**, ≤1 impulse, ≤15 records, ≤5 fish interrupted; hold clock, record age and hover time all clamped; **nothing at all** 10 s after release. The 60 s and 24 s holds produce the same readings — 3–5 peak engaged, 11–13 settled, 3.2 s aftermath on both | `tests/hold-presence.test.js`, evidence file `endurance-hold` vs `long-hold` |
 | A dropped release cannot strand the aquarium | A hold nobody confirms releases itself after 0.5 s and drains normally | `tests/hold-presence.test.js` |
 | Repeated holds are not identical performances | The same 8 s hold at the same point in an aquarium that has moved on produces a different cast and different phases — and the same hold on the same aquarium reproduces exactly | `tests/hold-presence.test.js`, `repeated-hold` |
 | A hold does not become a crowd at the glass | At least half the cast is passive throughout, and the aquarium never drops below 4 concurrent activities | `tests/hold-presence.test.js` |
 | **The tap is unchanged** | **42 of 48** Phase 2 scenarios reproduce byte for byte on anchor, aquarium and renderer readings. The 6 that differ are the two whose gesture leaves a contact on the glass past the hold threshold (`open-water-hold`, `two-finger-press`), which is the phase working | `npm run observe:interaction -- --compare=docs/assets/stage-2/phase-2/interaction-observation.json` |
 | …including its synchronisation and cost | The pre-Stage-2 instrument reads **8, 7, 7** activities after a tap and **55.0 / 52.9 / 55.7 %** damage — identical, digit for digit, to the same tool run at the baseline commit `32b92b7` | `npm run measure:stage2-baseline` |
 | Autonomous behaviour is untouched | The deterministic ten-minute watch is identical activity for activity and peck for peck (694); every per-activity motion signature, `touch-react` included (0.67/0.77 speed, 13.2/22.2 pitch), matches Phase 2 | `npm run measure:readability` |
-| The gate is green | 382 tests (364 before, 18 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify` |
+| The gate is green | 385 tests (364 before, 21 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify` |
 
 What a hold looks like on seed 5, from the sweep (`e` engaged at release,
 `l` lingered, `s` settled):
@@ -203,17 +203,17 @@ tap, and a longer window has more of everything in it.
 
 | Measure | Untouched | Tap | 24-second hold |
 | --- | --- | --- | --- |
-| Average damage (seeds 5 / 147 / 1234) | 57.0 / 50.8 / 53.4 % | 54.5 / 52.0 / 50.8 % | 57.0 / 52.6 / 51.8 % |
-| Mean of those | 53.8 % | 52.4 % | 53.8 % |
+| Average damage (seeds 5 / 147 / 1234) | 57.0 / 50.8 / 53.4 % | 54.5 / 52.0 / 50.8 % | 56.8 / 51.6 / 51.5 % |
+| Mean of those | 53.8 % | 52.4 % | 53.3 % |
 | Worst frame | 98.1 / 97.9 / 95.4 % | 98.1 / 77.7 / 97.3 % | 97.9 / 98.1 / 95.4 % |
-| Dirty rectangles per frame | 15.7 / 18.5 / 16.9 | 18.3 / 16.3 / 18.6 | 15.6 / 16.5 / 16.7 |
+| Dirty rectangles per frame | 15.7 / 18.5 / 16.9 | 18.3 / 16.3 / 18.6 | 15.7 / 17.0 / 17.0 |
 | Peak scene glyphs | 1 195 / 1 102 / 1 129 | 1 195 / 1 102 / 1 131 | 1 198 / 1 102 / 1 152 |
 | Full redraws | 0 | 0 | 0 |
 
-A 24-second hold costs **1.4 percentage points of average damage over a tap**
-and lands on the untouched aquarium's own average to a tenth of a point: over
-half a minute, an aquarium with a finger on it repaints what an aquarium
-nobody is touching repaints. It uses fewer dirty rectangles than either, and it
+A 24-second hold costs **0.9 percentage points of average damage over a tap**
+and sits half a point under the untouched aquarium's own average: over half a
+minute, an aquarium with a finger on it repaints about what an aquarium nobody
+is touching repaints. It uses fewer dirty rectangles than either, and it
 adds at most 23 glyphs at peak (the release ripple, plus fish standing where
 they would not have been). No full redraws. The one worst frame above the
 untouched aquarium's — seed 147, 98.1 % against 97.9 % — is a near-full repaint
@@ -243,8 +243,11 @@ glass or not. Both are comfortably inside the 24 000-byte ceiling
 
 ## Defects found in review
 
-Seven were raised on the pull request by the automated reviewer. All seven were
-real, and each is fixed here with a test that fails without the fix:
+Twelve were raised on the pull request by the automated reviewer, across two
+rounds. All twelve were real, and each is fixed here with a test that fails
+without the fix.
+
+### First round
 
 - **A fish already at the glass kept changing its mind about how close to get.**
   A re-read that changed an engaged fish's role rebuilt its record, and the
@@ -308,6 +311,51 @@ real, and each is fixed here with a test that fails without the fix:
   replay confirmed a finger that was no longer down for the rest of the run.
   `src/app.js` ends the contact before it looks at hotspot tap semantics at all;
   the corner now rejects presses only (`src/dev/interaction-observation.js`).
+
+### Second review round
+
+Five more, on the head that fixed the first seven. All five were real:
+
+- **Letting go summoned the school the hold had stopped interesting.** Release
+  clears `held` but keeps the hold clock, and the school's habituation only
+  looked at `held` — so at the instant a finger left, the attraction multiplier
+  jumped from **0.146 back to 1.350**, and thirty fish that had ignored the
+  contact for a minute surged at the spot it had just left. It is the same
+  class of mistake as the passive-twitch defect below, in the one place I had
+  not looked. `holdAttenuation` now applies a hold's accumulated habituation to
+  its aftermath as well, and `stimulusSalience` fades a released hold from where
+  its presence had settled rather than from full. The school now moves
+  identically whether the finger left or not (`src/sim/interaction-events.js`,
+  `src/sim/tick.js`).
+- **A fish crossing the tank to a presence was dropped on the way.** The
+  guarantee that answers a *press* can hand the event to a fish beyond the
+  30-cell perception radius — in a founder-only aquarium, the only fish there
+  is. A re-read carries no guarantee, so `assignAttention` returned nothing for
+  it and its answer expired a few seconds in: measured on the aquarium every
+  viewer meets first, a press 37.7 cells away was answered by 1 fish and, twelve
+  seconds into the hold, by **none at all**, with the presence still there. An
+  answer already under way is now promoted into the hold even when the re-read
+  has nothing to say about that fish (`src/sim/attention.js`).
+- **A finger dragged off the edge of the glass read as standing still.** The
+  first round fixed the clamp into the *fish* band; this is the clamp into the
+  aquarium's own bounds. A captured pointer keeps reporting after the finger
+  leaves the canvas, so a press at x = 64.8 dragged ten cells past the wall
+  compared 64.8 against 65 and stayed a hold. The movement allowance is now
+  measured on the genuinely unclamped pointer, which is what the stimulus stores
+  (`src/sim/state.js`, `src/sim/interaction-events.js`).
+- **The harness never let go of an abandoned replay contact.** `applyHold` only
+  clamps its clock, so a replay whose release is missing or late confirmed the
+  contact forever, while the app stops confirming one past
+  `MAX_HOLD_SECONDS`. `holdContact` now ends the contact at the same limit —
+  the same divergence-from-production problem as the hotspot finding
+  (`src/dev/interaction-observation.js`).
+- **The aftermath measurement counted a second hold as the tail of the first.**
+  `releaseFrame` was latched at the first release, so on `repeated-hold` it kept
+  accumulating through the second gesture: the committed evidence claimed
+  **16.5 s of aftermath for an 8-second hold** whose responses drain in under
+  three. Each release now restarts the measurement and frames under a live
+  contact are excluded; that scenario reads **4.5 s**
+  (`src/dev/interaction-observation.js`).
 
 ## Defects found while building
 
