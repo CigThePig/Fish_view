@@ -450,9 +450,25 @@ test("attention is transient: bounded, one per fish, and never carried over", ()
   for (const fish of touched.individuals) {
     if (!fish.attention) continue;
     const keys = Object.keys(fish.attention).sort();
+    // Fixed shape, fixed size. The hold fields are five more scalars, not a
+    // list that grows with how long a gesture went on for.
     assert.deepEqual(
       keys.filter((key) => key !== "resume"),
-      ["ageSeconds", "delaySeconds", "distance", "durationSeconds", "role", "stimulusId", "x", "y"],
+      [
+        "ageSeconds",
+        "delaySeconds",
+        "distance",
+        "durationSeconds",
+        "held",
+        "holdSeconds",
+        "nearSeconds",
+        "released",
+        "role",
+        "settled",
+        "stimulusId",
+        "x",
+        "y",
+      ],
     );
     // Only a fish that put something down carries the thing it put down.
     assert.equal("resume" in fish.attention, attentionInvestigates(fish.attention));

@@ -23,13 +23,16 @@
  * control run, ordinary life reads as a response.
  *
  * **The interaction path has one seam.** `applyPointerEvent` is the only place
- * that turns a pointer event into aquarium state. It does what `src/app.js`
- * does - a primary press outside the developer hotspot calls `applyTouch`, and
- * movement, hold duration and release mean nothing - so the harness measures
- * the real product rather than an idealised one. Phase 1 rebuilt what
- * `applyTouch` does underneath, onto stimuli and impulses, and every scenario,
- * measurement and capture here went on reading the same numbers. That is the
- * point of having built it first.
+ * that turns a pointer event into aquarium state, and `holdContact` is the only
+ * place a contact that is still down is told to the aquarium. Between them they
+ * do what `src/app.js` does - a primary press outside the developer hotspot
+ * calls `applyTouch`, a contact that stays put is fed to `applyHold` once per
+ * frame, and a release calls `applyRelease` - so the harness measures the real
+ * product rather than an idealised one. Phase 1 rebuilt what `applyTouch` does
+ * underneath, onto stimuli and impulses, and every scenario, measurement and
+ * capture here went on reading the same numbers. That is the point of having
+ * built it first. Phase 3 gave the rest of the gesture meaning, and the tap
+ * scenarios still read the same; only the holds changed.
  */
 
 import { aquariumPoint } from "../platform/aquarium-input.js";
@@ -45,7 +48,9 @@ import { affinitiesFromSeed } from "../sim/fish-personality.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { livingWorldRecords } from "../sim/living-world.js";
 import { createPlantFrameContext, plantSpecies, posePlant } from "../sim/plants.js";
-import { applyTouch, createAquariumState } from "../sim/state.js";
+import { HOLD_PHASE_LIST, attentionInvestigates, holdPhase } from "../sim/attention.js";
+import { MAX_HOLD_SECONDS } from "../sim/interaction-events.js";
+import { applyHold, applyRelease, applyTouch, createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 
 // The production frame interval. Observations are measured in frames the device
@@ -258,18 +263,52 @@ export function pointerEventForWorldPoint(x, y, rect = displayRect()) {
  * - only the left button, which is every touch and the ordinary mouse press.
  * - the developer hotspot is not part of the aquarium.
  * - a press registers a stimulus and a water impulse (Phase 1) and hands every
- *   fish a response role (Phase 2). Movement, hold duration and release are
- *   inert - delivered by this harness and genuinely meaningless to the
- *   aquarium - which is why a hold and a swipe still measure the same as the
- *   tap that began them. Phases 3 and 4 give the rest of the gesture meaning.
+ *   fish a response role (Phase 2). A release ends the presence the press may
+ *   have become (Phase 3). Movement is still inert as an event in its own
+ *   right - it moves the contact, and a contact that has moved too far stops
+ *   being a hold - because a gesture with a direction in it is Phase 4's.
  */
 export function applyPointerEvent(state, event, { rect = displayRect(), primary = true, button = 0 } = {}) {
   if (!primary) return { state, delivered: false, reason: "not-the-primary-pointer" };
   if (button !== 0) return { state, delivered: false, reason: "not-the-primary-button" };
   const point = aquariumPoint(pointerEventForWorldPoint(event.x, event.y, rect), rect);
-  if (point.hotspot) return { state, delivered: false, reason: "developer-hotspot" };
-  if (event.type !== "down") return { state, delivered: false, reason: "inert-today" };
-  return { state: applyTouch(state, point.x, point.y), delivered: true, reason: "touch", point };
+  // The hotspot rejects *presses*. It is not part of the aquarium's interaction
+  // surface, so a press there starts nothing - but a finger that started in the
+  // aquarium and happens to lift over the corner has still lifted, and
+  // `src/app.js` ends the contact before it looks at hotspot tap semantics at
+  // all. Rejecting the release here instead would leave the replay confirming a
+  // finger that is no longer down for the rest of the run.
+  if (point.hotspot && event.type === "down") {
+    return { state, delivered: false, reason: "developer-hotspot", point };
+  }
+  if (event.type === "down") {
+    return { state: applyTouch(state, point.x, point.y), delivered: true, reason: "touch", point };
+  }
+  if (event.type === "up") {
+    return { state: applyRelease(state), delivered: true, reason: "release", point };
+  }
+  return { state, delivered: false, reason: "inert-today", point };
+}
+
+/**
+ * A contact that is still on the glass, told to the aquarium once per frame.
+ *
+ * This is the other half of `src/app.js`'s pointer handling: the app runs a
+ * clock and hands `applyHold` the elapsed time before each tick, and so does
+ * this, off the replay's own seconds rather than off a wall clock — including
+ * the app's ceiling. `applyHold` alone would never let go of a contact whose
+ * release is missing or late, because it only clamps the clock and clears the
+ * staleness; the app stops confirming such a contact once it passes
+ * `MAX_HOLD_SECONDS`, and a harness that did not would be measuring a gesture
+ * the product cannot produce.
+ *
+ * Returns the contact as it stands, which is `null` once it has been ended.
+ */
+export function holdContact(state, contact, seconds) {
+  if (!contact) return { state, contact: null };
+  const heldSeconds = seconds - contact.startedAt;
+  if (heldSeconds > MAX_HOLD_SECONDS) return { state: applyRelease(state), contact: null };
+  return { state: applyHold(state, contact.x, contact.y, heldSeconds), contact };
 }
 
 /* ------------------------------------------------------------------ *
@@ -430,6 +469,10 @@ function createFishRecord(fish) {
     turnCount: 0,
     secondsNearStimulus: 0,
     endingActivity: null,
+    // The arc a held press put this fish through, and how much of it the fish
+    // actually spent answering. Empty for a tap, which has no arc.
+    holdPhases: [],
+    secondsEngaged: 0,
     peakDeviation: 0,
     peakSpeedDeviation: 0,
     peakPitchDeviation: 0,
@@ -482,6 +525,8 @@ export function observeInteraction(baseState, {
     response: 0,
     activityDivergence: 0,
     holdingStimulusActivity: 0,
+    held: false,
+    holdInspecting: 0,
     damagePercent: 0,
     rectangles: 0,
     full: false,
@@ -496,7 +541,12 @@ export function observeInteraction(baseState, {
 
   const delivery = {
     total: events.length,
+    // Presses. A release is counted separately because it is not a new
+    // disturbance, it is the end of one - and because keeping this field
+    // meaning what it has always meant is what lets a Phase 3 run be compared
+    // field for field against Phase 2's evidence.
     delivered: 0,
+    released: 0,
     inert: 0,
     hotspot: 0,
     nonPrimary: 0,
@@ -508,6 +558,10 @@ export function observeInteraction(baseState, {
   // exactly what `src/app.js` filters on.
   const contacts = new Set();
   let primaryPointer = null;
+  // The primary contact while it is on the glass, in world cells, with the
+  // second it landed. `src/app.js` keeps exactly this and for the same reason:
+  // a hold is not an event, it is a thing that is still true.
+  let contact = null;
   const timeline = [timelineStart];
   const startBubbles = new Set(createBubbleWorldRecords(baseState).map((record) => record.id));
 
@@ -531,6 +585,15 @@ export function observeInteraction(baseState, {
   // alike - against that one.
   let latestPress = null;
   let latestPressFrame = null;
+  // What the hold, if there was one, did. Counted from the observation rather
+  // than assumed from the gesture, so a history that never crossed the hold
+  // threshold reports a hold of nothing.
+  let heldSeconds = 0;
+  let wasHolding = false;
+  let releaseFrame = null;
+  let peakEngaged = 0;
+  let engagedAtRelease = 0;
+  let aftermathFrames = 0;
   let damageTotal = 0;
   let damageWorst = 0;
   let rectangleTotal = 0;
@@ -560,16 +623,42 @@ export function observeInteraction(baseState, {
       }
       const result = applyPointerEvent(treatment, event, { rect, primary });
       treatment = result.state;
-      if (result.delivered) {
+      if (result.reason === "touch") {
         delivery.delivered += 1;
+        // A new press closes any aftermath still being measured. What the
+        // aquarium does from here is a response to *this*, and counting it
+        // against the previous gesture inflates the tail of every hold that
+        // happens to be followed by a tap.
+        releaseFrame = null;
         latestPress = { x: result.point.x, y: result.point.y };
         latestPressFrame = frame;
         if (stimulusFrame === null) stimulusFrame = frame;
+        // The contact this press started. Everything after it - the hold, the
+        // release - belongs to this one.
+        if (primary) contact = { x: result.point.x, y: result.point.y, startedAt: event.seconds };
+      } else if (result.reason === "release") {
+        delivery.released += 1;
+        // The finger is off the glass however much of a hold it turned out to
+        // be. When the presence ended is measured from the aquarium below, not
+        // from here, because a hold can also end by wandering out of itself.
+        if (primary) contact = null;
       } else if (result.reason === "developer-hotspot") delivery.hotspot += 1;
       else if (result.reason === "not-the-primary-pointer") delivery.nonPrimary += 1;
-      else delivery.inert += 1;
+      else {
+        delivery.inert += 1;
+        // A move does not disturb anything, but it does say where the finger
+        // is. Whether it has wandered too far to still be a hold is the
+        // simulation's judgement, made in `applyHold`.
+        if (primary && contact && result.point) contact = { ...contact, x: result.point.x, y: result.point.y };
+      }
     }
 
+    // The finger, if it is still there, told to the aquarium before the tick -
+    // the order `src/app.js` uses, so the presence the fish read this frame is
+    // the one that is there this frame.
+    const confirmed = holdContact(treatment, contact, seconds);
+    treatment = confirmed.state;
+    contact = confirmed.contact;
     treatment = tick(treatment, stepSeconds);
     control = tick(control, stepSeconds);
     const nextScene = render(treatment);
@@ -588,6 +677,11 @@ export function observeInteraction(baseState, {
     let response = 0;
     let activityDivergence = 0;
     let holdingStimulusActivity = 0;
+    // Fish actually at the presence this frame. It is the reading a contact
+    // sheet of a hold needs: "response" peaks when fish are moving, and the
+    // moment worth looking at is the one where a fish has stopped moving
+    // because it has arrived.
+    let holdInspecting = 0;
 
     for (const fish of treatment.individuals) {
       const record = fishRecords.get(fish.seed);
@@ -616,6 +710,16 @@ export function observeInteraction(baseState, {
       headings.set(fish.seed, nextHeading);
       velocities.set(fish.seed, { vx: fish.vx, vy: fish.vy });
       record.endingActivity = fish.activity?.current ?? null;
+
+      // The arc, sampled every frame. A phase is recorded the first time the
+      // fish is in it, in the order the plan names them, so a row reads as how
+      // far this fish got rather than as where it happened to be at the end.
+      const phase = holdPhase(fish.attention, fish);
+      if (phase && !record.holdPhases.includes(phase)) record.holdPhases.push(phase);
+      if (phase === "inspect" || phase === "linger") holdInspecting += 1;
+      if (fish.attention?.held && attentionInvestigates(fish.attention)) {
+        record.secondsEngaged += stepSeconds;
+      }
 
       // What this fish is answering, kept for the whole observation once it is
       // known. A response outlives its record - a fish is still coming back
@@ -683,6 +787,36 @@ export function observeInteraction(baseState, {
       }
     }
 
+    const held = (treatment.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
+    heldSeconds = Math.max(heldSeconds, held?.holdSeconds ?? 0);
+    const engaged = treatment.individuals.filter((fish) => attentionInvestigates(fish.attention)).length;
+    peakEngaged = Math.max(peakEngaged, engaged);
+    // The frame the presence stopped being one, whether that was a finger
+    // lifting or a finger wandering out of the allowance. A tap never had a
+    // presence, so it never has a release and never reports an aftermath.
+    //
+    // A history with two holds in it has two releases, and the aftermath is the
+    // tail of *a* release rather than the span since the first one: measured
+    // from the first, an 8-second hold repeated after a gap reported sixteen
+    // seconds of aftermath, almost all of it the second hold happening. Each
+    // release restarts the measurement, and the longest one is what is
+    // reported.
+    if (wasHolding && !held) {
+      releaseFrame = frame;
+      engagedAtRelease = engaged;
+    }
+    wasHolding = Boolean(held);
+    // How long the aquarium goes on answering a presence that has gone. The
+    // aftermath is the point of releasing rather than cancelling, so it is
+    // measured rather than asserted - and it stops the moment a new finger
+    // lands, because what happens then is a new interaction and not a tail.
+    // Both kinds of new finger: a press closes the window where it is
+    // delivered, and this guard covers one that is still down.
+    if (releaseFrame !== null && frame > releaseFrame && !held
+      && treatment.individuals.some((fish) => fish.attention)) {
+      aftermathFrames = Math.max(aftermathFrames, frame - releaseFrame);
+    }
+
     const treatmentCentroid = centroid(treatment.school);
     const controlCentroid = centroid(control.school);
     centroidDisplacement = Math.max(
@@ -734,6 +868,8 @@ export function observeInteraction(baseState, {
       response: round(response, 4),
       activityDivergence,
       holdingStimulusActivity,
+      held: Boolean(held),
+      holdInspecting,
       damagePercent: round(damagePercent, 2),
       rectangles: damage.rects.length,
       full: damage.full,
@@ -742,8 +878,11 @@ export function observeInteraction(baseState, {
     });
   }
 
+  const phaseOrder = (list) => HOLD_PHASE_LIST.filter((phase) => list.includes(phase));
   const fish = [...fishRecords.values()].map(({ startFromAttention, originFrame, reference, ...record }) => ({
     ...record,
+    holdPhases: phaseOrder(record.holdPhases),
+    secondsEngaged: round(record.secondsEngaged, 1),
     closestDistance: Number.isFinite(record.closestDistance) ? round(record.closestDistance, 2) : null,
     distanceTravelled: round(record.distanceTravelled, 2),
     averageSpeed: round(record.distanceTravelled / (frames * stepSeconds), 3),
@@ -798,6 +937,26 @@ export function observeInteraction(baseState, {
       bubblesDisturbed: disturbedBubbles.size,
       residentsAffected: disturbedResidents.size,
     },
+    // The hold, or a record that there was not one. `seconds` is what the
+    // aquarium actually held for, not what the gesture asked for: a press that
+    // never crossed the hold threshold, or a finger that wandered out of it,
+    // reports zero and the rest of this reads as the tap it was.
+    hold: {
+      seconds: round(heldSeconds, 1),
+      released: releaseFrame !== null && heldSeconds > 0,
+      peakEngaged,
+      engagedAtRelease,
+      aftermathSeconds: round(aftermathFrames * stepSeconds, 1),
+      phasesReached: Object.fromEntries(HOLD_PHASE_LIST
+        .map((phase) => [phase, fish.filter((one) => one.holdPhases.includes(phase)).length])
+        .filter(([, count]) => count > 0)),
+      distinctPhases: new Set(fish.flatMap((one) => one.holdPhases)).size,
+      // Fish that were still at the glass when the finger left, and fish that
+      // gave up on it while it was still there. Two ends of the same arc.
+      lingered: fish.filter((one) => one.holdPhases.includes("linger")).length,
+      settled: fish.filter((one) => one.holdPhases.includes("settle")).length,
+      longestEngagementSeconds: round(Math.max(0, ...fish.map((one) => one.secondsEngaged)), 1),
+    },
     render: {
       averageDamagePercent: round(damageTotal / frames, 2),
       worstDamagePercent: round(damageWorst, 2),
@@ -806,7 +965,7 @@ export function observeInteraction(baseState, {
       objects: objectsWorst,
       glyphs: glyphsWorst,
     },
-    moments: semanticMoments(timeline, stimulusFrame),
+    moments: semanticMoments(timeline, stimulusFrame, releaseFrame),
     timeline,
   };
 }
@@ -825,12 +984,18 @@ function classifyOutcome(record) {
 }
 
 /**
- * The six moments worth looking at, found in the observation rather than at
- * fixed percentages of it: the frame before the input, the first frame that
- * differs from the untouched aquarium, the response taking hold, its peak, the
- * point where most of it has drained away, and what is left at the end.
+ * The moments worth looking at, found in the observation rather than at fixed
+ * percentages of it: the frame before the input, the first frame that differs
+ * from the untouched aquarium, the response taking hold, its peak, the point
+ * where most of it has drained away, and what is left at the end.
+ *
+ * A held press adds two of its own, because the tap moments are the wrong ones
+ * for it. "Peak response" is when fish are moving fastest, which for a hold is
+ * usually the swim out; the frame a viewer would want to see is the one where a
+ * fish has arrived and stopped. And a hold has a release, which is an event
+ * rather than a gradient and belongs on the sheet as itself.
  */
-export function semanticMoments(timeline, stimulusFrame) {
+export function semanticMoments(timeline, stimulusFrame, releaseFrame = null) {
   if (!timeline.length) return [];
   const peak = timeline.reduce((best, entry) => (entry.response > best.response ? entry : best), timeline[0]);
   const responded = (entry) => entry.deviation > DEVIATION_EPSILON_CELLS || entry.activityDivergence > 0;
@@ -849,11 +1014,24 @@ export function semanticMoments(timeline, stimulusFrame) {
     ?? null;
   const before = timeline.find((entry) => entry.frame === Math.max(0, (stimulusFrame ?? 1) - 1)) ?? timeline[0];
 
+  // The deepest the aquarium got into the hold: the most fish at the presence
+  // at once, and the last frame that reached that count, so the sheet shows the
+  // arrival rather than the first frame of it.
+  const held = timeline.filter((entry) => entry.held && entry.holdInspecting > 0);
+  const atTheGlass = held.length
+    ? held.reduce((best, entry) => (entry.holdInspecting >= best.holdInspecting ? entry : best), held[0])
+    : null;
+  const release = releaseFrame === null
+    ? null
+    : timeline.find((entry) => entry.frame === releaseFrame) ?? null;
+
   const moments = [
     { moment: "before", entry: before },
     { moment: "first-response", entry: first },
     { moment: "early-response", entry: early },
+    { moment: "at-the-glass", entry: atTheGlass },
     { moment: "peak-response", entry: peak.response > 0 ? peak : null },
+    { moment: "release", entry: release },
     { moment: "recovery", entry: recovery },
     { moment: "aftermath", entry: timeline.at(-1) },
   ];
@@ -867,8 +1045,12 @@ export function semanticMoments(timeline, stimulusFrame) {
       deviation: entry.deviation,
       activityDivergence: entry.activityDivergence,
       holdingStimulusActivity: entry.holdingStimulusActivity,
+      holdInspecting: entry.holdInspecting,
       damagePercent: entry.damagePercent,
-    }));
+    }))
+    // Chronological, because a contact sheet is read left to right. A tap's
+    // moments already come out in this order; a hold's do not.
+    .sort((left, right) => left.frame - right.frame);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1024,9 +1206,86 @@ export const INTERACTION_SCENARIOS = Object.freeze([
     id: "open-water-hold",
     label: "Hold",
     context: "stocked",
-    describe: "A press held for 1.6 s. Everything after the press is inert today.",
+    describe: "A press held for 1.6 s - just past the threshold that makes it a presence.",
     anchor: (state) => ({ x: state.cols * 0.44, y: midWaterY(state) }),
     gesture: (point) => hold(point.x, point.y, { at: 1, seconds: 1.6 }),
+  }),
+  // The gesture Phase 3 exists for: long enough for a fish to cross the tank,
+  // arrive, hang at the glass and be let go of again. A tap cannot do any of
+  // that, which is what makes this the scenario the two are compared through.
+  Object.freeze({
+    id: "long-hold",
+    label: "Long hold",
+    context: "stocked",
+    observeSeconds: 38,
+    describe: "A finger rested at mid-depth for 24 s, then lifted.",
+    anchor: (state) => ({ x: state.cols * 0.44, y: midWaterY(state) }),
+    gesture: (point) => hold(point.x, point.y, { at: 1, seconds: 24, sampleSeconds: 1.5 }),
+  }),
+  // The boundedness gate: a minute of leaning on the glass, watched for another
+  // twenty seconds afterwards. Nothing here may accumulate.
+  Object.freeze({
+    id: "endurance-hold",
+    label: "Minute-long hold",
+    context: "mature",
+    observeSeconds: 76,
+    describe: "A full minute of contact in a ten-year tank, then twenty seconds of aftermath.",
+    anchor: (state) => ({ x: state.cols * 0.5, y: midWaterY(state) }),
+    gesture: (point) => hold(point.x, point.y, { at: 1, seconds: 60, sampleSeconds: 3 }),
+  }),
+  // Held against the sand rather than in open water: a different context, a
+  // different set of fish inclined to care, and the substrate burst under it.
+  Object.freeze({
+    id: "substrate-hold",
+    label: "Hold on the sand",
+    context: "stocked",
+    observeSeconds: 24,
+    describe: "A finger rested on the substrate for 16 s.",
+    anchor: (state) => ({ x: state.cols * 0.38, y: substrateTapY(state, state.cols * 0.38) }),
+    gesture: (point) => hold(point.x, point.y, { at: 1, seconds: 16, sampleSeconds: 1.5 }),
+  }),
+  // Held beside a fish that chose to work the sand. It should finish its
+  // mouthful and then come, which a tap gives it no time to do.
+  Object.freeze({
+    id: "feeding-hold",
+    label: "Hold during feeding",
+    context: "stocked",
+    observeSeconds: 24,
+    waitFor: [ACTIVITIES.substrateSearch],
+    describe: "A finger held beside a fish that chose to work the sand.",
+    gesture: (point) => hold(point.x, point.y, { at: 1, seconds: 16, sampleSeconds: 1.5 }),
+  }),
+  // The same place held twice, a few seconds apart. The aquarium has moved on
+  // between them, so the second performance must not be the first one again.
+  Object.freeze({
+    id: "repeated-hold",
+    label: "The same place held twice",
+    context: "stocked",
+    observeSeconds: 30,
+    describe: "Two 8 s holds at the same point, 4 s apart.",
+    anchor: (state) => ({ x: state.cols * 0.56, y: midWaterY(state) }),
+    gesture: (point) => pointerHistory(
+      hold(point.x, point.y, { at: 1, seconds: 8, sampleSeconds: 2 }),
+      hold(point.x, point.y, { at: 13, seconds: 8, sampleSeconds: 2 }),
+    ),
+  }),
+  // A press that starts as a hold and wanders out of it. Motion is Phase 4's;
+  // what this records is that the aquarium stops pretending the finger is
+  // resting there rather than following it.
+  Object.freeze({
+    id: "hold-then-wander",
+    label: "Hold that wanders off",
+    context: "stocked",
+    observeSeconds: 20,
+    describe: "A press held for 4 s, then drawn slowly away from where it landed.",
+    anchor: (state) => ({ x: state.cols * 0.35, y: midWaterY(state) }),
+    gesture: (point, state) => pointerHistory([
+      ...hold(point.x, point.y, { at: 1, seconds: 4, sampleSeconds: 1 }).slice(0, -1),
+      ...drag(
+        [{ x: point.x, y: point.y }, { x: state.cols * 0.6, y: point.y - 2 }],
+        { at: 5, seconds: 3 },
+      ).slice(1),
+    ]),
   }),
   Object.freeze({
     id: "slow-drag",

@@ -84,6 +84,7 @@ console.log([
   pad("activities", 12),
   pad("roles", 24),
   pad("lat", 5, true),
+  pad("hold", 16),
   pad("school", 13),
   pad("env p/b/r", 10),
   pad("damage", 13, true),
@@ -117,6 +118,13 @@ for (const seed of options.seeds) {
       pad(Object.entries(aquarium.roles ?? {})
         .map(([role, count]) => `${role.slice(0, 3)}${count}`).join(" "), 24),
       pad(latencies.length ? Math.min(...latencies).toFixed(1) : "—", 5, true),
+      // Seconds held, fish still at the glass when it was let go, fish that
+      // stayed, fish that gave up while it was still there. A tap shows a dash:
+      // it has no arc to report.
+      pad(result.observation.hold.seconds > 0
+        ? `${result.observation.hold.seconds}s e${result.observation.hold.engagedAtRelease}`
+          + ` l${result.observation.hold.lingered} s${result.observation.hold.settled}`
+        : "—", 16),
       pad(`${aquarium.schoolCentroidDisplacement.toFixed(2)}/${aquarium.schoolSpreadChange.toFixed(2)}`, 13),
       pad(`${aquarium.plantsDisturbed}/${aquarium.bubblesCreated}/${aquarium.residentsAffected}`, 10),
       pad(`${renderCost.averageDamagePercent.toFixed(1)}/${renderCost.worstDamagePercent.toFixed(1)}%`, 13, true),
@@ -159,6 +167,7 @@ if (detail) {
     pad("pitch", 6, true),
     pad("turns", 6, true),
     pad("near", 5, true),
+    pad("hold arc", 34),
     pad("ending activity", 20),
     pad("outcome", 10),
   ].join(" "));
@@ -178,6 +187,11 @@ if (detail) {
       pad(fish.peakPitch.toFixed(0), 6, true),
       pad(fish.turnCount, 6, true),
       pad(fish.secondsNearStimulus.toFixed(1), 5, true),
+      // How far through the arc this fish got, and how long it spent actually
+      // answering. Empty for a tap and for a fish that ignored a hold.
+      pad(fish.holdPhases.length
+        ? `${fish.holdPhases.join(">")} ${fish.secondsEngaged}s`
+        : "—", 34),
       pad(fish.endingActivity, 20),
       pad(fish.outcome, 10),
     ].join(" "));
@@ -258,6 +272,9 @@ const FISH_COLUMNS = Object.freeze([
   // The three channels a response is measured in, against the same fish in the
   // untouched run: where it ended up, how fast it was going, how it was held.
   "peakDeviation", "peakSpeedDeviation", "peakPitchDeviation",
+  // How far through a held press's arc this fish got, and how long it actually
+  // spent answering it. Empty for a tap, which has no arc.
+  "holdPhases", "secondsEngaged",
   "endingActivity", "outcome",
 ]);
 
@@ -270,6 +287,7 @@ function fishRow(fish) {
     fish.distanceTravelled, fish.averageSpeed, fish.peakSpeed, fish.peakAcceleration,
     fish.peakPitch, fish.turnDegrees, fish.turnCount, fish.secondsNearStimulus,
     fish.peakDeviation, fish.peakSpeedDeviation, fish.peakPitchDeviation,
+    fish.holdPhases.join(">"), fish.secondsEngaged,
     fish.endingActivity, fish.outcome,
   ];
 }
@@ -294,6 +312,7 @@ if (options.evidence) {
       anchor: entry.anchor,
       pointer: entry.observation?.pointer ?? null,
       aquarium: entry.observation?.aquarium ?? null,
+      hold: entry.observation?.hold ?? null,
       render: entry.observation?.render ?? null,
       moments: entry.moments ?? null,
       fish: entry.seed === referenceSeed && entry.observation

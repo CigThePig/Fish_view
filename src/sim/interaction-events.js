@@ -25,6 +25,14 @@
  * worth, and in Phase 5, where a fish's own body makes an impulse that no one
  * is watching.
  *
+ * Phase 3 adds the first gesture that is not instantaneous. A press that stays
+ * where it was put becomes a **held stimulus**: the same event, refreshed in
+ * place, carrying a hold clock instead of decaying. It is deliberately not a
+ * queue of presses - a finger resting on the glass for a minute is one thing
+ * that is there, and the aquarium's state must not grow because it stayed. The
+ * water is a separate matter: it rings when the finger arrives and again, more
+ * gently, when it leaves, and it is still between those two.
+ *
  * Everything here is transient. Events are never serialised - a stimulus that
  * survived a reload would replay a gesture from last week - they are capped,
  * they expire the moment they are older than their duration, and near-repeats
@@ -60,6 +68,49 @@ export const TOUCH_IMPULSE_RADIUS_CELLS = 7.5;
 // which hands the nearest fish the event when nobody else caught it.
 export const TOUCH_STIMULUS_RADIUS_CELLS = 30;
 
+// A press that has not moved further than HOLD_MOVEMENT_CELLS by the time it is
+// HOLD_THRESHOLD_SECONDS old is a hold rather than a tap. The threshold is
+// under half a second because a viewer who means to rest a finger there should
+// not have to wait to be believed, and it is above a quarter of a second
+// because a slow tap is still a tap. The movement allowance is a fingertip's
+// worth of wander on a seven-inch panel: a press that travels further than that
+// is a gesture with a direction in it, which is Phase 4's, so it ends the hold.
+export const HOLD_THRESHOLD_SECONDS = 0.45;
+export const HOLD_MOVEMENT_CELLS = 1.6;
+
+// The hold clock stops here. Nothing in the aquarium is still changing at a
+// minute and a half - every fish has long since reached the phase it stops at -
+// so this is not a limit on how long a viewer may lean on the glass, it is the
+// promise that the number describing it cannot grow without bound. See
+// `holdFalloff`: interest is flat well before this.
+export const MAX_HOLD_SECONDS = 90;
+
+// A held stimulus is kept alive by the gesture refreshing it. If the refresh
+// stops arriving - a lost pointerup, a cancelled contact, a tab that went away
+// mid-press - the event lets go by itself after this long rather than resting
+// on the glass forever. It is the only thing standing between a dropped browser
+// event and a permanent disturbance, so it is short.
+export const HOLD_STALE_SECONDS = 0.5;
+
+// A finger that stays is a continuing presence, not a repeated shock. The
+// arrival is the loud part; over HOLD_SETTLE_SECONDS the stimulus settles to
+// HOLD_PRESENCE_FLOOR of it and stays there for as long as the finger does.
+// What changes after that is not the disturbance, it is each fish's patience
+// with it - see `holdFalloff` and src/sim/attention.js.
+export const HOLD_SETTLE_SECONDS = 1.6;
+export const HOLD_PRESENCE_FLOOR = 0.9;
+
+// Release matters. The stimulus does not vanish with the finger: it becomes an
+// ordinary decaying one that lives this long, so a fish still on its way
+// arrives at a place something was a moment ago and noses around it.
+export const RELEASE_SECONDS = 2;
+
+// The water moving as the contact leaves. Weaker and shorter than the arrival,
+// because a finger lifting is a smaller event than a finger landing, and
+// because two identical rings would read as a second tap.
+export const RELEASE_IMPULSE_STRENGTH = 0.42;
+export const RELEASE_IMPULSE_SECONDS = 1.5;
+
 // A second press this close to a live one of the same kind is the same gesture
 // continuing, not a new event: it refreshes the one that is there instead of
 // spending another slot. It is also what keeps a child drumming on the glass
@@ -76,10 +127,59 @@ export function createInteractionState() {
   return { stimuli: Object.freeze([]), impulses: Object.freeze([]), interactionSequence: 0 };
 }
 
-/** Intensity, decayed over the event's life. Zero once it is spent. */
+/**
+ * Intensity, decayed over the event's life. Zero once it is spent.
+ *
+ * A held stimulus does not decay: the finger is genuinely still there, so the
+ * aquarium goes on perceiving it at full presence less the settling above.
+ * What ends a hold is not the disturbance fading, it is each fish running out
+ * of patience with it, which is a per-fish question and lives with attention.
+ */
 export function stimulusSalience(stimulus) {
   if (!stimulus || stimulus.durationSeconds <= 0) return 0;
-  return stimulus.intensity * clamp(1 - stimulus.ageSeconds / stimulus.durationSeconds, 0, 1);
+  if (stimulus.held) return stimulus.intensity * holdPresence(stimulus.holdSeconds);
+  const decayed = stimulus.intensity * clamp(1 - stimulus.ageSeconds / stimulus.durationSeconds, 0, 1);
+  // A released hold fades from where its presence had settled, never from full.
+  // Letting go of the glass does not make the disturbance louder than it was
+  // while the finger was on it.
+  return stimulus.released ? decayed * holdPresence(stimulus.holdSeconds) : decayed;
+}
+
+/** The settling curve: full at the moment of arrival, a plateau thereafter. */
+export function holdPresence(holdSeconds) {
+  const settled = clamp((holdSeconds ?? 0) / HOLD_SETTLE_SECONDS, 0, 1);
+  return HOLD_PRESENCE_FLOOR + (1 - HOLD_PRESENCE_FLOOR) * (1 - settled);
+}
+
+/**
+ * How much of something survives a finger that will not go away.
+ *
+ * One shape, used by everything that has to get bored: full while the holder is
+ * still interested, easing to `floor` over the same span again, and flat after
+ * that. Flat is the important half - it is why a sixty-second hold costs the
+ * aquarium exactly what a fifteen-second one does.
+ */
+export function holdFalloff(holdSeconds, patienceSeconds, floor = 0) {
+  const patience = Math.max(0.1, patienceSeconds);
+  const past = clamp(((holdSeconds ?? 0) - patience) / patience, 0, 1);
+  return floor + (1 - floor) * (1 - past * past * (3 - 2 * past));
+}
+
+/**
+ * How much of a hold's habituation still applies - and it still applies after
+ * the finger goes.
+ *
+ * Release clears `held` but keeps the hold clock, so anything that reads
+ * `held` alone treats the aftermath of a minute-long hold as a brand new tap.
+ * For the school that meant a ninefold jump in attraction at the moment of
+ * release: thirty fish that had spent the whole hold ignoring the finger surged
+ * at the spot the instant it left, which is precisely the synchronised summons
+ * this habituation exists to prevent. Whatever a hold has habituated to, it
+ * stays habituated to while it fades.
+ */
+export function holdAttenuation(stimulus, patienceSeconds, floor = 0) {
+  if (!stimulus?.held && !stimulus?.released) return 1;
+  return holdFalloff(stimulus.holdSeconds, patienceSeconds, floor);
 }
 
 /**
@@ -140,10 +240,53 @@ export function createStimulus({
   // who finds the event interesting, and it is deliberately not the same
   // question as what the water physically touched.
   context = "open-water",
+  // Where the pointer actually was: unclamped, and possibly outside the
+  // aquarium, because a captured pointer goes on reporting after the finger
+  // leaves the canvas. It exists for one reader - the hold's movement allowance
+  // - and it has to be unclamped for it: `x` and `y` are clamped into the band
+  // a fish can be sent to *and* to the aquarium's own bounds, so measured on
+  // them a finger drawn three rows through the gravel, or ten cells off the
+  // side of the glass, has not moved at all. Defaults to the event's own point,
+  // which is right for the labs and fixtures that build a stimulus directly.
+  pointerX = x,
+  pointerY = y,
   // Which press this was, for ordering events that are otherwise equal.
   sequence = 0,
+  // The hold, in three numbers and two flags. `held` is a finger currently on
+  // the glass; `holdSeconds` is how long it has been there, bounded by
+  // MAX_HOLD_SECONDS; `staleSeconds` is how long since the gesture last said so,
+  // which is what lets a dropped release expire; `released` marks the aftermath
+  // of a hold, so a fish can tell "it is still there" from "it was just there".
+  held = false,
+  holdSeconds = 0,
+  staleSeconds = 0,
+  released = false,
+  // This press has already been further from where it landed than a hold is
+  // allowed to be. It is latched because the allowance is about the whole
+  // press, not about where the finger happens to be at the moment anyone
+  // checks: a finger that darts away and comes back has moved, and a gesture
+  // that was disqualified cannot become a presence by returning to its anchor.
+  wandered = false,
 }) {
-  return Object.freeze({ id, source, x, y, intensity, radius, ageSeconds, durationSeconds, context, sequence });
+  return Object.freeze({
+    id,
+    source,
+    x,
+    y,
+    pointerX,
+    pointerY,
+    intensity,
+    radius,
+    ageSeconds,
+    durationSeconds,
+    context,
+    sequence,
+    held,
+    holdSeconds: clamp(holdSeconds, 0, MAX_HOLD_SECONDS),
+    staleSeconds,
+    released,
+    wandered,
+  });
 }
 
 /** Water actually being disturbed. */
@@ -163,12 +306,14 @@ export function createImpulse({
   return Object.freeze({ id, source, x, y, strength, radius, ageSeconds, durationSeconds, contact, seed, sequence });
 }
 
-function touchStimulus(state, x, y, sequence, context) {
+function touchStimulus(state, x, y, sequence, context, pointerX, pointerY) {
   return createStimulus({
     id: `touch:${sequence}`,
     sequence,
     x,
     y,
+    pointerX,
+    pointerY,
     context,
     radius: TOUCH_STIMULUS_RADIUS_CELLS,
   });
@@ -193,6 +338,10 @@ function touchImpulse(state, x, y, sequence) {
 
 function coalesceInto(list, event) {
   return list.findIndex((existing) => existing.source === event.source
+    // A finger already on the glass is not something a new press refreshes.
+    // Merging into it would overwrite the hold with a tap and quietly end a
+    // gesture that is still happening.
+    && !existing.held
     && Math.hypot(existing.x - event.x, existing.y - event.y) <= COALESCE_RADIUS_CELLS);
 }
 
@@ -229,9 +378,14 @@ function admit(list, event, maximum, amplitude) {
  * applies the immediate response - a press has to be answered in the frame it
  * arrives, never on the next tick.
  */
-export function registerTouch(state, x, y, context = "open-water") {
+export function registerTouch(state, x, y, context = "open-water", { pointerX = x, pointerY = y } = {}) {
   const sequence = ((state.interactionSequence ?? 0) + 1) % SEQUENCE_MODULO;
-  const stimuli = admit(state.stimuli ?? [], touchStimulus(state, x, y, sequence, context), MAX_STIMULI, stimulusSalience);
+  const stimuli = admit(
+    state.stimuli ?? [],
+    touchStimulus(state, x, y, sequence, context, pointerX, pointerY),
+    MAX_STIMULI,
+    stimulusSalience,
+  );
   const impulses = admit(state.impulses ?? [], touchImpulse(state, x, y, sequence), MAX_IMPULSES, impulseStrength);
   return {
     // The events as the aquarium now holds them, identities included.
@@ -243,16 +397,158 @@ export function registerTouch(state, x, y, context = "open-water") {
   };
 }
 
+/** Mark a press as having travelled too far to ever become a presence. */
+export function markStimulusWandered(stimuli, stimulus) {
+  const wandered = createStimulus({ ...stimulus, wandered: true });
+  return Object.freeze((stimuli ?? []).map((entry) => (entry.id === stimulus.id ? wandered : entry)));
+}
+
+/**
+ * The stimulus a finger is currently resting on, if there is one.
+ *
+ * There is at most one, because the aquarium answers the primary pointer only:
+ * a second finger is not a second hold, it is nothing. A later phase that wants
+ * two hands changes what puts one here, not the shape of it.
+ */
+export function heldStimulus(state) {
+  return (state.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
+}
+
+/**
+ * The most recent live touch stimulus, which is the one a gesture is about.
+ *
+ * "Most recent" is the press that *is* the aquarium's current sequence number,
+ * not the press with the largest one. Those are the same thing 65 535 times out
+ * of 65 536, and on the wrap they are opposites: the counter goes back to 0
+ * while a press from a moment ago still carries 65 535, and picking the larger
+ * number would hand the gesture an event it has nothing to do with - measuring
+ * the hold's movement allowance against the wrong position, and refreshing the
+ * wrong stimulus if it cleared it. Sequence numbers wrap on purpose (they must
+ * not grow over months of touching), so anything comparing them has to.
+ */
+export function latestTouchStimulus(state) {
+  const current = state.interactionSequence ?? 0;
+  let fallback = null;
+  for (const stimulus of state.stimuli ?? []) {
+    if (stimulus.source !== "touch") continue;
+    if ((stimulus.sequence ?? 0) === current) return stimulus;
+    if (!fallback || (stimulus.sequence ?? 0) > (fallback.sequence ?? 0)) fallback = stimulus;
+  }
+  return fallback;
+}
+
+/**
+ * The finger is still down, still where it was put, and this old.
+ *
+ * The event is refreshed in place rather than replaced, so a hold spends one
+ * slot however long it lasts and keeps the identity the responders were handed
+ * when it landed. It also keeps its *position*: a presence is where the press
+ * landed, and a fingertip's worth of wander does not move it. That is what
+ * makes the movement allowance mean anything - measured against a point that
+ * followed the finger, a drag across the whole tank would never exceed it.
+ */
+export function holdStimulus(stimuli, stimulus, holdSeconds) {
+  const held = createStimulus({
+    ...stimulus,
+    ageSeconds: 0,
+    durationSeconds: TOUCH_SECONDS,
+    held: true,
+    released: false,
+    holdSeconds,
+    staleSeconds: 0,
+  });
+  return Object.freeze((stimuli ?? []).map((entry) => (entry.id === stimulus.id ? held : entry)));
+}
+
+/**
+ * The finger has gone.
+ *
+ * The stimulus stops being held and becomes an ordinary decaying one with a
+ * fresh, short life, keeping its identity and the hold clock it accumulated: a
+ * fish still crossing the tank arrives at the place a presence was, rather than
+ * at nothing at all. The water rings once more, gently, so the departure is
+ * visible even to a plant.
+ */
+export function releaseStimulus(state, stimulus) {
+  const released = createStimulus({
+    ...stimulus,
+    ageSeconds: 0,
+    durationSeconds: RELEASE_SECONDS,
+    held: false,
+    released: true,
+    staleSeconds: 0,
+  });
+  const impulses = admit(
+    state.impulses ?? [],
+    createImpulse({
+      id: `release:${stimulus.sequence ?? 0}`,
+      sequence: stimulus.sequence ?? 0,
+      x: stimulus.x,
+      y: stimulus.y,
+      strength: RELEASE_IMPULSE_STRENGTH,
+      durationSeconds: RELEASE_IMPULSE_SECONDS,
+      contact: stimulus.context === "substrate" ? "substrate" : "water",
+      seed: mix32(stimulus.sequence ?? 0),
+    }),
+    MAX_IMPULSES,
+    impulseStrength,
+  );
+  return {
+    stimulus: released,
+    stimuli: Object.freeze((state.stimuli ?? []).map((entry) => (entry.id === stimulus.id ? released : entry))),
+    impulses: impulses.list,
+  };
+}
+
 /**
  * Advance every live event by one frame and drop the spent ones immediately.
  * This is the only thing that removes an event, and it runs every tick, so the
  * lists cannot outlive the gesture that filled them.
+ *
+ * A held stimulus is the one event that does not age out, because the thing it
+ * describes has not stopped happening. It is not therefore unbounded: it lets
+ * go by itself once the gesture stops refreshing it, which is what happens when
+ * a release is lost, and its hold clock is clamped either way.
  */
 export function ageInteractionEvents(state, realDelta) {
   return {
-    stimuli: ageEvents(state.stimuli, realDelta),
+    stimuli: ageStimuli(state.stimuli, realDelta),
     impulses: ageEvents(state.impulses, realDelta),
   };
+}
+
+function ageStimuli(stimuli, realDelta) {
+  if (!stimuli?.length) return stimuli ?? Object.freeze([]);
+  const aged = [];
+  for (const stimulus of stimuli) {
+    if (stimulus.held) {
+      const staleSeconds = stimulus.staleSeconds + realDelta;
+      // Nobody has confirmed this finger for half a second: treat it as lifted.
+      // A release that reaches us later finds an already-released stimulus and
+      // does nothing, which is the right answer for a duplicated event.
+      if (staleSeconds >= HOLD_STALE_SECONDS) {
+        aged.push(createStimulus({
+          ...stimulus,
+          ageSeconds: 0,
+          durationSeconds: RELEASE_SECONDS,
+          held: false,
+          released: true,
+          staleSeconds: 0,
+        }));
+        continue;
+      }
+      // The hold clock itself belongs to the gesture, which sets it every frame
+      // it is still there. Advancing it here as well would count the same
+      // second twice, and a stimulus nobody is confirming is about to be
+      // released anyway.
+      aged.push(createStimulus({ ...stimulus, staleSeconds }));
+      continue;
+    }
+    const ageSeconds = stimulus.ageSeconds + realDelta;
+    if (ageSeconds >= stimulus.durationSeconds) continue;
+    aged.push(Object.freeze({ ...stimulus, ageSeconds }));
+  }
+  return Object.freeze(aged);
 }
 
 function ageEvents(events, realDelta) {

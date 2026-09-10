@@ -283,7 +283,12 @@ function touchBubbleRecords(state) {
   const records = [];
   for (const impulse of state.impulses ?? []) {
     if (impulse.contact !== "substrate") continue;
-    const count = 3 + Math.floor(sample01(impulse.seed, 60) * 4);
+    // How hard the water was hit decides how much it lifts. A tap is a full
+    // strength impulse and raises the burst it always did; the gentler ring a
+    // released hold makes is a smaller puff, rather than a second full burst
+    // that would read as another press.
+    const burst = 3 + Math.floor(sample01(impulse.seed, 60) * 4);
+    const count = Math.max(1, Math.round(burst * clamp(impulse.strength ?? 1, 0, 1)));
     const sourceY = waterBottom(state, impulse.x);
     const current = environmentalCurrent(state.seed, state.elapsedRealSeconds);
     for (let index = 0; index < count; index += 1) {

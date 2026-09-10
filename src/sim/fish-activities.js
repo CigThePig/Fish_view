@@ -7,9 +7,11 @@ import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import { fishShoals } from "./fish-roster.js";
 import {
+  HOLD_PHASES,
   ageAttention,
   attentionInvestigates,
   attentionStandoff,
+  holdPhase,
   shapeTargetForAttention,
 } from "./attention.js";
 import { dominantStimulus } from "./interaction-events.js";
@@ -824,13 +826,33 @@ export function resolveActivityTarget(fish, index, state, activity, {
     // difference between "came to look" and "came partway", and it is the most
     // legible thing separating two fish answering the same press.
     const standoff = 0.2 + (1 - affinities.glass) * 0.82 + attentionStandoff(attention);
+    const hold = holdPhase(attention, fish);
+    // Coming to look and staying to look are different swims, and the whole
+    // point of a held press is that a viewer can see the second one. A fish
+    // arriving still travels; a fish that has arrived slows almost to nothing,
+    // lifts its nose to the presence and hangs there on a seeded bob, so it
+    // reads as hovering at the glass rather than as parked against it.
+    const arrived = hold === HOLD_PHASES.inspect || hold === HOLD_PHASES.linger;
+    const bob = arrived
+      ? Math.sin(state.elapsedRealSeconds * 1.7 + sampleRange(fish.seed, 8815, 0, TAU)) * 0.22
+      : 0;
+    const lingering = hold === HOLD_PHASES.linger;
     return choreographed(state, activity.current, {
-      x: point.x + away.x * standoff,
-      y: point.y + away.y * standoff,
-      speed: 0.56 + affinities.glass * 0.25,
-      postureBias: 0,
+      x: point.x + away.x * (standoff + (lingering ? 0.55 : 0)),
+      y: point.y + away.y * standoff + bob,
+      // Approaching a presence that is not going anywhere is unhurried; a tap
+      // has to be caught before it fades, a finger does not.
+      speed: arrived
+        ? 0.16 + affinities.glass * 0.1
+        : (0.56 + affinities.glass * 0.25) * (attention?.held ? 0.86 : 1),
+      // Nose toward the glass while inspecting. It is the only posture a
+      // hovering fish has left to answer with.
+      postureBias: arrived ? clamp((point.y - fish.y) * 2.6, -6, 6) : 0,
       touchReact: true,
-      choreographyPhase: attentionStandoff(attention) > 0 ? "standoff" : "approach",
+      holdPhase: hold,
+      choreographyPhase: arrived
+        ? "inspect"
+        : attentionStandoff(attention) > 0 ? "standoff" : "approach",
     });
   }
   if (activity.current === ACTIVITIES.wander) {
@@ -1235,7 +1257,14 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   // frame older. Roles are assigned once, when the press lands (see
   // src/sim/attention.js); this is where they play out and expire.
   const previousAttention = fish.attention ?? null;
-  let attention = ageAttention(previousAttention, realDelta);
+  // The event this fish is answering, as the aquarium currently holds it. It is
+  // how a responder finds out that a held finger has lifted - `ageAttention`
+  // turns the answer into an aftermath the moment it is no longer held, so a
+  // release the browser never delivered cannot leave a fish attending forever.
+  const answered = previousAttention
+    ? (state.stimuli ?? []).find((entry) => entry.id === previousAttention.stimulusId) ?? null
+    : null;
+  let attention = ageAttention(previousAttention, realDelta, { fish, stimulus: answered });
   const previous = normalizedActivity(fish);
 
   if (attentionInvestigates(attention)) {

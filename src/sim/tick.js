@@ -17,7 +17,12 @@ import {
 import { fishSpriteWidth, speciesCanBottomFeed } from "./fish-growth.js";
 import { fishShoals, schoolCountFor } from "./fish-roster.js";
 import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
-import { ageInteractionEvents, dominantStimulus, stimulusSalience } from "./interaction-events.js";
+import {
+  ageInteractionEvents,
+  dominantStimulus,
+  holdAttenuation,
+  stimulusSalience,
+} from "./interaction-events.js";
 import {
   BEHAVIORS,
   socialEngagement,
@@ -45,6 +50,13 @@ const SHOALING_SOCIAL_UTILITY = 0.32;
 // How far a fully starving fish suppresses the behaviours that compete with
 // feeding for the same active time.
 const STARVATION_DAMPING = 0.45;
+
+// The school habituates to a held press far faster than any individual does,
+// and keeps only a trace of interest in it. Schooling fish are skittish and
+// they are not curious; a shoal that hung at a finger for a minute would be the
+// summons this whole stage exists to end.
+const SCHOOL_HOLD_PATIENCE_SECONDS = 1.8;
+const SCHOOL_HOLD_FLOOR = 0.12;
 
 const FACING_THRESHOLD = 0.11;
 const PITCH_DEADZONE = 0.035;
@@ -124,7 +136,13 @@ function tickSchool(state, realDelta, motionScale) {
   // the far end of the tank. Before Phase 2 every tap pulled the whole school
   // wherever it fell, which is most of what made one press look like a summons.
   const stimulus = dominantStimulus(state);
-  const reactionStrength = 1.35 * stimulusSalience(stimulus);
+  // A school is the first thing in the tank to notice a disturbance and the
+  // first to stop caring about one. It drifts at the arrival and then treats a
+  // finger that stays as part of the furniture, which is why a held press
+  // gathers a fish or two at the glass and not a cloud of thirty. The
+  // habituation outlives the finger: see `holdAttenuation`.
+  const reactionStrength = 1.35 * stimulusSalience(stimulus)
+    * holdAttenuation(stimulus, SCHOOL_HOLD_PATIENCE_SECONDS, SCHOOL_HOLD_FLOOR);
 
   return source.map((fish, index) => {
     const journey = schoolJourney(state, index);

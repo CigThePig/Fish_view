@@ -22,6 +22,7 @@ import {
   drag,
   encodePointerHistory,
   hold,
+  holdContact,
   observeInteraction,
   pointerHistory,
   prepareScenario,
@@ -30,7 +31,8 @@ import {
   tap,
 } from "../src/dev/interaction-observation.js";
 import { DISPLAY } from "../src/sim/config.js";
-import { applyTouch } from "../src/sim/state.js";
+import { HOLD_THRESHOLD_SECONDS, MAX_HOLD_SECONDS, heldStimulus } from "../src/sim/interaction-events.js";
+import { applyHold, applyTouch } from "../src/sim/state.js";
 
 // Settled far less than a measurement run settles for: these tests need a tank
 // with a cast in it, not a representative evening.
@@ -91,14 +93,39 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(press.delivered, true);
   assert.deepEqual(press.state, applyTouch(state, 33, 9.5));
 
-  // Movement, hold duration and release carry no meaning today. The harness
-  // delivers them and records that the aquarium ignored them.
-  for (const type of ["move", "up"]) {
-    const result = applyPointerEvent(state, { type, x: 33, y: 9.5, seconds: 0.2 });
-    assert.equal(result.delivered, false);
-    assert.equal(result.reason, "inert-today");
-    assert.equal(result.state, state);
-  }
+  // Movement carries no meaning of its own: it moves the contact, and a contact
+  // that has moved too far stops being a hold, but a move is not a disturbance.
+  // A gesture with a direction in it is Phase 4's.
+  const moved = applyPointerEvent(state, { type: "move", x: 33, y: 9.5, seconds: 0.2 });
+  assert.equal(moved.delivered, false);
+  assert.equal(moved.reason, "inert-today");
+  assert.equal(moved.state, state);
+
+  // Release ends the presence a press may have become. On an aquarium with
+  // nothing held - a tap's own release - it is a no-op, which is why a tap
+  // still measures exactly as it did before holds existed.
+  const release = applyPointerEvent(state, { type: "up", x: 33, y: 9.5, seconds: 0.2 });
+  assert.equal(release.reason, "release");
+  assert.equal(release.state, state);
+
+  // And a press that has been held is genuinely ended by it.
+  const held = applyHold(press.state, 33, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  assert.ok(heldStimulus(held));
+  assert.equal(heldStimulus(applyPointerEvent(held, { type: "up", x: 33, y: 9.5, seconds: 1 }).state), null);
+
+  // A contact that is still down is told to the aquarium once per frame, which
+  // is the other half of what `src/app.js` does with a pointer.
+  const contact = { x: 33, y: 9.5, startedAt: 0 };
+  assert.equal(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS - 0.1).state), null);
+  assert.ok(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS + 0.1).state));
+  assert.equal(holdContact(press.state, null, 5).state, press.state);
+
+  // …including the app's ceiling. A replay whose release is missing or late
+  // must let go where the app lets go, or a long-contact observation measures a
+  // gesture the product cannot produce.
+  const abandoned = holdContact(held, contact, MAX_HOLD_SECONDS + 1);
+  assert.equal(abandoned.contact, null);
+  assert.equal(heldStimulus(abandoned.state), null);
 
   // The hidden developer corner is not part of the aquarium's interaction
   // surface, and a scenario cannot accidentally tap through it.
@@ -106,6 +133,40 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(hotspot.delivered, false);
   assert.equal(hotspot.reason, "developer-hotspot");
   assert.equal(hotspot.state, state);
+
+  // The corner rejects presses, not releases. A finger that started in the
+  // aquarium and happens to lift over it has still lifted, and `src/app.js`
+  // ends the contact before it looks at hotspot tap semantics at all -
+  // rejecting the release here would leave a replay confirming a finger that is
+  // no longer down for the rest of the run.
+  const cornerRelease = applyPointerEvent(held, { type: "up", x: DISPLAY.cols - 1, y: 0.5, seconds: 1 });
+  assert.equal(cornerRelease.reason, "release");
+  assert.equal(heldStimulus(cornerRelease.state), null);
+});
+
+// The aftermath is the tail of *a* release. Measured from the first one, a hold
+// followed by ordinary taps went on counting the taps' responses as the hold's
+// aftermath for the rest of the run.
+test("the aftermath of a hold ends where the next press begins", () => {
+  const state = aquarium();
+  const x = DISPLAY.cols * 0.44;
+  const y = 9.5;
+  const gesture = hold(x, y, { at: 1, seconds: 8, sampleSeconds: 2 });
+  const alone = observeInteraction(state, {
+    history: pointerHistory(gesture),
+    observeSeconds: 26,
+  });
+  const thenTapped = observeInteraction(state, {
+    history: pointerHistory(gesture, tap(x + 6, y, { at: 16 }), tap(x + 6, y, { at: 20 })),
+    observeSeconds: 26,
+  });
+
+  assert.ok(alone.hold.aftermathSeconds > 0, "the hold reported no aftermath at all");
+  assert.equal(
+    thenTapped.hold.aftermathSeconds,
+    alone.hold.aftermathSeconds,
+    "taps after a hold were counted as the hold's aftermath",
+  );
 });
 
 test("only the primary pointer reaches the aquarium", () => {

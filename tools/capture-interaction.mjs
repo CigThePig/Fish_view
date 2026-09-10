@@ -20,6 +20,7 @@ import {
   observeInteraction,
   prepareScenario,
 } from "../src/dev/interaction-observation.js";
+import { holdPhase } from "../src/sim/attention.js";
 import { DISPLAY } from "../src/sim/config.js";
 import { CanvasSceneRenderer } from "../src/render/canvas-renderer.js";
 
@@ -98,6 +99,19 @@ const ROLE_MARKS = Object.freeze({
   acknowledge: { mark: "\u00b7", color: "#7f9c96" },
 });
 
+// Where a fish has got to in a held press's arc, drawn under its role. A tap
+// has no arc and shows nothing, so a role overlay of a tap reads exactly as it
+// did before this existed.
+const PHASE_MARKS = Object.freeze({
+  notice: "notice",
+  orient: "orient",
+  approach: "approach",
+  inspect: "inspect",
+  linger: "linger",
+  settle: "settle",
+  depart: "depart",
+});
+
 function annotateRoles(context, state, scale) {
   const toPixels = (x, y) => [
     x / DISPLAY.cols * DISPLAY.pixelWidth * scale,
@@ -119,7 +133,13 @@ function annotateRoles(context, state, scale) {
     if (!role || !ROLE_MARKS[role]) continue;
     const [x, y] = toPixels(fish.x, fish.y);
     context.fillStyle = ROLE_MARKS[role].color;
-    context.fillText(ROLE_MARKS[role].mark, x, y - Math.max(8, 16 * scale));
+    const lift = Math.max(8, 16 * scale);
+    context.fillText(ROLE_MARKS[role].mark, x, y - lift);
+    const phase = PHASE_MARKS[holdPhase(fish.attention, fish)];
+    if (!phase) continue;
+    context.font = `600 ${Math.max(7, Math.round(10 * scale))}px sans-serif`;
+    context.fillText(phase, x, y - lift - Math.max(8, 13 * scale));
+    context.font = `700 ${Math.max(10, Math.round(16 * scale))}px sans-serif`;
   }
   context.textAlign = "left";
 }

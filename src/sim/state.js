@@ -17,9 +17,20 @@ import {
   sanitizeSettings,
 } from "./config.js";
 import { clamp, createIndividual, createIndividualFromSeed, createSchoolFish } from "./entities.js";
-import { assignAttention, attentionInvestigates } from "./attention.js";
+import { assignAttention, attentionInvestigates, mergeHoldAttention } from "./attention.js";
 import { classifyStimulusContext } from "./interaction-context.js";
-import { createInteractionState, registerTouch } from "./interaction-events.js";
+import {
+  HOLD_MOVEMENT_CELLS,
+  HOLD_THRESHOLD_SECONDS,
+  MAX_HOLD_SECONDS,
+  createInteractionState,
+  heldStimulus,
+  holdStimulus,
+  latestTouchStimulus,
+  markStimulusWandered,
+  registerTouch,
+  releaseStimulus,
+} from "./interaction-events.js";
 import {
   ACTIVITIES,
   BEHAVIORS,
@@ -99,17 +110,39 @@ function normalizeVector(x, y) {
   return { x: x / length, y: y / length };
 }
 
-export function applyTouch(state, x, y) {
-  // Where the viewer pressed, and where the aquarium can act on it. They are
-  // not the same point: a press above the visible waterline or down in the
-  // gravel is clamped into the band a fish can be sent to, but what it *landed
-  // on* is decided by the raw point. Classifying the clamped one made a press
-  // on the surface read as open water whenever the wave happened to sit a
-  // hundredth of a row too low.
+/*
+ * A press is three points, not one, and every clamp between them loses
+ * something a different caller needs.
+ *
+ * `pointerX/Y` is where the pointer actually is, unclamped and possibly outside
+ * the aquarium entirely - a captured pointer goes on reporting after the finger
+ * leaves the canvas. Only the hold's movement allowance reads it, and it has to:
+ * measured on anything clamped, a finger dragged off the edge of the glass sits
+ * still at the boundary and a ten-cell drag reads as a stationary hold.
+ *
+ * `pressX/Y` is that point brought inside the aquarium. It decides what the
+ * press *landed on*, which is a question about the world and so cannot be asked
+ * about a point outside it.
+ *
+ * `safeX/Y` is where a fish can actually be sent, clamped out of the gravel and
+ * up off the waterline. Classifying this one made a press on the surface read as
+ * open water whenever the wave sat a hundredth of a row too low.
+ */
+function pressPoint(state, x, y) {
   const pressX = clamp(x, 0, state.cols - 1);
   const pressY = clamp(y, 0, state.rows - 1);
-  const safeX = pressX;
-  const safeY = clamp(pressY, WATERLINE_ROWS, state.rows - TOUCH_FLOOR_ROWS);
+  return {
+    pointerX: x,
+    pointerY: y,
+    pressX,
+    pressY,
+    safeX: pressX,
+    safeY: clamp(pressY, WATERLINE_ROWS, state.rows - TOUCH_FLOOR_ROWS),
+  };
+}
+
+export function applyTouch(state, x, y) {
+  const { pointerX, pointerY, pressX, pressY, safeX, safeY } = pressPoint(state, x, y);
 
   // A press is three things: water that moves, something the inhabitants can
   // notice, and - now - a role for each of them. All of it happens in the frame
@@ -117,7 +150,7 @@ export function applyTouch(state, x, y) {
   // acknowledged, and because a response chosen a frame later would be a
   // response to an aquarium that had already moved.
   const context = classifyStimulusContext(state, pressX, pressY);
-  const events = registerTouch(state, safeX, safeY, context);
+  const events = registerTouch(state, safeX, safeY, context, { pointerX, pointerY });
   const stimulus = events.stimulus;
   const attention = assignAttention({ ...state, stimuli: events.stimuli }, stimulus, {
     commitmentFor: (fish) => activityCommitment(fish.activity?.current),
@@ -220,6 +253,120 @@ export function applyTouch(state, x, y) {
     impulses: events.impulses,
     interactionSequence: events.interactionSequence,
   };
+}
+
+/*
+ * A press that stays.
+ *
+ * The gesture keeps the clock - a simulation may not read one - and tells the
+ * aquarium three things: the finger is still down, it is here, and it has been
+ * for this long. Everything else is decided from state, so replaying the same
+ * three numbers replays the same aquarium.
+ *
+ * A press is a tap until it has stayed put past HOLD_THRESHOLD_SECONDS; there
+ * is no mode to enter and nothing the viewer has to know. Once it is a hold the
+ * event is refreshed in place rather than re-registered, so a minute of leaning
+ * on the glass costs exactly one stimulus, and the aquarium re-reads it on a
+ * slow beat rather than every frame.
+ *
+ * The re-read is what gives a hold an arc. A fish that was busy finishes and
+ * comes over; a fish whose companion is already at the glass follows it; a fish
+ * that has had enough hands over to one that has not. None of it needs a new
+ * mechanism - it is the Phase 2 assignment, run again against a disturbance
+ * that has not gone away, against interest that has habituated since.
+ */
+
+// How often a held press is re-read. Six times a second would make the cast
+// twitch and cost fifteen scores a frame; every 0.6 s is slower than a fish
+// changes its mind and fast enough that a late arrival reads as a decision
+// rather than a delay.
+export const HOLD_REVIEW_SECONDS = 0.6;
+
+/**
+ * The finger is still down, at this point, this many seconds after the press.
+ *
+ * Called every frame a contact is live. Returns the state unchanged while the
+ * press is still only a tap, and releases the hold if the finger has wandered
+ * further than a hold is allowed to - a gesture with a direction in it belongs
+ * to Phase 4, and the honest thing to do with it today is to stop pretending
+ * the finger is resting there.
+ */
+export function applyHold(state, x, y, holdSeconds) {
+  const seconds = clamp(Number.isFinite(holdSeconds) ? holdSeconds : 0, 0, MAX_HOLD_SECONDS);
+  const existing = heldStimulus(state) ?? latestTouchStimulus(state);
+  if (!existing || existing.released) return state;
+
+  // How far the finger has travelled from where it landed, measured on the
+  // unclamped pointer at both ends. Three things are wrong with any other
+  // reading. From where the finger was a *frame* ago, every finger is always
+  // nearly still. On the point the aquarium *acts* on, a finger drawn three
+  // rows through the gravel does not move at all. And on the point clamped to
+  // the aquarium's own bounds, a captured pointer dragged off the edge of the
+  // glass parks at the boundary - so a ten-cell drag off the side of the tank
+  // reads as a stationary hold.
+  //
+  // This is asked before the press is old enough to be a hold, not after,
+  // because the allowance is about the whole press. A finger that darts three
+  // cells away a fifth of a second in and is back on its anchor by the time
+  // anyone looks has moved, and asking only at the threshold would promote it
+  // to a presence anyway. So the answer is latched on the event.
+  const { pointerX, pointerY } = pressPoint(state, x, y);
+  const anchorX = existing.pointerX ?? existing.x;
+  const anchorY = existing.pointerY ?? existing.y;
+  const wandered = existing.wandered
+    || Math.hypot(pointerX - anchorX, pointerY - anchorY) > HOLD_MOVEMENT_CELLS;
+  if (wandered) {
+    if (existing.held) return applyRelease(state);
+    return existing.wandered
+      ? state
+      : { ...state, stimuli: markStimulusWandered(state.stimuli, existing) };
+  }
+  if (!existing.held && seconds < HOLD_THRESHOLD_SECONDS) return state;
+
+  const becoming = !existing.held;
+  const stimuli = holdStimulus(state.stimuli, existing, seconds);
+  const stimulus = stimuli.find((entry) => entry.id === existing.id);
+  // The beat, counted off the hold clock itself rather than off a stored
+  // deadline, so the re-reads of a replayed hold land on the same seconds as
+  // the re-reads of the hold that was replayed.
+  const beat = Math.floor(seconds / HOLD_REVIEW_SECONDS);
+  const due = becoming || beat !== Math.floor(existing.holdSeconds / HOLD_REVIEW_SECONDS);
+  if (!due) return { ...state, stimuli };
+
+  const attention = assignAttention({ ...state, stimuli }, stimulus, {
+    commitmentFor: (fish) => activityCommitment(fish.activity?.current),
+    // Nothing is compelled to answer a finger it has already got used to. The
+    // press that started this hold was answered; whether the aquarium is still
+    // answering a minute later is the aquarium's business.
+    guarantee: false,
+  });
+  // Only the records change here. A fish that has just been given an
+  // investigating role turns on the next tick, through the same path a delayed
+  // investigator converts through - there is no press arriving this frame that
+  // has to be answered before the aquarium moves again.
+  const individuals = state.individuals.map((fish, index) => {
+    const merged = mergeHoldAttention(fish.attention ?? null, attention[index], stimulus);
+    return merged === (fish.attention ?? null) ? fish : { ...fish, attention: merged };
+  });
+
+  return { ...state, stimuli, individuals };
+}
+
+/**
+ * The finger has gone.
+ *
+ * The stimulus stops being held and starts fading, and the water rings once
+ * more where the contact was. Nothing is done to the fish here: each one finds
+ * out on its next tick that what it was answering is no longer there, and each
+ * one takes its own seeded while to let go of it. That is the aftermath - a
+ * responder finishing its approach to a place something just was, hanging at it
+ * a moment, and drifting back off the glass.
+ */
+export function applyRelease(state) {
+  const held = heldStimulus(state);
+  if (!held) return state;
+  const released = releaseStimulus(state, held);
+  return { ...state, stimuli: released.stimuli, impulses: released.impulses };
 }
 
 export function withSettings(state, patch) {

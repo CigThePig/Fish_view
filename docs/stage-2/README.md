@@ -25,7 +25,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 0 | Interaction observation and baseline instrumentation | Done | [phase 0](phase-0-interaction-observation.md) |
 | 1 | Stimulus and impulse architecture | Done | [phase 1](phase-1-stimulus-impulse.md) |
 | 2 | Attention, response roles, contextual tap | Done | [phase 2](phase-2-attention-and-roles.md) |
-| 3 | Hold and persistent presence | Not started | — |
+| 3 | Hold and persistent presence | Done | [phase 3](phase-3-hold-presence.md) |
 | 4 | Drag, swipe and local water impulse | Not started | — |
 | 5 | Environmental interaction and causal chains | Not started | — |
 | 6 | Persistent fish–viewer relationship | Not started | — |
@@ -35,6 +35,15 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+Phase 3 made a press that stays a **presence**. A finger held against the glass
+past 0.45 s stops being a tap and becomes a held stimulus that is re-read every
+0.6 s, so fish cross the tank to it, arrive, hover, lose interest one at a time
+on their own patience, and peel away when it goes. All seven stages of the
+plan's arc occur; a fish stayed engaged for 59.6 s of a 60 s hold; and the
+sixty-second hold reads the same as the twenty-four-second one, which is the
+boundedness claim measured rather than asserted. The tap is unchanged — 42 of
+48 Phase 2 scenarios reproduce byte for byte.
 
 Phase 2 ended the global response: a press now hands each fish a deterministic
 response role (`src/sim/attention.js`), and one tap leaves seven to ten
