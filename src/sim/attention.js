@@ -586,7 +586,17 @@ export function assignAttention(state, stimulus, {
 
   // A fish whose most trusted companion is already going is more likely to go
   // too. This is the second pass, so the bonus can depend on the first.
+  //
+  // "Already going" includes the fish that were already going before this pass
+  // started, which on a re-read of a held press is all of them: a re-read has no
+  // guaranteed first responder, so seeding this set from `first` alone left it
+  // empty every time and no fish could ever follow a companion that was
+  // standing at the glass. Following a companion over is one of the things a
+  // hold is supposed to make possible, and it could not happen at all.
   const investigators = new Set(first ? [first.fish.seed] : []);
+  for (const candidate of candidates) {
+    if (candidate.previousRole) investigators.add(candidate.fish.seed);
+  }
   for (const candidate of ordered) {
     if (candidate.role) continue;
     if (companionSeed(candidate.fish) !== null && investigators.has(companionSeed(candidate.fish))) {

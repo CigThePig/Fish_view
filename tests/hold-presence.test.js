@@ -19,9 +19,13 @@ import test from "node:test";
 import {
   HOLD_PHASES,
   HOLD_PHASE_LIST,
+  MAX_DELAYED,
+  MAX_INVESTIGATORS,
+  MAX_SECONDARY,
   RESPONSE_ROLES,
   attentionInvestigates,
   attentionPatience,
+  assignAttention,
   createAttention,
   holdPhase,
   isPassiveRole,
@@ -48,7 +52,7 @@ import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
 import { TOUCH_FLOOR_ROWS, WATERLINE_ROWS } from "../src/sim/config.js";
 import { affinitiesFromSeed } from "../src/sim/fish-personality.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
-import { ACTIVITIES } from "../src/sim/fish-activities.js";
+import { ACTIVITIES, activityCommitment } from "../src/sim/fish-activities.js";
 import {
   applyHold,
   applyRelease,
@@ -570,9 +574,13 @@ test("some fish are still at the glass a minute in, and most are not", () => {
       },
     });
     assert.equal(samples.length, 3);
+    // Never nobody, and never more than the caps allow a single event to pull
+    // off its activities - which is the ceiling that makes this a few fish at
+    // the glass rather than a crowd, whatever a hold goes on to do.
+    const ceiling = MAX_INVESTIGATORS + MAX_SECONDARY + MAX_DELAYED;
     for (const count of samples) {
       assert.ok(count >= 1, `seed ${seed}: nothing was left at a finger that never moved`);
-      assert.ok(count <= 4, `seed ${seed}: ${count} fish were still committed at a minute`);
+      assert.ok(count <= ceiling, `seed ${seed}: ${count} fish were still committed at a minute`);
     }
     // The ones that stay are the ones that like the glass. Not every one of
     // them individually - a fish that happened to be right beside the finger
@@ -765,6 +773,79 @@ test("a fish crossing the tank to a presence is not dropped on the way", () => {
   }
   assert.ok(heldStimulus(state), "the presence went away on its own");
   assert.equal(engaged(state), 1, "the only fish in the aquarium gave up on the finger");
+});
+
+// The movement allowance is about the whole press, not about where the finger
+// happens to be when someone checks. Asked only at the threshold, a finger that
+// darts three cells away a fifth of a second in and is back on its anchor by
+// 0.4 s was promoted to a presence anyway.
+test("a press that wandered before the threshold cannot become a presence", () => {
+  const base = settled(5);
+
+  let darted = applyTouch(base, 30, 9.5);
+  darted = applyHold(darted, 33, 9.5, 0.2);
+  darted = applyHold(darted, 30, 9.5, 0.4);
+  darted = applyHold(darted, 30, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  assert.equal(heldStimulus(darted), null, "an excursion before the threshold was forgotten");
+  assert.equal(darted.stimuli[0].wandered, true);
+
+  // Latched, so it stays a tap however long the finger then rests.
+  const rested = applyHold(darted, 30, 9.5, 2.5);
+  assert.equal(heldStimulus(rested), null);
+
+  // The control: the same press, never moved.
+  let still = applyTouch(base, 30, 9.5);
+  still = applyHold(still, 30, 9.5, 0.2);
+  still = applyHold(still, 30, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  assert.ok(heldStimulus(still), "a press that never moved failed to become a presence");
+});
+
+// Following a companion to the glass is one of the things a hold is supposed to
+// make possible. The set of fish "already going" was seeded from the guaranteed
+// first responder, which a re-read does not have - so it was empty at every
+// review and the bonus could never reach anybody.
+test("a fish can follow a companion that is already at the presence", () => {
+  const stimulus = createStimulus({
+    id: "touch:1",
+    sequence: 1,
+    x: 33,
+    y: 9.5,
+    held: true,
+    holdSeconds: 1,
+  });
+  const options = {
+    commitmentFor: (fish) => activityCommitment(fish.activity?.current),
+    guarantee: false,
+  };
+  const companionOf = (fish) => {
+    let best = null;
+    for (const entry of fish.history?.socialMemory ?? []) {
+      if (!best || (entry.familiarity ?? 0) > (best.familiarity ?? 0)) best = entry;
+    }
+    return best?.seed ?? null;
+  };
+
+  for (const seed of [5, 147, 1234]) {
+    const base = settled(seed);
+    const alone = assignAttention(base, stimulus, options);
+
+    // Put one fish at the glass and re-read. A fish that trusts it should be
+    // able to answer more readily than it did with nobody there.
+    let followed = false;
+    for (const incumbent of base.individuals) {
+      const withIncumbent = assignAttention({
+        ...base,
+        individuals: base.individuals.map((fish) => (fish.seed === incumbent.seed
+          ? { ...fish, attention: { ...createAttention(fish, stimulus, RESPONSE_ROLES.investigate), ageSeconds: 0.5 } }
+          : fish)),
+      }, stimulus, options);
+      base.individuals.forEach((fish, index) => {
+        if (companionOf(fish) !== incumbent.seed) return;
+        if ((alone[index]?.role ?? null) !== (withIncumbent[index]?.role ?? null)) followed = true;
+      });
+    }
+    assert.ok(followed, `seed ${seed}: no fish answered differently for a companion already at the glass`);
+  }
 });
 
 test("a hold does not turn the aquarium into a crowd at the glass", () => {

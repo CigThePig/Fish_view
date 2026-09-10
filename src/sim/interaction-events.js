@@ -261,6 +261,12 @@ export function createStimulus({
   holdSeconds = 0,
   staleSeconds = 0,
   released = false,
+  // This press has already been further from where it landed than a hold is
+  // allowed to be. It is latched because the allowance is about the whole
+  // press, not about where the finger happens to be at the moment anyone
+  // checks: a finger that darts away and comes back has moved, and a gesture
+  // that was disqualified cannot become a presence by returning to its anchor.
+  wandered = false,
 }) {
   return Object.freeze({
     id,
@@ -279,6 +285,7 @@ export function createStimulus({
     holdSeconds: clamp(holdSeconds, 0, MAX_HOLD_SECONDS),
     staleSeconds,
     released,
+    wandered,
   });
 }
 
@@ -388,6 +395,12 @@ export function registerTouch(state, x, y, context = "open-water", { pointerX = 
     stimuli: stimuli.list,
     impulses: impulses.list,
   };
+}
+
+/** Mark a press as having travelled too far to ever become a presence. */
+export function markStimulusWandered(stimuli, stimulus) {
+  const wandered = createStimulus({ ...stimulus, wandered: true });
+  return Object.freeze((stimuli ?? []).map((entry) => (entry.id === stimulus.id ? wandered : entry)));
 }
 
 /**

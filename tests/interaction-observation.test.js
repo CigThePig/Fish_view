@@ -144,6 +144,31 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(heldStimulus(cornerRelease.state), null);
 });
 
+// The aftermath is the tail of *a* release. Measured from the first one, a hold
+// followed by ordinary taps went on counting the taps' responses as the hold's
+// aftermath for the rest of the run.
+test("the aftermath of a hold ends where the next press begins", () => {
+  const state = aquarium();
+  const x = DISPLAY.cols * 0.44;
+  const y = 9.5;
+  const gesture = hold(x, y, { at: 1, seconds: 8, sampleSeconds: 2 });
+  const alone = observeInteraction(state, {
+    history: pointerHistory(gesture),
+    observeSeconds: 26,
+  });
+  const thenTapped = observeInteraction(state, {
+    history: pointerHistory(gesture, tap(x + 6, y, { at: 16 }), tap(x + 6, y, { at: 20 })),
+    observeSeconds: 26,
+  });
+
+  assert.ok(alone.hold.aftermathSeconds > 0, "the hold reported no aftermath at all");
+  assert.equal(
+    thenTapped.hold.aftermathSeconds,
+    alone.hold.aftermathSeconds,
+    "taps after a hold were counted as the hold's aftermath",
+  );
+});
+
 test("only the primary pointer reaches the aquarium", () => {
   const state = aquarium();
 

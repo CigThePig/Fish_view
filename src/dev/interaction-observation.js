@@ -625,6 +625,11 @@ export function observeInteraction(baseState, {
       treatment = result.state;
       if (result.reason === "touch") {
         delivery.delivered += 1;
+        // A new press closes any aftermath still being measured. What the
+        // aquarium does from here is a response to *this*, and counting it
+        // against the previous gesture inflates the tail of every hold that
+        // happens to be followed by a tap.
+        releaseFrame = null;
         latestPress = { x: result.point.x, y: result.point.y };
         latestPressFrame = frame;
         if (stimulusFrame === null) stimulusFrame = frame;
@@ -805,6 +810,8 @@ export function observeInteraction(baseState, {
     // aftermath is the point of releasing rather than cancelling, so it is
     // measured rather than asserted - and it stops the moment a new finger
     // lands, because what happens then is a new interaction and not a tail.
+    // Both kinds of new finger: a press closes the window where it is
+    // delivered, and this guard covers one that is still down.
     if (releaseFrame !== null && frame > releaseFrame && !held
       && treatment.individuals.some((fish) => fish.attention)) {
       aftermathFrames = Math.max(aftermathFrames, frame - releaseFrame);

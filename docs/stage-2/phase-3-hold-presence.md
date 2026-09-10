@@ -60,7 +60,7 @@ ones for a hold. Seven hold scenarios were added. `npm run observe:interaction`
 gained a hold column and a per-fish arc column; `capture:interaction --roles`
 draws the phase under the role.
 
-**Tests:** `tests/hold-presence.test.js` (twenty-one), plus the contact-release
+**Tests:** `tests/hold-presence.test.js` (twenty-three), plus the contact-release
 paths in `tests/app-lifecycle.test.js` and the record-shape and
 gesture-seam expectations in `tests/attention-roles.test.js` and
 `tests/interaction-observation.test.js`.
@@ -159,7 +159,7 @@ contact. The tap has five moments and no arc; the hold has eight, and the
 | --- | --- | --- |
 | Hold is behaviourally distinct from tap | The same press with and without a finger left on it: eight seconds later the tap is being answered by **nobody** and the hold by **2–4 fish**, on all three seeds | `tests/hold-presence.test.js` |
 | …and the transition needs no mode | A press at 0.40 s is still a tap; at 0.50 s it is a presence — same event, same id, same responders | `tests/hold-presence.test.js` |
-| A fish visibly remains engaged with a stationary finger | Across 24 held gestures: **longest engagement 59.6 s of a 60 s hold**; 2–6 fish reach `linger`. Sampled at 30 s, 45 s and 59 s of a minute-long hold, 1–4 fish are still committed on every seed | [`interaction-observation.json`](../assets/stage-2/phase-3/interaction-observation.json), `tests/hold-presence.test.js` |
+| A fish visibly remains engaged with a stationary finger | Across 24 held gestures: **longest engagement 59.6 s of a 60 s hold**; 2–6 fish reach `linger`. Sampled at 30 s, 45 s and 59 s of a minute-long hold, 2–5 fish are still committed on every seed | [`interaction-observation.json`](../assets/stage-2/phase-3/interaction-observation.json), `tests/hold-presence.test.js` |
 | …and they are the fish that like the glass | The fish still at the glass at a minute have a mean glass affinity of 0.75–0.87 against a cast mean of 0.47–0.57 | `tests/hold-presence.test.js` |
 | A fish does not keep changing its mind at the glass | Active-role changes over a 40 s hold went from 14 / 15 / 19 (worst fish 5 / 5 / 10) to **0 / 0 / 0** | `tests/hold-presence.test.js` |
 | All seven stages of the arc occur | **7 distinct phases** on every hold of 8 s or more, on all three seeds; the vocabulary is closed and each phase is reached by a different number of fish | `tests/hold-presence.test.js`, evidence file `hold.phasesReached` |
@@ -175,7 +175,7 @@ contact. The tap has five moments and no arc; the hold has eight, and the
 | **The tap is unchanged** | **42 of 48** Phase 2 scenarios reproduce byte for byte on anchor, aquarium and renderer readings. The 6 that differ are the two whose gesture leaves a contact on the glass past the hold threshold (`open-water-hold`, `two-finger-press`), which is the phase working | `npm run observe:interaction -- --compare=docs/assets/stage-2/phase-2/interaction-observation.json` |
 | …including its synchronisation and cost | The pre-Stage-2 instrument reads **8, 7, 7** activities after a tap and **55.0 / 52.9 / 55.7 %** damage — identical, digit for digit, to the same tool run at the baseline commit `32b92b7` | `npm run measure:stage2-baseline` |
 | Autonomous behaviour is untouched | The deterministic ten-minute watch is identical activity for activity and peck for peck (694); every per-activity motion signature, `touch-react` included (0.67/0.77 speed, 13.2/22.2 pitch), matches Phase 2 | `npm run measure:readability` |
-| The gate is green | 385 tests (364 before, 21 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify` |
+| The gate is green | 388 tests (364 before, 24 added), simulation 48 000 ticks / 0 failures, persistence 200 / 0, render 540 frames / 0 differing, feeding 0 stages outside tolerance | `npm run verify` |
 
 What a hold looks like on seed 5, from the sweep (`e` engaged at release,
 `l` lingered, `s` settled):
@@ -238,14 +238,43 @@ consecutive sixty-second holds takes it to **21 153 bytes** — and the same
 aquarium left completely alone for the same five and a half minutes reaches
 **21 110**. The 43-byte difference is fish sitting in slightly different places;
 the 3 KB is social memory forming, which happens whether anybody touches the
-glass or not. Both are comfortably inside the 24 000-byte ceiling
-`tests/stage-2-invariants.test.js` enforces.
+glass or not.
+
+### A pre-existing overshoot of the 18 KB contract
+
+That 3 KB is worth stating plainly rather than measuring against the looser
+24 000-byte ceiling `tests/stage-2-invariants.test.js` enforces, because
+[`AGENTS.md`](../../AGENTS.md) says a fully stocked ten-year aquarium serialises
+to **under 18 KB**, and after a minute of being watched it does not:
+
+| Stocked ten-year aquarium (seed 1234) | This branch | Baseline `32b92b7` |
+| --- | ---: | ---: |
+| Materialised, never ticked | 17 747 B | 17 747 B |
+| After 60 s of ordinary life, no interaction at all | 20 884 B | 20 884 B |
+| After 5.5 min of ordinary life, no interaction at all | 20 909 B | 20 909 B |
+
+The readings are **byte-identical to the commit this phase branched from**, and
+they are reached with no interaction of any kind: the 18 KB figure describes a
+save the moment it is materialised, and social memory forms within the first
+minute of any session and adds about 3 KB. So the overshoot is real, it is
+documented wrongly, and it is **not this phase's** — Phase 3 adds nothing to the
+payload and its own contribution is 43 bytes of fish position.
+
+Two ways to close it, neither of which belongs in this phase: shrink what
+`socialMemory` serialises (it is the whole 3 KB, and it is Phase 2's and
+earlier's structure), or correct the stated contract to the size an aquarium
+actually reaches in use and tighten the enforced test to match it. **That is a
+product decision about the device budget rather than a defect in this work, so
+it is left to the author with the measurement above.** It is the one review
+finding on this PR that is not fixed here.
 
 ## Defects found in review
 
-Twelve were raised on the pull request by the automated reviewer, across two
-rounds. All twelve were real, and each is fixed here with a test that fails
-without the fix.
+Sixteen were raised on the pull request by the automated reviewer, across three
+rounds. All sixteen were real. Fifteen are fixed here, each with a test that
+fails without the fix; the sixteenth is a pre-existing persistence overshoot
+that this phase did not cause and should not unilaterally close — see
+[Persistence](#a-pre-existing-overshoot-of-the-18-kb-contract).
 
 ### First round
 
@@ -267,7 +296,7 @@ without the fix.
   responder habituated and **the aquarium had nobody left at the finger by 30
   seconds** — the "a fish stays engaged for as long as the finger does" evidence
   had been riding on the bug refilling their interest. The two-bar rule above is
-  what produces it legitimately: 2–6 fish are still at the glass at 59 s, and
+  what produces it legitimately: 2–5 fish are still at the glass at 59 s, and
   they are the fish that like the glass (mean glass affinity 0.75–0.87 against a
   cast mean of 0.47–0.57), which is the personality claim the plan actually
   asks for.
@@ -312,7 +341,7 @@ without the fix.
   `src/app.js` ends the contact before it looks at hotspot tap semantics at all;
   the corner now rejects presses only (`src/dev/interaction-observation.js`).
 
-### Second review round
+### Second round
 
 Five more, on the head that fixed the first seven. All five were real:
 
@@ -355,6 +384,36 @@ Five more, on the head that fixed the first seven. All five were real:
   **16.5 s of aftermath for an 8-second hold** whose responses drain in under
   three. Each release now restarts the measurement and frames under a live
   contact are excluded; that scenario reads **4.5 s**
+  (`src/dev/interaction-observation.js`).
+
+### Third round
+
+Four more, on the head that fixed those five. Three are fixed here; the fourth
+is the persistence contract, which is answered under
+[Persistence](#a-pre-existing-overshoot-of-the-18-kb-contract) above and is not
+this phase's to close.
+
+- **A press that wandered and came back was promoted to a presence anyway.** The
+  movement allowance was only asked at the hold threshold, so a finger that
+  darted three cells away a fifth of a second in and was back on its anchor by
+  0.4 s became a hold at 0.5 s. The allowance is about the whole press, so the
+  answer is now asked every frame and **latched** on the event: a gesture that
+  was ever disqualified cannot become a presence by returning
+  (`src/sim/state.js`, `src/sim/interaction-events.js`).
+- **A fish could never follow a companion to the glass.** The set of fish
+  "already going" was seeded from the guaranteed first responder — and a re-read
+  has none, so it was empty at every review and the companion bonus could not
+  reach anybody. Following a companion over is one of the things this phase
+  claims a hold makes possible, and it could not happen at all. Incumbents now
+  seed the set before the companion pass; on all three seeds a fish's role
+  changes when a trusted companion is put at the glass, where before it did not
+  (`src/sim/attention.js`). This is also why 5 fish rather than 4 can now be
+  committed at a minute on seed 147 — still the caps' own ceiling, and still ten
+  fish going about their evening.
+- **A tap after a hold was counted as the hold's aftermath.** Only a new *held*
+  press closed the measurement window, so an ordinary tap afterwards kept
+  extending it: a hold followed by two taps reported **15.3 s** of aftermath
+  against the same hold's own 3.9 s. Any delivered press now closes the window
   (`src/dev/interaction-observation.js`).
 
 ## Defects found while building
@@ -432,7 +491,7 @@ have been wrong rather than merely different:
 | Gate item (plan §9) | Met |
 | --- | --- |
 | Hold is behaviourally distinct from tap | Yes — eight seconds after the same press, a tap is being answered by nobody and a hold by 2–4 fish, on three seeds |
-| A fish can visibly remain engaged with a stationary finger | Yes — 59.6 s of a 60 s hold; 1–4 fish still committed at 30 s, 45 s and 59 s, and 2–6 reach `linger` |
+| A fish can visibly remain engaged with a stationary finger | Yes — 59.6 s of a 60 s hold; 2–5 fish still committed at 30 s, 45 s and 59 s (the caps' own ceiling), and 2–6 reach `linger` |
 | Multiple fish respond with different levels of commitment | Yes — within one hold, engagement times of 23.6 s, 13.3 s, 10.9 s and 0 s, and the ones that stay are the ones with above-median patience |
 | Release has readable aftermath | Yes — the presence outlives the finger by 2 s, responders depart on staggered per-fish beats, each ending further from the contact, and most resume what they put down |
 | Long holds remain bounded in state and rendering cost | Yes — one stimulus, ≤1 impulse, ≤15 records, ≤5 fish interrupted, 0 full redraws, +1.2 pp damage over a tap |

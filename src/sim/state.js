@@ -27,6 +27,7 @@ import {
   heldStimulus,
   holdStimulus,
   latestTouchStimulus,
+  markStimulusWandered,
   registerTouch,
   releaseStimulus,
 } from "./interaction-events.js";
@@ -294,7 +295,6 @@ export function applyHold(state, x, y, holdSeconds) {
   const seconds = clamp(Number.isFinite(holdSeconds) ? holdSeconds : 0, 0, MAX_HOLD_SECONDS);
   const existing = heldStimulus(state) ?? latestTouchStimulus(state);
   if (!existing || existing.released) return state;
-  if (!existing.held && seconds < HOLD_THRESHOLD_SECONDS) return state;
 
   // How far the finger has travelled from where it landed, measured on the
   // unclamped pointer at both ends. Three things are wrong with any other
@@ -304,12 +304,24 @@ export function applyHold(state, x, y, holdSeconds) {
   // the aquarium's own bounds, a captured pointer dragged off the edge of the
   // glass parks at the boundary - so a ten-cell drag off the side of the tank
   // reads as a stationary hold.
+  //
+  // This is asked before the press is old enough to be a hold, not after,
+  // because the allowance is about the whole press. A finger that darts three
+  // cells away a fifth of a second in and is back on its anchor by the time
+  // anyone looks has moved, and asking only at the threshold would promote it
+  // to a presence anyway. So the answer is latched on the event.
   const { pointerX, pointerY } = pressPoint(state, x, y);
   const anchorX = existing.pointerX ?? existing.x;
   const anchorY = existing.pointerY ?? existing.y;
-  if (Math.hypot(pointerX - anchorX, pointerY - anchorY) > HOLD_MOVEMENT_CELLS) {
-    return existing.held ? applyRelease(state) : state;
+  const wandered = existing.wandered
+    || Math.hypot(pointerX - anchorX, pointerY - anchorY) > HOLD_MOVEMENT_CELLS;
+  if (wandered) {
+    if (existing.held) return applyRelease(state);
+    return existing.wandered
+      ? state
+      : { ...state, stimuli: markStimulusWandered(state.stimuli, existing) };
   }
+  if (!existing.held && seconds < HOLD_THRESHOLD_SECONDS) return state;
 
   const becoming = !existing.held;
   const stimuli = holdStimulus(state.stimuli, existing, seconds);
