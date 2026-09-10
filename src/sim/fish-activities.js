@@ -1,5 +1,5 @@
 import { livingWorldRecords } from './living-world.js';
-import { WATERLINE_ROWS } from "./config.js";
+import { TOUCH_FLOOR_ROWS, WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { plantGroundY, plantDepthScale } from "./habitat-depth.js";
 import { sceneTuning } from "./choreography-tuning.js";
@@ -9,6 +9,7 @@ import { fishShoals } from "./fish-roster.js";
 import {
   HOLD_PHASES,
   ageAttention,
+  attentionFocus,
   attentionInvestigates,
   attentionStandoff,
   holdPhase,
@@ -789,6 +790,22 @@ function weavePoint(fish, primary, state, activity) {
   };
 }
 
+/*
+ * A point a fish may be sent to, brought inside the water.
+ *
+ * The bands are the ones a press is clamped into, for the same reason: a fish
+ * chasing where the finger will be must not be aimed into the gravel or through
+ * the waterline, and an intercepting fish aims ahead of a finger that may be
+ * heading for either.
+ */
+function clampToWater(state, point) {
+  if (!point) return null;
+  return {
+    x: clamp(point.x, 0, state.cols - 1),
+    y: clamp(point.y, WATERLINE_ROWS, state.rows - TOUCH_FLOOR_ROWS),
+  };
+}
+
 export function resolveActivityTarget(fish, index, state, activity, {
   traits = traitsFromSeed(fish.seed, fish.history),
   affinities = affinitiesFromSeed(fish.seed),
@@ -819,14 +836,23 @@ export function resolveActivityTarget(fish, index, state, activity, {
     // the event: a responder can still be finishing its look after the
     // disturbance itself has faded. The stimulus is the fallback for
     // hand-posed lab states that have no attention record.
-    const point = attention ?? dominantStimulus(state);
+    //
+    // A contact that is *moving* is the one case where the fish and the finger
+    // want different points: this fish is cutting the corner, following the
+    // water the finger went through, or has picked a piece of the trail and is
+    // going to look at that instead (see `stimulusFocus`). For everything else
+    // the focus is the remembered point and this reads exactly as it did before
+    // there was such a thing as a drag.
+    const point = attention
+      ? clampToWater(state, attentionFocus(state, { ...fish, attention }))
+      : dominantStimulus(state);
     if (!point) return null;
     const away = safeNormalize(fish.x - point.x, fish.y - point.y, fish.vx < 0 ? -1 : 1, 0);
     // A secondary or delayed responder stops further out. That gap is the
     // difference between "came to look" and "came partway", and it is the most
     // legible thing separating two fish answering the same press.
     const standoff = 0.2 + (1 - affinities.glass) * 0.82 + attentionStandoff(attention);
-    const hold = holdPhase(attention, fish);
+    const hold = holdPhase(attention, fish, point);
     // Coming to look and staying to look are different swims, and the whole
     // point of a held press is that a viewer can see the second one. A fish
     // arriving still travels; a fish that has arrived slows almost to nothing,

@@ -20,7 +20,8 @@ import {
   observeInteraction,
   prepareScenario,
 } from "../src/dev/interaction-observation.js";
-import { holdPhase } from "../src/sim/attention.js";
+import { attentionFocus, attentionPursuit, holdPhase } from "../src/sim/attention.js";
+import { GESTURES } from "../src/sim/pointer-path.js";
 import { DISPLAY } from "../src/sim/config.js";
 import { CanvasSceneRenderer } from "../src/render/canvas-renderer.js";
 
@@ -127,6 +128,30 @@ function annotateRoles(context, state, scale) {
     context.beginPath();
     context.arc(x, y, Math.max(3, 7 * scale), 0, Math.PI * 2);
     context.stroke();
+    // The path behind a moving contact, and the direction it is going. This is
+    // the bounded six-sample history the aquarium actually holds - not a
+    // touchscreen trail, which the product deliberately does not draw.
+    if (stimulus.gesture === GESTURES.press || !stimulus.path?.length) continue;
+    context.strokeStyle = stimulus.gesture === GESTURES.swipe ? "#ffd166" : "#9bd1c8";
+    context.beginPath();
+    stimulus.path.forEach((sample, index) => {
+      const [px, py] = toPixels(sample.x, sample.y);
+      if (index === 0) context.moveTo(px, py);
+      else context.lineTo(px, py);
+    });
+    context.stroke();
+  }
+  // Which way the water is going, drawn once per directed impulse: the wake a
+  // drag or a swipe leaves, which is what the plants and the school read.
+  for (const impulse of state.impulses ?? []) {
+    if (!impulse.dirX && !impulse.dirY) continue;
+    const [x, y] = toPixels(impulse.x, impulse.y);
+    const [tipX, tipY] = toPixels(impulse.x + impulse.dirX * 3, impulse.y + impulse.dirY * 3);
+    context.strokeStyle = "#ffd166";
+    context.beginPath();
+    context.moveTo(x, y);
+    context.lineTo(tipX, tipY);
+    context.stroke();
   }
   for (const fish of state.individuals ?? []) {
     const role = fish.attention?.role;
@@ -135,10 +160,19 @@ function annotateRoles(context, state, scale) {
     context.fillStyle = ROLE_MARKS[role].color;
     const lift = Math.max(8, 16 * scale);
     context.fillText(ROLE_MARKS[role].mark, x, y - lift);
-    const phase = PHASE_MARKS[holdPhase(fish.attention, fish)];
+    const focus = attentionFocus(state, fish);
+    const phase = PHASE_MARKS[holdPhase(fish.attention, fish, focus)];
     if (!phase) continue;
+    // The stage of the arc, and - for a contact that is moving - how this fish
+    // is going after it, which is the difference between a fish cutting the
+    // corner and a fish following the water.
+    const chasing = (state.stimuli ?? [])
+      .find((entry) => entry.id === fish.attention.stimulusId && entry.held);
+    const pursuit = chasing && chasing.gesture !== GESTURES.press
+      ? ` ${attentionPursuit(fish, chasing)}`
+      : "";
     context.font = `600 ${Math.max(7, Math.round(10 * scale))}px sans-serif`;
-    context.fillText(phase, x, y - lift - Math.max(8, 13 * scale));
+    context.fillText(`${phase}${pursuit}`, x, y - lift - Math.max(8, 13 * scale));
     context.font = `700 ${Math.max(10, Math.round(16 * scale))}px sans-serif`;
   }
   context.textAlign = "left";

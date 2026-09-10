@@ -8,7 +8,7 @@
  * the reason this file exists at all: a persistent gesture is exactly the kind
  * of feature that leaks, and this device runs for months without a reboot.
  *
- * Everything here drives the production verbs - `applyTouch`, `applyHold`,
+ * Everything here drives the production verbs - `applyTouch`, `applyContact`,
  * `applyRelease`, `tick` - in the order `src/app.js` drives them, because a
  * hold that only works when a test poses it is not a hold.
  */
@@ -31,6 +31,7 @@ import {
   isPassiveRole,
   mergeHoldAttention,
 } from "../src/sim/attention.js";
+import { GESTURES } from "../src/sim/pointer-path.js";
 import {
   HOLD_MOVEMENT_CELLS,
   HOLD_STALE_SECONDS,
@@ -54,7 +55,7 @@ import { affinitiesFromSeed } from "../src/sim/fish-personality.js";
 import { traitsFromSeed } from "../src/sim/entities.js";
 import { ACTIVITIES, activityCommitment } from "../src/sim/fish-activities.js";
 import {
-  applyHold,
+  applyContact,
   applyRelease,
   applyTouch,
   createAquariumState,
@@ -86,7 +87,7 @@ function holdFor(state, x, y, holdSeconds, { afterSeconds = 0, onFrame = null } 
   const frames = Math.round((holdSeconds + afterSeconds) / STEP);
   for (let frame = 0; frame < frames; frame += 1) {
     seconds = Number(((frame + 1) * STEP).toFixed(4));
-    if (seconds <= holdSeconds) current = applyHold(current, x, y, seconds);
+    if (seconds <= holdSeconds) current = applyContact(current, x, y, seconds);
     else if (heldStimulus(current)) current = applyRelease(current);
     current = tick(current, STEP);
     if (onFrame) onFrame(current, seconds);
@@ -120,12 +121,12 @@ test("a press that stays put becomes a presence, and one that does not stays a t
 
   // Below the threshold it is still the tap it always was.
   let tapped = applyTouch(base, 30, 9);
-  tapped = applyHold(tapped, 30, 9, HOLD_THRESHOLD_SECONDS - 0.05);
+  tapped = applyContact(tapped, 30, 9, HOLD_THRESHOLD_SECONDS - 0.05);
   assert.equal(heldStimulus(tapped), null);
 
   // Past it, without a mode, a menu or a second gesture.
   let holding = applyTouch(base, 30, 9);
-  holding = applyHold(holding, 30, 9, HOLD_THRESHOLD_SECONDS + 0.05);
+  holding = applyContact(holding, 30, 9, HOLD_THRESHOLD_SECONDS + 0.05);
   const held = heldStimulus(holding);
   assert.ok(held, "the press did not become a presence");
   assert.equal(held.held, true);
@@ -135,11 +136,17 @@ test("a press that stays put becomes a presence, and one that does not stays a t
   assert.equal(holding.stimuli.length, 1);
 
   // A finger that travelled further than a hold may is a gesture with a
-  // direction in it. That belongs to Phase 4; today the honest thing is to stop
-  // claiming the finger is resting there.
-  const wandered = applyHold(holding, 30 + HOLD_MOVEMENT_CELLS + 0.5, 9, 1.2);
-  assert.equal(heldStimulus(wandered), null);
-  assert.equal(wandered.stimuli[0].released, true);
+  // direction in it. Phase 4 gives it one: the presence stops being a presence
+  // and becomes a drag, following the finger instead of the anchor - and it is
+  // still the same event, so nothing that was answering it is startled twice.
+  const wandered = applyContact(holding, 30 + HOLD_MOVEMENT_CELLS + 0.5, 9, 1.2);
+  const moving = heldStimulus(wandered);
+  assert.ok(moving, "the contact was thrown away instead of becoming a gesture");
+  assert.equal(moving.gesture, GESTURES.drag);
+  assert.equal(moving.wandered, true);
+  assert.equal(moving.id, "touch:1", "the gesture was re-registered rather than refreshed");
+  assert.equal(wandered.stimuli.length, 1);
+  assert.ok(moving.x > 30, "the drag did not follow the finger");
 });
 
 test("a hold is behaviourally distinct from the tap that began it", () => {
@@ -318,7 +325,7 @@ test("letting go does not twitch the fish that had stopped watching", () => {
     const base = settled(seed);
     let held = applyTouch(base, 33, 9.5);
     for (let frame = 1; frame <= 200; frame += 1) {
-      held = applyHold(held, 33, 9.5, frame * STEP);
+      held = applyContact(held, 33, 9.5, frame * STEP);
       held = tick(held, STEP);
     }
     // Twenty seconds in, the fish that only ever watched have settled: their
@@ -338,7 +345,7 @@ test("letting go does not twitch the fish that had stopped watching", () => {
     // where it was: a fish that turns identically either way was turning
     // anyway, and only the difference between the two belongs to the release.
     const released = tick(applyRelease(held), STEP);
-    const stillHeld = tick(applyHold(held, 33, 9.5, 20.1), STEP);
+    const stillHeld = tick(applyContact(held, 33, 9.5, 20.1), STEP);
     const headingBySeed = (state) => new Map(state.individuals.map((fish) => [fish.seed, heading(fish)]));
     const withRelease = headingBySeed(released);
     const without = headingBySeed(stillHeld);
@@ -465,7 +472,7 @@ test("a hold settles, and stays settled", () => {
 // device that runs for months.
 test("a hold nobody confirms lets go of itself", () => {
   let state = applyTouch(settled(5), 33, 9.5);
-  state = applyHold(state, 33, 9.5, 0.6);
+  state = applyContact(state, 33, 9.5, 0.6);
   assert.ok(heldStimulus(state));
 
   // The gesture stops arriving - a lost release, a cancelled contact, a tab
@@ -617,7 +624,7 @@ test("a hold finds its own press across the sequence wraparound", () => {
   };
 
   assert.equal(latestTouchStimulus(withElder).sequence, 0);
-  const holding = applyHold(withElder, 10, 9, HOLD_THRESHOLD_SECONDS + 0.1);
+  const holding = applyContact(withElder, 10, 9, HOLD_THRESHOLD_SECONDS + 0.1);
   assert.equal(heldStimulus(holding).x, 10, "the hold formed on the wrong press");
   assert.equal(heldStimulus(holding).sequence, 0);
 });
@@ -631,7 +638,7 @@ test("a finger drawn through the clamped bands is not a stationary hold", () => 
   // Down in the gravel, and up above the waterline: the two bands where the
   // point a fish can be sent to stops following the finger.
   for (const [from, to] of [[19, 16], [0.05, 1.95]]) {
-    let holding = applyHold(applyTouch(base, 30, from), 30, from, HOLD_THRESHOLD_SECONDS + 0.1);
+    let holding = applyContact(applyTouch(base, 30, from), 30, from, HOLD_THRESHOLD_SECONDS + 0.1);
     const anchor = heldStimulus(holding);
     assert.ok(anchor, `a press at row ${from} did not become a presence`);
     // The presence remembers where the pointer actually was, not only where the
@@ -645,13 +652,17 @@ test("a finger drawn through the clamped bands is not a stationary hold", () => 
       `rows ${from} and ${to} were expected to clamp together`,
     );
     assert.ok(Math.abs(to - from) > HOLD_MOVEMENT_CELLS);
-    holding = applyHold(holding, 30, to, HOLD_THRESHOLD_SECONDS + 0.6);
-    assert.equal(heldStimulus(holding), null, `a ${Math.abs(to - from)}-row drag stayed a hold`);
+    holding = applyContact(holding, 30, to, HOLD_THRESHOLD_SECONDS + 0.6);
+    assert.equal(
+      heldStimulus(holding).gesture,
+      GESTURES.drag,
+      `a ${Math.abs(to - from)}-row drag stayed a stationary hold`,
+    );
   }
 
   // A fingertip's worth of wander inside the same band is still a hold.
-  let steady = applyHold(applyTouch(base, 30, 19), 30, 19, HOLD_THRESHOLD_SECONDS + 0.1);
-  steady = applyHold(steady, 30, 18.4, HOLD_THRESHOLD_SECONDS + 0.6);
+  let steady = applyContact(applyTouch(base, 30, 19), 30, 19, HOLD_THRESHOLD_SECONDS + 0.1);
+  steady = applyContact(steady, 30, 18.4, HOLD_THRESHOLD_SECONDS + 0.6);
   assert.ok(heldStimulus(steady), "a small wander ended the hold");
 });
 
@@ -691,18 +702,18 @@ test("letting go of the sand lifts less than pressing it did", () => {
 test("a finger dragged off the edge of the glass is not a stationary hold", () => {
   const base = settled(5);
   const edge = base.cols - 1.2;
-  const holding = applyHold(applyTouch(base, edge, 9.5), edge, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  const holding = applyContact(applyTouch(base, edge, 9.5), edge, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
   assert.ok(heldStimulus(holding), "a press near the edge did not become a presence");
   assert.equal(heldStimulus(holding).pointerX, edge);
 
   // Ten cells beyond the right-hand wall: outside the aquarium, but a real
   // pointer position the browser really does deliver.
-  const offGlass = applyHold(holding, base.cols + 9, 9.5, HOLD_THRESHOLD_SECONDS + 0.6);
-  assert.equal(heldStimulus(offGlass), null, "a drag off the edge stayed a hold");
+  const offGlass = applyContact(holding, base.cols + 9, 9.5, HOLD_THRESHOLD_SECONDS + 0.6);
+  assert.equal(heldStimulus(offGlass).gesture, GESTURES.drag, "a drag off the edge stayed a stationary hold");
 
   // The same journey inside the tank has always ended it; this is the control.
-  const inside = applyHold(holding, edge - 5, 9.5, HOLD_THRESHOLD_SECONDS + 0.6);
-  assert.equal(heldStimulus(inside), null);
+  const inside = applyContact(holding, edge - 5, 9.5, HOLD_THRESHOLD_SECONDS + 0.6);
+  assert.equal(heldStimulus(inside).gesture, GESTURES.drag);
 });
 
 // Release clears `held` but keeps the hold clock. Anything reading `held` alone
@@ -713,7 +724,7 @@ test("letting go does not summon the school it had stopped interesting", () => {
   const base = settled(5);
   let held = applyTouch(base, 33, 9.5);
   for (let frame = 1; frame <= 200; frame += 1) {
-    held = applyHold(held, 33, 9.5, frame * STEP);
+    held = applyContact(held, 33, 9.5, frame * STEP);
     held = tick(held, STEP);
   }
 
@@ -742,7 +753,7 @@ test("letting go does not summon the school it had stopped interesting", () => {
     return total;
   };
   const released = tick(applyRelease(held), STEP);
-  const stillHeld = tick(applyHold(held, 33, 9.5, 20.1), STEP);
+  const stillHeld = tick(applyContact(held, 33, 9.5, 20.1), STEP);
   assert.ok(
     Math.abs(closing(released) - closing(stillHeld)) < 0.5,
     "the school surged when the finger left",
@@ -768,7 +779,7 @@ test("a fish crossing the tank to a presence is not dropped on the way", () => {
   let state = applyTouch(solo, x, 9.5);
   assert.equal(engaged(state), 1, "the press was not answered at all");
   for (let frame = 1; frame <= 120; frame += 1) {
-    state = applyHold(state, x, 9.5, frame * STEP);
+    state = applyContact(state, x, 9.5, frame * STEP);
     state = tick(state, STEP);
   }
   assert.ok(heldStimulus(state), "the presence went away on its own");
@@ -783,20 +794,26 @@ test("a press that wandered before the threshold cannot become a presence", () =
   const base = settled(5);
 
   let darted = applyTouch(base, 30, 9.5);
-  darted = applyHold(darted, 33, 9.5, 0.2);
-  darted = applyHold(darted, 30, 9.5, 0.4);
-  darted = applyHold(darted, 30, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
-  assert.equal(heldStimulus(darted), null, "an excursion before the threshold was forgotten");
-  assert.equal(darted.stimuli[0].wandered, true);
+  darted = applyContact(darted, 33, 9.5, 0.2);
+  darted = applyContact(darted, 30, 9.5, 0.4);
+  darted = applyContact(darted, 30, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  assert.equal(darted.stimuli[0].wandered, true, "an excursion before the threshold was forgotten");
+  assert.notEqual(
+    heldStimulus(darted).gesture,
+    GESTURES.press,
+    "a press that had already moved was promoted to a presence",
+  );
 
-  // Latched, so it stays a tap however long the finger then rests.
-  const rested = applyHold(darted, 30, 9.5, 2.5);
-  assert.equal(heldStimulus(rested), null);
+  // Latched, so a finger that comes back and rests is a gesture that stopped
+  // rather than a presence that started late.
+  const rested = applyContact(darted, 30, 9.5, 2.5);
+  assert.equal(heldStimulus(rested).gesture, GESTURES.drag);
+  assert.equal(heldStimulus(rested).speed, 0, "a finger that has stopped is still described as moving");
 
   // The control: the same press, never moved.
   let still = applyTouch(base, 30, 9.5);
-  still = applyHold(still, 30, 9.5, 0.2);
-  still = applyHold(still, 30, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  still = applyContact(still, 30, 9.5, 0.2);
+  still = applyContact(still, 30, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
   assert.ok(heldStimulus(still), "a press that never moved failed to become a presence");
 });
 

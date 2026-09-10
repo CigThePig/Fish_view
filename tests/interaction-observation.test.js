@@ -22,7 +22,7 @@ import {
   drag,
   encodePointerHistory,
   hold,
-  holdContact,
+  confirmContact,
   observeInteraction,
   pointerHistory,
   prepareScenario,
@@ -32,7 +32,7 @@ import {
 } from "../src/dev/interaction-observation.js";
 import { DISPLAY } from "../src/sim/config.js";
 import { HOLD_THRESHOLD_SECONDS, MAX_HOLD_SECONDS, heldStimulus } from "../src/sim/interaction-events.js";
-import { applyHold, applyTouch } from "../src/sim/state.js";
+import { applyContact, applyTouch } from "../src/sim/state.js";
 
 // Settled far less than a measurement run settles for: these tests need a tank
 // with a cast in it, not a representative evening.
@@ -93,12 +93,13 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(press.delivered, true);
   assert.deepEqual(press.state, applyTouch(state, 33, 9.5));
 
-  // Movement carries no meaning of its own: it moves the contact, and a contact
-  // that has moved too far stops being a hold, but a move is not a disturbance.
-  // A gesture with a direction in it is Phase 4's.
+  // A move is not a disturbance in its own right and never was. It says where
+  // the finger is; what that amounts to - a presence, a drag, a swipe - is
+  // decided once a frame by `applyContact`, which is why the event itself
+  // changes nothing.
   const moved = applyPointerEvent(state, { type: "move", x: 33, y: 9.5, seconds: 0.2 });
   assert.equal(moved.delivered, false);
-  assert.equal(moved.reason, "inert-today");
+  assert.equal(moved.reason, "contact-moved");
   assert.equal(moved.state, state);
 
   // Release ends the presence a press may have become. On an aquarium with
@@ -109,21 +110,21 @@ test("replaying a pointer event is the production interaction path, unchanged", 
   assert.equal(release.state, state);
 
   // And a press that has been held is genuinely ended by it.
-  const held = applyHold(press.state, 33, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
+  const held = applyContact(press.state, 33, 9.5, HOLD_THRESHOLD_SECONDS + 0.1);
   assert.ok(heldStimulus(held));
   assert.equal(heldStimulus(applyPointerEvent(held, { type: "up", x: 33, y: 9.5, seconds: 1 }).state), null);
 
   // A contact that is still down is told to the aquarium once per frame, which
   // is the other half of what `src/app.js` does with a pointer.
   const contact = { x: 33, y: 9.5, startedAt: 0 };
-  assert.equal(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS - 0.1).state), null);
-  assert.ok(heldStimulus(holdContact(press.state, contact, HOLD_THRESHOLD_SECONDS + 0.1).state));
-  assert.equal(holdContact(press.state, null, 5).state, press.state);
+  assert.equal(heldStimulus(confirmContact(press.state, contact, HOLD_THRESHOLD_SECONDS - 0.1).state), null);
+  assert.ok(heldStimulus(confirmContact(press.state, contact, HOLD_THRESHOLD_SECONDS + 0.1).state));
+  assert.equal(confirmContact(press.state, null, 5).state, press.state);
 
   // …including the app's ceiling. A replay whose release is missing or late
   // must let go where the app lets go, or a long-contact observation measures a
   // gesture the product cannot produce.
-  const abandoned = holdContact(held, contact, MAX_HOLD_SECONDS + 1);
+  const abandoned = confirmContact(held, contact, MAX_HOLD_SECONDS + 1);
   assert.equal(abandoned.contact, null);
   assert.equal(heldStimulus(abandoned.state), null);
 

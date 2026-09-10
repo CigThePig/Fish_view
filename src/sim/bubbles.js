@@ -1,6 +1,7 @@
 import { scatteredDepth, spreadDepth } from "./depth.js";
 import { SURFACE_Y_ROWS, substrateSurfaceY } from "./environment.js";
 import { fishMouthPosition } from "./fish-motion.js";
+import { impulseFlowAt } from "./interaction-events.js";
 import { environmentalCurrent, initialPlantSeeds } from "./plants.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
@@ -319,13 +320,39 @@ function touchBubbleRecords(state) {
   return records;
 }
 
+// How far moving water can carry a bubble sideways. A bubble has almost no mass
+// and no opinion, which makes it the cheapest thing in the aquarium to see an
+// invisible current through: a hand drawn past a rising column bends the column.
+// It is a deflection rather than a displacement - the impulse envelope rises and
+// falls, so the bubble drifts across and comes back to the line it was on.
+const BUBBLE_FLOW_CELLS = 1.6;
+
+/**
+ * The bubbles, pushed by any water that is moving.
+ *
+ * Applied here rather than in each of the four generators because every bubble
+ * floats in the same water, and because a deflection that some kinds of bubble
+ * felt and others did not would read as the aquarium having two currents.
+ */
+function deflectedByFlow(state, records) {
+  if (!(state.impulses ?? []).some((impulse) => impulse.dirX || impulse.dirY)) return records;
+  return records.map((record) => {
+    const flow = impulseFlowAt(state, record.worldX, record.worldY);
+    if (!flow.x) return record;
+    return {
+      ...record,
+      worldX: clamp(record.worldX + flow.x * BUBBLE_FLOW_CELLS, 0.4, state.cols - 0.4),
+    };
+  });
+}
+
 export function createBubbleWorldRecords(state) {
-  return [
+  return deflectedByFlow(state, [
     ...streamBubbleRecords(state),
     ...isolatedBubbleRecords(state),
     ...fishExhaleRecords(state),
     ...touchBubbleRecords(state),
-  ];
+  ]);
 }
 
 export function isInvestigableBubble(record) {

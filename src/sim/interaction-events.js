@@ -33,6 +33,17 @@
  * water is a separate matter: it rings when the finger arrives and again, more
  * gently, when it leaves, and it is still between those two.
  *
+ * Phase 4 gives the rest of the gesture meaning. A contact that leaves the
+ * hold's movement allowance does not stop existing: it becomes a **moving
+ * stimulus**, the same event again, carrying the bounded path behind it (see
+ * src/sim/pointer-path.js) and the direction, speed and curvature read off it.
+ * A finger drawn slowly is a point of interest that happens to be going
+ * somewhere; a finger thrown across the glass is water being pushed, and it
+ * leaves **wake impulses** behind it - a short line of directed disturbances
+ * that plants bend downstream in, bubbles are pushed sideways by and the school
+ * is carried along by. There are never more than MAX_WAKE_IMPULSES of them,
+ * however long the drag, because the newest replaces the oldest.
+ *
  * Everything here is transient. Events are never serialised - a stimulus that
  * survived a reload would replay a gesture from last week - they are capped,
  * they expire the moment they are older than their duration, and near-repeats
@@ -41,6 +52,7 @@
  */
 
 import { TOUCH_FLOOR_ROWS } from "./config.js";
+import { GESTURES, SWIPE_ENTER_SPEED, createPointerPath, visualDistance } from "./pointer-path.js";
 import { mix32 } from "./prng.js";
 
 function clamp(value, minimum, maximum) {
@@ -74,7 +86,9 @@ export const TOUCH_STIMULUS_RADIUS_CELLS = 30;
 // not have to wait to be believed, and it is above a quarter of a second
 // because a slow tap is still a tap. The movement allowance is a fingertip's
 // worth of wander on a seven-inch panel: a press that travels further than that
-// is a gesture with a direction in it, which is Phase 4's, so it ends the hold.
+// is a gesture with a direction in it, so it stops being a hold and becomes one
+// - see `refreshContact` and src/sim/pointer-path.js. The allowance is latched
+// (`wandered`), so a drag that comes back to rest does not become a presence.
 export const HOLD_THRESHOLD_SECONDS = 0.45;
 export const HOLD_MOVEMENT_CELLS = 1.6;
 
@@ -110,6 +124,42 @@ export const RELEASE_SECONDS = 2;
 // because two identical rings would read as a second tap.
 export const RELEASE_IMPULSE_STRENGTH = 0.42;
 export const RELEASE_IMPULSE_SECONDS = 1.5;
+
+/* ------------------------------------------------------------------ *
+ * A gesture that goes somewhere
+ * ------------------------------------------------------------------ */
+
+// How far the finger must travel between one wake and the next, at a standstill,
+// and how much further at speed. A stroke leaves disturbances a few cells apart;
+// a swipe spreads them four times as far, which is both what fast water looks
+// like and what keeps a gesture across the whole tank from turning the ring of
+// three over five times on the way. The distance is measured on the glass, so a
+// vertical sweep spends it at the rate a viewer sees it spent.
+export const WAKE_SPACING_CELLS = 4;
+
+// Below this the finger is not moving water, it is resting on it while
+// drifting. A drag across half the tank in three seconds is eleven; a finger
+// creeping a cell a second is not a current, and the aquarium should not draw
+// one where a viewer cannot see one.
+export const WAKE_MINIMUM_SPEED = 2;
+
+// The hard cap on the wake, and it is a cap on the *live* count rather than on
+// the rate: the fourth wake replaces the first, so a drag the length of a
+// bedtime story costs the same three impulses as a drag across the tank. It is
+// deliberately under MAX_IMPULSES, so a wake can never evict the press that
+// started the gesture or the ring that ends it.
+export const MAX_WAKE_IMPULSES = 3;
+
+// What a wake is worth. The floor is a slow drag - water moving enough for a
+// stem to lean into it - and the ceiling is a swipe, which is the strongest
+// thing a finger can do to this aquarium and still under the press that made
+// the gesture. Speed decides where between them a wake falls.
+export const WAKE_MINIMUM_STRENGTH = 0.24;
+export const WAKE_MAXIMUM_STRENGTH = 0.9;
+// Short. A swipe is a shove, not a presence: it arrives, it displaces, it is
+// gone. The whole arc the plan asks for - disturbance, displacement, settling -
+// happens inside this.
+export const WAKE_SECONDS = 0.95;
 
 // A second press this close to a live one of the same kind is the same gesture
 // continuing, not a new event: it refreshes the one that is there instead of
@@ -261,6 +311,20 @@ export function createStimulus({
   holdSeconds = 0,
   staleSeconds = 0,
   released = false,
+  // The gesture this contact is currently making: `press` while it has stayed
+  // inside the hold's movement allowance, `drag` or `swipe` once it has left
+  // it. It is what it is doing now, not what it has done - a swipe that slows
+  // becomes a drag again, because a hand slowing down is not a new gesture.
+  gesture = GESTURES.press,
+  // The last few places the finger has been, capped at PATH_SAMPLES and spaced
+  // by time. The three numbers under it are read off it once a frame rather
+  // than re-derived by every consumer; they are here so that a stimulus
+  // describes its own motion, the way it already describes its own age.
+  path = null,
+  speed = 0,
+  dirX = 0,
+  dirY = 0,
+  curvature = 0,
   // This press has already been further from where it landed than a hold is
   // allowed to be. It is latched because the allowance is about the whole
   // press, not about where the finger happens to be at the moment anyone
@@ -286,10 +350,25 @@ export function createStimulus({
     staleSeconds,
     released,
     wandered,
+    gesture,
+    path: path ?? null,
+    speed,
+    dirX,
+    dirY,
+    curvature,
   });
 }
 
-/** Water actually being disturbed. */
+/**
+ * Water actually being disturbed.
+ *
+ * `dirX`/`dirY` is which way it is moving, as a unit vector in cells, and zero
+ * for the disturbances that have no direction: a press rings the water outward
+ * from a point, and so does the ring a release leaves. A directed impulse is a
+ * different physical event - the water is going somewhere - and every consumer
+ * that can tell the difference should: a plant leans downstream rather than
+ * away, and a bubble is carried along rather than shaken.
+ */
 export function createImpulse({
   id,
   source = "touch",
@@ -302,8 +381,24 @@ export function createImpulse({
   contact = "water",
   seed = 0,
   sequence = 0,
+  dirX = 0,
+  dirY = 0,
 }) {
-  return Object.freeze({ id, source, x, y, strength, radius, ageSeconds, durationSeconds, contact, seed, sequence });
+  return Object.freeze({
+    id,
+    source,
+    x,
+    y,
+    strength,
+    radius,
+    ageSeconds,
+    durationSeconds,
+    contact,
+    seed,
+    sequence,
+    dirX,
+    dirY,
+  });
 }
 
 function touchStimulus(state, x, y, sequence, context, pointerX, pointerY) {
@@ -316,6 +411,9 @@ function touchStimulus(state, x, y, sequence, context, pointerX, pointerY) {
     pointerY,
     context,
     radius: TOUCH_STIMULUS_RADIUS_CELLS,
+    // A press begins its own path. Everything the gesture later turns out to be
+    // is read from this one array growing to at most PATH_SAMPLES entries.
+    path: createPointerPath(x, y, 0),
   });
 }
 
@@ -397,18 +495,13 @@ export function registerTouch(state, x, y, context = "open-water", { pointerX = 
   };
 }
 
-/** Mark a press as having travelled too far to ever become a presence. */
-export function markStimulusWandered(stimuli, stimulus) {
-  const wandered = createStimulus({ ...stimulus, wandered: true });
-  return Object.freeze((stimuli ?? []).map((entry) => (entry.id === stimulus.id ? wandered : entry)));
-}
-
 /**
- * The stimulus a finger is currently resting on, if there is one.
+ * The stimulus the finger currently on the glass belongs to, if there is one -
+ * resting, dragging or swiping, because all three are one contact.
  *
  * There is at most one, because the aquarium answers the primary pointer only:
- * a second finger is not a second hold, it is nothing. A later phase that wants
- * two hands changes what puts one here, not the shape of it.
+ * a second finger is not a second contact, it is nothing. A later phase that
+ * wants two hands changes what puts one here, not the shape of it.
  */
 export function heldStimulus(state) {
   return (state.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
@@ -438,18 +531,40 @@ export function latestTouchStimulus(state) {
 }
 
 /**
- * The finger is still down, still where it was put, and this old.
+ * The finger is still down, and this is where and how it is.
  *
- * The event is refreshed in place rather than replaced, so a hold spends one
+ * The event is refreshed in place rather than replaced, so a gesture spends one
  * slot however long it lasts and keeps the identity the responders were handed
- * when it landed. It also keeps its *position*: a presence is where the press
+ * when it landed. Everything a fish is already doing about this contact
+ * survives, which is what lets a press become a drag without anybody being
+ * startled twice by the same finger.
+ *
+ * A **still** contact keeps its *position*: a presence is where the press
  * landed, and a fingertip's worth of wander does not move it. That is what
  * makes the movement allowance mean anything - measured against a point that
  * followed the finger, a drag across the whole tank would never exceed it.
+ *
+ * A **moving** contact takes the new point, and with it the path behind it and
+ * the motion read off that path. `motion` is absent for a still contact, which
+ * is exactly the Phase 3 behaviour and is why a hold reads today as it did
+ * before there was such a thing as a drag.
  */
-export function holdStimulus(stimuli, stimulus, holdSeconds) {
+export function refreshContact(stimuli, stimulus, holdSeconds, motion = null) {
+  const moved = motion
+    ? {
+      x: motion.x,
+      y: motion.y,
+      gesture: motion.gesture,
+      path: motion.path,
+      speed: motion.speed,
+      dirX: motion.dirX,
+      dirY: motion.dirY,
+      curvature: motion.curvature,
+    }
+    : null;
   const held = createStimulus({
     ...stimulus,
+    ...moved,
     ageSeconds: 0,
     durationSeconds: TOUCH_SECONDS,
     held: true,
@@ -458,6 +573,123 @@ export function holdStimulus(stimuli, stimulus, holdSeconds) {
     staleSeconds: 0,
   });
   return Object.freeze((stimuli ?? []).map((entry) => (entry.id === stimulus.id ? held : entry)));
+}
+
+/**
+ * The path a contact has accumulated, without changing anything else about it.
+ *
+ * A press that is not yet old enough to be a presence still has to remember
+ * where the finger has been: the moment it leaves the movement allowance, that
+ * history is the only thing that can say how fast it left and in which
+ * direction. A press that never moves keeps writing the same point into it and
+ * describes a finger going nowhere, which is the truth.
+ */
+export function rememberPointerPath(stimuli, stimulus, path) {
+  if (stimulus.path === path) return stimuli ?? Object.freeze([]);
+  const remembered = createStimulus({ ...stimulus, path });
+  return Object.freeze((stimuli ?? []).map((entry) => (entry.id === stimulus.id ? remembered : entry)));
+}
+
+/* ------------------------------------------------------------------ *
+ * The wake
+ * ------------------------------------------------------------------ */
+
+/** The wake impulses currently in the water, newest last. */
+function wakeImpulses(impulses) {
+  return (impulses ?? []).filter((impulse) => impulse.source === "wake");
+}
+
+/**
+ * How far apart this finger's wake is spaced, given how fast it is going.
+ *
+ * The aquarium ticks ten times a second, so a swipe across the whole tank is
+ * three or four frames and leaves three or four disturbances whatever this
+ * says. The speed term is the guard against a platform that ticks faster: at
+ * thirty frames a second a flat spacing would ring the water nine times in a
+ * third of a second and turn the ring of three over three times, which reads as
+ * a flicker rather than as a wake.
+ */
+export function wakeSpacing(speed) {
+  return WAKE_SPACING_CELLS * (1 + Math.max(0, speed) / SWIPE_ENTER_SPEED * 0.5);
+}
+
+/**
+ * Whether the water is due another wake where the finger is now.
+ *
+ * One rule: clear water. A finger that has barely moved would otherwise ring
+ * the same patch every frame, and the spacing widens with speed, so a hand
+ * thrown across the tank leaves four disturbances rather than sixteen.
+ */
+export function wakeIsDue(state, x, y, speed = 0) {
+  const spacing = wakeSpacing(speed);
+  for (const impulse of wakeImpulses(state.impulses)) {
+    if (visualDistance(impulse.x - x, impulse.y - y) < spacing) return false;
+  }
+  return true;
+}
+
+/**
+ * Water pushed along, where the finger has just been.
+ *
+ * The strength comes from how fast the finger is going, between a drag that a
+ * stem leans into and a swipe that carries a bubble sideways, and the radius
+ * grows with it: a shove disturbs more water than a stroke. The identity is the
+ * slot it occupies rather than the place it happened, because the cap is on how
+ * many wakes are in the water at once - the fourth replaces the first, and a
+ * drag the length of a bedtime story costs what a drag across the tank does.
+ */
+export function registerWake(state, { x, y, dirX, dirY, strength, contact = "water", seed = 0 }) {
+  const live = wakeImpulses(state.impulses);
+  const amount = clamp(strength, 0, 1);
+  const impulse = createImpulse({
+    // The oldest wake's slot when the ring is full, and the next free one until
+    // then. Replacing by identity is what bounds the count.
+    id: live.length >= MAX_WAKE_IMPULSES
+      ? live.reduce((oldest, entry) => (entry.ageSeconds > oldest.ageSeconds ? entry : oldest), live[0]).id
+      : `wake:${live.length}`,
+    source: "wake",
+    x,
+    y,
+    strength: WAKE_MINIMUM_STRENGTH + (WAKE_MAXIMUM_STRENGTH - WAKE_MINIMUM_STRENGTH) * amount,
+    radius: TOUCH_IMPULSE_RADIUS_CELLS * (0.55 + 0.45 * amount),
+    durationSeconds: WAKE_SECONDS,
+    contact,
+    seed,
+    dirX,
+    dirY,
+  });
+  const existing = (state.impulses ?? []).findIndex((entry) => entry.id === impulse.id);
+  if (existing >= 0) {
+    return Object.freeze((state.impulses ?? []).map((entry, index) => (index === existing ? impulse : entry)));
+  }
+  return admit(state.impulses ?? [], impulse, MAX_IMPULSES, impulseStrength).list;
+}
+
+/**
+ * Which way the water is moving at a point, and how hard, in cells a second.
+ *
+ * One function, because everything that floats has the same question. The
+ * school is carried by it, a bubble is pushed sideways by it, and a plant reads
+ * the horizontal half of it. Undirected disturbances - a press, the ring a
+ * release leaves - contribute nothing here: they are a shock outward from a
+ * point rather than water going somewhere, and the consumers that care about
+ * that already read the impulse itself.
+ *
+ * Vertical distance counts double, so the reach is the circle a viewer sees
+ * rather than the ellipse the cell grid would give.
+ */
+export function impulseFlowAt(state, x, y) {
+  let flowX = 0;
+  let flowY = 0;
+  for (const impulse of state.impulses ?? []) {
+    if (!impulse.dirX && !impulse.dirY) continue;
+    const distance = visualDistance(x - impulse.x, y - impulse.y);
+    if (distance >= impulse.radius) continue;
+    const reach = (1 - distance / impulse.radius) * impulseStrength(impulse);
+    flowX += impulse.dirX * reach;
+    flowY += impulse.dirY * reach;
+  }
+  return { x: flowX, y: flowY };
 }
 
 /**

@@ -10,7 +10,7 @@ import { topAffinities } from "./sim/fish-personality.js";
 import { hashSeed } from "./sim/prng.js";
 import {
   advanceOffline,
-  applyHold,
+  applyContact,
   applyRelease,
   applyTouch,
   createAquariumState,
@@ -172,9 +172,11 @@ function frame(timestamp) {
   accumulator += elapsed;
   if (accumulator >= TICK_INTERVAL) {
     const delta = Math.min(accumulator, 0.25);
-    // A finger resting on the glass is told to the aquarium once per tick,
-    // before the tick, so the presence the fish read is the one that is there
-    // now. The clock lives here because a simulation may not have one.
+    // A finger on the glass is told to the aquarium once per tick, before the
+    // tick, so the contact the fish read is the one that is there now - where
+    // it is and how long it has been down. What that amounts to (a presence, a
+    // drag, a swipe) is the simulation's judgement. The clock lives here
+    // because a simulation may not have one.
     if (contact) {
       const heldSeconds = (timestamp - contact.time) / 1000;
       // Past the longest hold the simulation will describe, stop confirming it.
@@ -183,7 +185,7 @@ function frame(timestamp) {
       // would pin a fish to the glass for as long as the page was open. This
       // needs no event to arrive, which is the point of it.
       if (heldSeconds > MAX_HOLD_SECONDS) endContact();
-      else state = applyHold(state, contact.x, contact.y, heldSeconds);
+      else state = applyContact(state, contact.x, contact.y, heldSeconds);
     }
     state = tick(state, delta);
     accumulator = 0;
@@ -240,8 +242,8 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 canvas.addEventListener("pointermove", (event) => {
   if (!contact || event.pointerId !== contact.id) return;
-  // Where the finger is now. Whether it has moved far enough to stop being a
-  // hold is the simulation's judgement, not this file's.
+  // Where the finger is now. Whether that makes it a presence, a drag or a
+  // swipe is the simulation's judgement, not this file's.
   const point = aquariumPoint(event, canvas.getBoundingClientRect());
   contact = { ...contact, x: point.x, y: point.y };
 });

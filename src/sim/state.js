@@ -23,14 +23,24 @@ import {
   HOLD_MOVEMENT_CELLS,
   HOLD_THRESHOLD_SECONDS,
   MAX_HOLD_SECONDS,
+  WAKE_MINIMUM_SPEED,
   createInteractionState,
   heldStimulus,
-  holdStimulus,
   latestTouchStimulus,
-  markStimulusWandered,
+  refreshContact,
   registerTouch,
+  rememberPointerPath,
+  registerWake,
   releaseStimulus,
+  wakeIsDue,
 } from "./interaction-events.js";
+import {
+  GESTURES,
+  SWIPE_ENTER_SPEED,
+  classifyGesture,
+  extendPointerPath,
+  pathMotion,
+} from "./pointer-path.js";
 import {
   ACTIVITIES,
   BEHAVIORS,
@@ -256,43 +266,59 @@ export function applyTouch(state, x, y) {
 }
 
 /*
- * A press that stays.
+ * A press that stays, and a press that goes somewhere.
  *
  * The gesture keeps the clock - a simulation may not read one - and tells the
  * aquarium three things: the finger is still down, it is here, and it has been
  * for this long. Everything else is decided from state, so replaying the same
  * three numbers replays the same aquarium.
  *
- * A press is a tap until it has stayed put past HOLD_THRESHOLD_SECONDS; there
- * is no mode to enter and nothing the viewer has to know. Once it is a hold the
- * event is refreshed in place rather than re-registered, so a minute of leaning
- * on the glass costs exactly one stimulus, and the aquarium re-reads it on a
- * slow beat rather than every frame.
+ * There is one verb for a contact that is still down because there is one
+ * contact. What it *means* is read from the contact itself, and there is no
+ * mode to enter and nothing the viewer has to know:
  *
- * The re-read is what gives a hold an arc. A fish that was busy finishes and
+ * - A press is a **tap** until it has stayed put past HOLD_THRESHOLD_SECONDS.
+ * - A press that stays inside HOLD_MOVEMENT_CELLS of where it landed becomes a
+ *   **presence** - Phase 3, unchanged, down to the stimulus keeping the
+ *   position the press landed on rather than following the finger.
+ * - A press that leaves that allowance becomes a **gesture with a direction in
+ *   it**, and from then on it is one: the allowance is latched, so a finger
+ *   that wanders and comes back to rest is a drag that stopped rather than a
+ *   presence that started late. Which gesture it is - a slow point of interest
+ *   or water being shoved - is read from the speed along the bounded path, in
+ *   bands with hysteresis so a hand slowing down does not change the meaning of
+ *   what it is doing four times on the way (src/sim/pointer-path.js).
+ *
+ * Once it is anything but a tap the event is refreshed in place rather than
+ * re-registered, so a minute of leaning on the glass and a drag across the tank
+ * both cost exactly one stimulus, and the aquarium re-reads it on a slow beat
+ * rather than every frame.
+ *
+ * The re-read is what gives a contact an arc. A fish that was busy finishes and
  * comes over; a fish whose companion is already at the glass follows it; a fish
  * that has had enough hands over to one that has not. None of it needs a new
  * mechanism - it is the Phase 2 assignment, run again against a disturbance
  * that has not gone away, against interest that has habituated since.
  */
 
-// How often a held press is re-read. Six times a second would make the cast
-// twitch and cost fifteen scores a frame; every 0.6 s is slower than a fish
-// changes its mind and fast enough that a late arrival reads as a decision
-// rather than a delay.
+// How often a contact that is still down is re-read. Six times a second would
+// make the cast twitch and cost fifteen scores a frame; every 0.6 s is slower
+// than a fish changes its mind and fast enough that a late arrival reads as a
+// decision rather than a delay. A gesture that *changes* - a press that starts
+// moving, a drag that becomes a swipe - is re-read the frame it changes, off
+// the beat, because a shove that is answered a half second late is not answered.
 export const HOLD_REVIEW_SECONDS = 0.6;
 
 /**
  * The finger is still down, at this point, this many seconds after the press.
  *
  * Called every frame a contact is live. Returns the state unchanged while the
- * press is still only a tap, and releases the hold if the finger has wandered
- * further than a hold is allowed to - a gesture with a direction in it belongs
- * to Phase 4, and the honest thing to do with it today is to stop pretending
- * the finger is resting there.
+ * press is still only a tap that has not moved; from the moment it is either a
+ * presence or a gesture, this is the whole of what a contact does to the
+ * aquarium between the press and the release.
  */
-export function applyHold(state, x, y, holdSeconds) {
-  const seconds = clamp(Number.isFinite(holdSeconds) ? holdSeconds : 0, 0, MAX_HOLD_SECONDS);
+export function applyContact(state, x, y, seconds) {
+  const elapsed = clamp(Number.isFinite(seconds) ? seconds : 0, 0, MAX_HOLD_SECONDS);
   const existing = heldStimulus(state) ?? latestTouchStimulus(state);
   if (!existing || existing.released) return state;
 
@@ -310,46 +336,114 @@ export function applyHold(state, x, y, holdSeconds) {
   // cells away a fifth of a second in and is back on its anchor by the time
   // anyone looks has moved, and asking only at the threshold would promote it
   // to a presence anyway. So the answer is latched on the event.
-  const { pointerX, pointerY } = pressPoint(state, x, y);
+  const { pointerX, pointerY, safeX, safeY } = pressPoint(state, x, y);
   const anchorX = existing.pointerX ?? existing.x;
   const anchorY = existing.pointerY ?? existing.y;
-  const wandered = existing.wandered
+  const moving = existing.wandered
     || Math.hypot(pointerX - anchorX, pointerY - anchorY) > HOLD_MOVEMENT_CELLS;
-  if (wandered) {
-    if (existing.held) return applyRelease(state);
-    return existing.wandered
-      ? state
-      : { ...state, stimuli: markStimulusWandered(state.stimuli, existing) };
-  }
-  if (!existing.held && seconds < HOLD_THRESHOLD_SECONDS) return state;
 
-  const becoming = !existing.held;
-  const stimuli = holdStimulus(state.stimuli, existing, seconds);
+  // The path is kept for every contact, moving or not, because a press that
+  // starts moving needs the history behind it the frame it does - not a
+  // ten-second-old anchor and nothing in between. It is built on the point a
+  // fish can actually be sent to: a fish chases where the finger has been, and
+  // where the finger has been has to be inside the water.
+  const path = extendPointerPath(existing.path, safeX, safeY, elapsed);
+  const motion = pathMotion(path);
+
+  if (!moving) {
+    if (!existing.held && elapsed < HOLD_THRESHOLD_SECONDS) {
+      return { ...state, stimuli: rememberPointerPath(state.stimuli, existing, path) };
+    }
+    return reviewContact(state, existing, elapsed, {
+      // A presence keeps the position it landed on. The path goes on being
+      // written all the same, because the frame the finger leaves the allowance
+      // is the frame that history has to be there - not a ten-second-old anchor
+      // and nothing in between.
+      stimuli: refreshContact(state.stimuli, { ...existing, path }, elapsed, null),
+      becoming: !existing.held,
+      impulses: state.impulses,
+    });
+  }
+
+  const gesture = classifyGesture(existing.gesture, motion.speed);
+  const anchored = existing.wandered ? existing : { ...existing, wandered: true };
+  const stimuli = refreshContact(state.stimuli, anchored, elapsed, {
+    x: safeX,
+    y: safeY,
+    gesture,
+    path,
+    speed: motion.speed,
+    dirX: motion.dirX,
+    dirY: motion.dirY,
+    curvature: motion.curvature,
+  });
+
+  return reviewContact(state, existing, elapsed, {
+    stimuli,
+    // A gesture that has just changed what it is gets an answer this frame
+    // rather than on the next beat. A swipe is over in a third of a second, and
+    // an aquarium that noticed one half a second later did not notice it.
+    becoming: !existing.held || gesture !== existing.gesture,
+    impulses: wakeFor(state, { x: safeX, y: safeY, gesture, motion }),
+  });
+}
+
+/**
+ * Water pushed along behind a moving finger, if the water is due any.
+ *
+ * A drag leans the stems it passes; a swipe carries bubbles and the school with
+ * it. Both are the same event with a different strength, taken from how fast
+ * the finger is going, and both are rationed by `wakeIsDue` so that the number
+ * of them in the water does not depend on how long the viewer drags.
+ */
+function wakeFor(state, { x, y, gesture, motion }) {
+  if (gesture === GESTURES.press) return state.impulses;
+  if (motion.speed < WAKE_MINIMUM_SPEED) return state.impulses;
+  if (!wakeIsDue(state, x, y, motion.speed)) return state.impulses;
+  return registerWake(state, {
+    x,
+    y,
+    dirX: motion.dirX,
+    dirY: motion.dirY,
+    strength: clamp(motion.speed / SWIPE_ENTER_SPEED, 0, 1),
+    contact: y >= state.rows - TOUCH_FLOOR_ROWS - 0.01 ? "substrate" : "water",
+    // From the aquarium and the place, not from the gesture, so a finger drawn
+    // twice along the same shelf of sand lifts the same grit both times.
+    seed: mix32(state.seed ^ Math.imul(Math.round(x * 64) + 1, 0x9e3779b1)),
+  });
+}
+
+/**
+ * Re-read a contact that is still down, on the beat.
+ *
+ * The same Phase 2 assignment, against a disturbance that has not gone away and
+ * interest that has habituated since. Only the records change: a fish that has
+ * just been given an investigating role turns on the next tick, through the
+ * same path a delayed investigator converts through - there is no press
+ * arriving this frame that has to be answered before the aquarium moves again.
+ */
+function reviewContact(state, existing, elapsed, { stimuli, impulses, becoming }) {
   const stimulus = stimuli.find((entry) => entry.id === existing.id);
-  // The beat, counted off the hold clock itself rather than off a stored
-  // deadline, so the re-reads of a replayed hold land on the same seconds as
-  // the re-reads of the hold that was replayed.
-  const beat = Math.floor(seconds / HOLD_REVIEW_SECONDS);
+  // The beat, counted off the contact clock itself rather than off a stored
+  // deadline, so the re-reads of a replayed gesture land on the same seconds as
+  // the re-reads of the gesture that was replayed.
+  const beat = Math.floor(elapsed / HOLD_REVIEW_SECONDS);
   const due = becoming || beat !== Math.floor(existing.holdSeconds / HOLD_REVIEW_SECONDS);
-  if (!due) return { ...state, stimuli };
+  if (!due) return { ...state, stimuli, impulses };
 
   const attention = assignAttention({ ...state, stimuli }, stimulus, {
     commitmentFor: (fish) => activityCommitment(fish.activity?.current),
     // Nothing is compelled to answer a finger it has already got used to. The
-    // press that started this hold was answered; whether the aquarium is still
-    // answering a minute later is the aquarium's business.
+    // press that started this contact was answered; whether the aquarium is
+    // still answering a minute later is the aquarium's business.
     guarantee: false,
   });
-  // Only the records change here. A fish that has just been given an
-  // investigating role turns on the next tick, through the same path a delayed
-  // investigator converts through - there is no press arriving this frame that
-  // has to be answered before the aquarium moves again.
   const individuals = state.individuals.map((fish, index) => {
     const merged = mergeHoldAttention(fish.attention ?? null, attention[index], stimulus);
     return merged === (fish.attention ?? null) ? fish : { ...fish, attention: merged };
   });
 
-  return { ...state, stimuli, individuals };
+  return { ...state, stimuli, impulses, individuals };
 }
 
 /**

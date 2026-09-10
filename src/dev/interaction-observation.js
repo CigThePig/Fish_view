@@ -23,23 +23,25 @@
  * control run, ordinary life reads as a response.
  *
  * **The interaction path has one seam.** `applyPointerEvent` is the only place
- * that turns a pointer event into aquarium state, and `holdContact` is the only
+ * that turns a pointer event into aquarium state, and `confirmContact` is the only
  * place a contact that is still down is told to the aquarium. Between them they
  * do what `src/app.js` does - a primary press outside the developer hotspot
- * calls `applyTouch`, a contact that stays put is fed to `applyHold` once per
+ * calls `applyTouch`, a contact that stays put is fed to `applyContact` once per
  * frame, and a release calls `applyRelease` - so the harness measures the real
  * product rather than an idealised one. Phase 1 rebuilt what `applyTouch` does
  * underneath, onto stimuli and impulses, and every scenario, measurement and
  * capture here went on reading the same numbers. That is the point of having
- * built it first. Phase 3 gave the rest of the gesture meaning, and the tap
- * scenarios still read the same; only the holds changed.
+ * built it first. Phase 3 gave a press that stays meaning, and the tap scenarios
+ * still read the same; only the holds changed. Phase 4 gave the motion in a
+ * gesture meaning, and 57 of the 66 scenarios still read the same; the nine that
+ * changed are the three with motion in them.
  */
 
 import { aquariumPoint } from "../platform/aquarium-input.js";
 import { calculateDamage } from "../render/damage.js";
 import { render } from "../render/render.js";
 import { advanceAquariumHistory } from "../sim/aquarium-history.js";
-import { createBubbleWorldRecords } from "../sim/bubbles.js";
+import { createBubbleWorldRecords, isInvestigableBubble } from "../sim/bubbles.js";
 import { DISPLAY, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
 import { clamp, traitsFromSeed } from "../sim/entities.js";
 import { substrateSurfaceY } from "../sim/environment.js";
@@ -48,9 +50,16 @@ import { affinitiesFromSeed } from "../sim/fish-personality.js";
 import { ROSTER_COMPLETE_DAY } from "../sim/fish-roster.js";
 import { livingWorldRecords } from "../sim/living-world.js";
 import { createPlantFrameContext, plantSpecies, posePlant } from "../sim/plants.js";
-import { HOLD_PHASE_LIST, attentionInvestigates, holdPhase } from "../sim/attention.js";
-import { MAX_HOLD_SECONDS } from "../sim/interaction-events.js";
-import { applyHold, applyRelease, applyTouch, createAquariumState } from "../sim/state.js";
+import {
+  HOLD_PHASE_LIST,
+  attentionFocus,
+  attentionInvestigates,
+  attentionPursuit,
+  holdPhase,
+} from "../sim/attention.js";
+import { MAX_HOLD_SECONDS, impulseFlowAt } from "../sim/interaction-events.js";
+import { GESTURES, PATH_SAMPLES } from "../sim/pointer-path.js";
+import { applyContact, applyRelease, applyTouch, createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
 
 // The production frame interval. Observations are measured in frames the device
@@ -88,6 +97,11 @@ const PITCH_EPSILON_DEGREES = 0.5;
 // A fish that ends up more than a body length from where it would have been is
 // doing something visibly different. Anything smaller that still exceeds the
 // epsilon is a glance, a slowed fin, a changed heading.
+// A fish this close to a contact that is *moving* is not answering it, it is
+// riding it. Nothing in the aquarium should ever do that: the plan's rule is
+// that a finger may not drive a fish, and this is how the harness checks it.
+const PUPPET_RADIUS_CELLS = 1.2;
+
 const STRONG_RESPONSE_CELLS = 1;
 
 // Heading change fast enough to read as a turn rather than a curve.
@@ -263,10 +277,10 @@ export function pointerEventForWorldPoint(x, y, rect = displayRect()) {
  * - only the left button, which is every touch and the ordinary mouse press.
  * - the developer hotspot is not part of the aquarium.
  * - a press registers a stimulus and a water impulse (Phase 1) and hands every
- *   fish a response role (Phase 2). A release ends the presence the press may
- *   have become (Phase 3). Movement is still inert as an event in its own
- *   right - it moves the contact, and a contact that has moved too far stops
- *   being a hold - because a gesture with a direction in it is Phase 4's.
+ *   fish a response role (Phase 2). A release ends whatever the press became.
+ *   A move is not a disturbance in its own right and never was: it says where
+ *   the finger is, and what that *means* - a presence, a drag or a swipe - is
+ *   decided once a frame by `applyContact`, exactly as a hold always was.
  */
 export function applyPointerEvent(state, event, { rect = displayRect(), primary = true, button = 0 } = {}) {
   if (!primary) return { state, delivered: false, reason: "not-the-primary-pointer" };
@@ -287,16 +301,17 @@ export function applyPointerEvent(state, event, { rect = displayRect(), primary 
   if (event.type === "up") {
     return { state: applyRelease(state), delivered: true, reason: "release", point };
   }
-  return { state, delivered: false, reason: "inert-today", point };
+  return { state, delivered: false, reason: "contact-moved", point };
 }
 
 /**
- * A contact that is still on the glass, told to the aquarium once per frame.
+ * A contact that is still on the glass - resting, dragging or swiping - told to
+ * the aquarium once per frame.
  *
  * This is the other half of `src/app.js`'s pointer handling: the app runs a
- * clock and hands `applyHold` the elapsed time before each tick, and so does
- * this, off the replay's own seconds rather than off a wall clock — including
- * the app's ceiling. `applyHold` alone would never let go of a contact whose
+ * clock and hands `applyContact` the point and the elapsed time before each
+ * tick, and so does this, off the replay's own seconds rather than off a wall clock — including
+ * the app's ceiling. `applyContact` alone would never let go of a contact whose
  * release is missing or late, because it only clamps the clock and clears the
  * staleness; the app stops confirming such a contact once it passes
  * `MAX_HOLD_SECONDS`, and a harness that did not would be measuring a gesture
@@ -304,11 +319,11 @@ export function applyPointerEvent(state, event, { rect = displayRect(), primary 
  *
  * Returns the contact as it stands, which is `null` once it has been ended.
  */
-export function holdContact(state, contact, seconds) {
+export function confirmContact(state, contact, seconds) {
   if (!contact) return { state, contact: null };
   const heldSeconds = seconds - contact.startedAt;
   if (heldSeconds > MAX_HOLD_SECONDS) return { state: applyRelease(state), contact: null };
-  return { state: applyHold(state, contact.x, contact.y, heldSeconds), contact };
+  return { state: applyContact(state, contact.x, contact.y, heldSeconds), contact };
 }
 
 /* ------------------------------------------------------------------ *
@@ -469,6 +484,14 @@ function createFishRecord(fish) {
     turnCount: 0,
     secondsNearStimulus: 0,
     endingActivity: null,
+    // The role this fish was playing while the contact was moving. The headline
+    // `role` is the one it was given when the press landed, which for a swipe is
+    // the role it was given a fifth of a second before the gesture became one.
+    movingRole: null,
+    // How this fish went after a contact that was moving: cutting the corner,
+    // following the water it went through, or picking a piece of the trail and
+    // looking at that instead. Null for a fish that never chased one.
+    pursuit: null,
     // The arc a held press put this fish through, and how much of it the fish
     // actually spent answering. Empty for a tap, which has no arc.
     holdPhases: [],
@@ -602,6 +625,30 @@ export function observeInteraction(baseState, {
   let glyphsWorst = 0;
   let centroidDisplacement = 0;
   let spreadChange = 0;
+  // What the gesture was, frame by frame, and what it cost. Everything here is
+  // read off the aquarium rather than off the history that produced it: a
+  // scenario asks for a swipe, and this says whether the aquarium received one.
+  const gestureFrames = { press: 0, drag: 0, swipe: 0 };
+  let peakSpeed = 0;
+  let peakCurvature = 0;
+  let peakPathSamples = 0;
+  let peakLiveWakes = 0;
+  const wakesCreated = new Set();
+  // Where the nearest fish was while the contact was moving, and whether any
+  // fish was ever close enough to be riding it rather than chasing it.
+  let followFrames = 0;
+  let followLagTotal = 0;
+  let closestToMovingContact = Number.POSITIVE_INFINITY;
+  // The longest unbroken stretch a fish spent inside the puppet radius, not the
+  // total: a fish crossing the finger's path is inside it for a frame or two,
+  // and only a fish being *driven* is inside it for the length of a gesture.
+  let puppetRun = 0;
+  let longestPuppetRun = 0;
+  // The environment answering a direction rather than a point: stems and
+  // bubbles that moved the way the water was going, against those that did not.
+  const plantsDownstream = new Set();
+  const plantsUpstream = new Set();
+  const bubblesCarried = new Set();
 
   for (let frame = 1; frame <= frames; frame += 1) {
     const seconds = round(frame * stepSeconds, 3);
@@ -645,10 +692,12 @@ export function observeInteraction(baseState, {
       } else if (result.reason === "developer-hotspot") delivery.hotspot += 1;
       else if (result.reason === "not-the-primary-pointer") delivery.nonPrimary += 1;
       else {
+        // Counted under the name Phase 1 gave it, so a run can still be
+        // compared field for field against an earlier phase's evidence. A move
+        // does not disturb anything by itself; it says where the finger is, and
+        // what that amounts to is the simulation's judgement, made once a frame
+        // in `applyContact`.
         delivery.inert += 1;
-        // A move does not disturb anything, but it does say where the finger
-        // is. Whether it has wandered too far to still be a hold is the
-        // simulation's judgement, made in `applyHold`.
         if (primary && contact && result.point) contact = { ...contact, x: result.point.x, y: result.point.y };
       }
     }
@@ -656,7 +705,7 @@ export function observeInteraction(baseState, {
     // The finger, if it is still there, told to the aquarium before the tick -
     // the order `src/app.js` uses, so the presence the fish read this frame is
     // the one that is there this frame.
-    const confirmed = holdContact(treatment, contact, seconds);
+    const confirmed = confirmContact(treatment, contact, seconds);
     treatment = confirmed.state;
     contact = confirmed.contact;
     treatment = tick(treatment, stepSeconds);
@@ -673,6 +722,10 @@ export function observeInteraction(baseState, {
     scene = nextScene;
 
     const controlBySeed = new Map(control.individuals.map((fish) => [fish.seed, fish]));
+    // The contact as the aquarium currently holds it: a presence, a drag or a
+    // swipe. Read before the fish are, because what a fish is answering this
+    // frame is part of what each fish is measured on.
+    const held = (treatment.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
     let deviation = 0;
     let response = 0;
     let activityDivergence = 0;
@@ -714,8 +767,18 @@ export function observeInteraction(baseState, {
       // The arc, sampled every frame. A phase is recorded the first time the
       // fish is in it, in the order the plan names them, so a row reads as how
       // far this fish got rather than as where it happened to be at the end.
-      const phase = holdPhase(fish.attention, fish);
+      const focus = attentionFocus(treatment, fish);
+      const phase = holdPhase(fish.attention, fish, focus);
       if (phase && !record.holdPhases.includes(phase)) record.holdPhases.push(phase);
+      // What this fish was doing about a contact that was moving. Both are
+      // recorded the first time they are true, because they are properties of
+      // the fish and the gesture rather than of the frame.
+      if (held && held.gesture !== GESTURES.press && fish.attention?.stimulusId === held.id) {
+        if (!record.movingRole) record.movingRole = fish.attention.role;
+        if (!record.pursuit && attentionInvestigates(fish.attention)) {
+          record.pursuit = attentionPursuit(fish, held);
+        }
+      }
       if (phase === "inspect" || phase === "linger") holdInspecting += 1;
       if (fish.attention?.held && attentionInvestigates(fish.attention)) {
         record.secondsEngaged += stepSeconds;
@@ -787,8 +850,39 @@ export function observeInteraction(baseState, {
       }
     }
 
-    const held = (treatment.stimuli ?? []).find((stimulus) => stimulus.held) ?? null;
     heldSeconds = Math.max(heldSeconds, held?.holdSeconds ?? 0);
+
+    // What the contact currently is, and what it is doing to the water. A
+    // gesture is measured from the aquarium's own reading of it, so a scenario
+    // that asks for a swipe and produces a drag says so.
+    if (held) {
+      gestureFrames[held.gesture] = (gestureFrames[held.gesture] ?? 0) + 1;
+      peakSpeed = Math.max(peakSpeed, held.speed ?? 0);
+      peakCurvature = Math.max(peakCurvature, held.curvature ?? 0);
+      peakPathSamples = Math.max(peakPathSamples, held.path?.length ?? 0);
+      if (held.gesture !== GESTURES.press) {
+        // How far behind the finger the aquarium's closest answer is. A puppet
+        // would sit on it; a fish chases it, catches the water it went through,
+        // or is left behind.
+        let nearest = Number.POSITIVE_INFINITY;
+        for (const fish of treatment.individuals) {
+          nearest = Math.min(nearest, Math.hypot(held.x - fish.x, held.y - fish.y));
+        }
+        if (Number.isFinite(nearest)) {
+          followFrames += 1;
+          followLagTotal += nearest;
+          closestToMovingContact = Math.min(closestToMovingContact, nearest);
+          puppetRun = nearest <= PUPPET_RADIUS_CELLS ? puppetRun + 1 : 0;
+          longestPuppetRun = Math.max(longestPuppetRun, puppetRun);
+        }
+      }
+    }
+    const liveWakes = (treatment.impulses ?? []).filter((impulse) => impulse.source === "wake");
+    peakLiveWakes = Math.max(peakLiveWakes, liveWakes.length);
+    // Wake identities are a rotating ring of three, so the same id is a
+    // different disturbance once it has moved: counted by where it was rung.
+    for (const wake of liveWakes) wakesCreated.add(`${wake.id}@${round(wake.x, 1)},${round(wake.y, 1)}`);
+
     const engaged = treatment.individuals.filter((fish) => attentionInvestigates(fish.attention)).length;
     peakEngaged = Math.max(peakEngaged, engaged);
     // The frame the presence stopped being one, whether that was a finger
@@ -826,14 +920,27 @@ export function observeInteraction(baseState, {
     const spreadDelta = spread(treatment.school) - spread(control.school);
     if (Math.abs(spreadDelta) > Math.abs(spreadChange)) spreadChange = spreadDelta;
 
-    // The environment is compared on its own slower cadence; see the constant.
-    if (frame % ENVIRONMENT_SAMPLE_FRAMES === 0) {
+    // The environment is compared on its own slower cadence - except while water
+    // is actually moving, which is a second or two out of a whole observation
+    // and is the only time a directional reading means anything. Sampling a
+    // wake five frames apart catches it at whatever point its envelope happens
+    // to be at, which for a swipe is usually after it is over.
+    const flowing = (treatment.impulses ?? []).some((impulse) => impulse.dirX || impulse.dirY);
+    if (flowing || frame % ENVIRONMENT_SAMPLE_FRAMES === 0) {
       const treatmentPlants = plantTips(treatment);
       const controlPlants = plantTips(control);
       treatmentPlants.forEach((plant, index) => {
         const twin = controlPlants[index];
         if (!twin) return;
         if (Math.hypot(plant.x - twin.x, plant.y - twin.y) > 0.02) disturbedPlants.add(plant.seed);
+        // Directional response: did the stem lean the way the water was going?
+        // A press rings outward and stems either side of it lean apart, so this
+        // is only asked where water is actually moving.
+        const flow = impulseFlowAt(treatment, plant.x, plant.y);
+        if (Math.abs(flow.x) > 0.01 && Math.abs(plant.x - twin.x) > 0.02) {
+          if (Math.sign(plant.x - twin.x) === Math.sign(flow.x)) plantsDownstream.add(plant.seed);
+          else plantsUpstream.add(plant.seed);
+        }
       });
 
       const treatmentBubbles = createBubbleWorldRecords(treatment);
@@ -846,6 +953,11 @@ export function observeInteraction(baseState, {
         }
         if (Math.hypot(record.worldX - twin.worldX, record.worldY - twin.worldY) > 0.02) {
           disturbedBubbles.add(record.id);
+        }
+        const flow = impulseFlowAt(treatment, record.worldX, record.worldY);
+        if (Math.abs(flow.x) > 0.01 && Math.sign(record.worldX - twin.worldX) === Math.sign(flow.x)
+          && Math.abs(record.worldX - twin.worldX) > 0.02) {
+          bubblesCarried.add(record.id);
         }
       }
 
@@ -882,6 +994,8 @@ export function observeInteraction(baseState, {
   const fish = [...fishRecords.values()].map(({ startFromAttention, originFrame, reference, ...record }) => ({
     ...record,
     holdPhases: phaseOrder(record.holdPhases),
+    movingRole: record.movingRole ?? null,
+    pursuit: record.pursuit ?? null,
     secondsEngaged: round(record.secondsEngaged, 1),
     closestDistance: Number.isFinite(record.closestDistance) ? round(record.closestDistance, 2) : null,
     distanceTravelled: round(record.distanceTravelled, 2),
@@ -956,6 +1070,46 @@ export function observeInteraction(baseState, {
       lingered: fish.filter((one) => one.holdPhases.includes("linger")).length,
       settled: fish.filter((one) => one.holdPhases.includes("settle")).length,
       longestEngagementSeconds: round(Math.max(0, ...fish.map((one) => one.secondsEngaged)), 1),
+    },
+    // What the gesture was and what it cost, or a record that there was no
+    // motion in it. `kinds` is frames, so a scenario that asked for a swipe and
+    // produced two frames of one says so rather than being taken at its word.
+    gesture: {
+      kinds: gestureFrames,
+      moving: gestureFrames.drag + gestureFrames.swipe,
+      peakSpeed: round(peakSpeed, 1),
+      peakCurvature: round(peakCurvature, 2),
+      // The bound the plan asks for by name: a path that does not grow with the
+      // gesture. This is the largest it ever got, against the cap.
+      peakPathSamples,
+      pathCap: PATH_SAMPLES,
+      // Water pushed along, and how much of it was in the tank at once. The
+      // second number is the one that cannot be allowed to grow with the
+      // gesture; the first is allowed to, and is bounded by the aquarium's
+      // width rather than by the viewer's patience.
+      wakesCreated: wakesCreated.size,
+      peakLiveWakes,
+      // Autonomy: how far behind the finger the nearest fish was on average, the
+      // closest one ever got, and the longest unbroken time any fish spent
+      // inside the puppet radius. A fish crossing the path is in it for a frame;
+      // a fish being driven by it never leaves.
+      followLag: followFrames ? round(followLagTotal / followFrames, 2) : null,
+      closestApproach: Number.isFinite(closestToMovingContact) ? round(closestToMovingContact, 2) : null,
+      puppetSeconds: round(longestPuppetRun * stepSeconds, 1),
+      // The environment answering a direction: stems and bubbles that went the
+      // way the water was going, against stems that went the other way.
+      plantsDownstream: plantsDownstream.size,
+      plantsUpstream: plantsUpstream.size,
+      bubblesCarried: bubblesCarried.size,
+      // What the cast was doing about the gesture while it was a gesture. This
+      // is the reading that separates a drag from a swipe: a drag is answered
+      // by fish going to it, a swipe by fish leaning out of the way of it.
+      roles: Object.fromEntries([...new Set(fish.map((one) => one.movingRole).filter(Boolean))]
+        .map((role) => [role, fish.filter((one) => one.movingRole === role).length])),
+      chasing: fish.filter((one) => one.pursuit).length,
+      pursuits: Object.fromEntries(["intercept", "trail", "mark"]
+        .map((pursuit) => [pursuit, fish.filter((one) => one.pursuit === pursuit).length])
+        .filter(([, count]) => count > 0)),
     },
     render: {
       averageDamagePercent: round(damageTotal / frames, 2),
@@ -1070,6 +1224,42 @@ function substrateTapY(state, x) {
 
 function tallestPlant(state) {
   return state.plants.reduce((best, plant) => (plant.matureHeight > (best?.matureHeight ?? 0) ? plant : best), null);
+}
+
+/**
+ * The stretch of substrate with the most stems standing in it.
+ *
+ * "Drag through plant mass" is a claim about a bed rather than about one
+ * specimen, so the scenario finds the busiest six cells of the tank and draws
+ * the finger through them, whatever the seed put where.
+ */
+function densestPlanting(state, span = 6) {
+  let best = { x: state.cols / 2, count: 0 };
+  for (let x = span; x <= state.cols - span; x += 2) {
+    const count = state.plants.filter((plant) => Math.abs(plant.x - x) <= span).length;
+    if (count > best.count) best = { x, count };
+  }
+  return best;
+}
+
+/**
+ * The lowest rising bubble in the tank, which is the newest one and so the one
+ * still closest to the column that made it. A drag through bubbles has to be
+ * drawn where the bubbles actually are, not where they will be in a second.
+ */
+function lowestBubble(state) {
+  const records = createBubbleWorldRecords(state).filter(isInvestigableBubble);
+  if (!records.length) return null;
+  return records.reduce((best, record) => (record.worldY > best.worldY ? record : best), records[0]);
+}
+
+/** The fish nearest mid-water, which is the one a drag can plausibly pass. */
+function midWaterFish(state) {
+  const middle = midWaterY(state);
+  return state.individuals.reduce(
+    (best, fish) => (Math.abs(fish.y - middle) < Math.abs((best?.y ?? 99) - middle) ? fish : best),
+    null,
+  );
 }
 
 /**
@@ -1269,15 +1459,15 @@ export const INTERACTION_SCENARIOS = Object.freeze([
       hold(point.x, point.y, { at: 13, seconds: 8, sampleSeconds: 2 }),
     ),
   }),
-  // A press that starts as a hold and wanders out of it. Motion is Phase 4's;
-  // what this records is that the aquarium stops pretending the finger is
-  // resting there rather than following it.
+  // A press that starts as a hold and wanders out of it. It does not stop
+  // existing when it does: it becomes a drag, and the fish answering the
+  // presence carry on answering the same event as it moves off.
   Object.freeze({
     id: "hold-then-wander",
     label: "Hold that wanders off",
     context: "stocked",
     observeSeconds: 20,
-    describe: "A press held for 4 s, then drawn slowly away from where it landed.",
+    describe: "A press held for 4 s, then drawn slowly away - a presence that becomes a drag.",
     anchor: (state) => ({ x: state.cols * 0.35, y: midWaterY(state) }),
     gesture: (point, state) => pointerHistory([
       ...hold(point.x, point.y, { at: 1, seconds: 4, sampleSeconds: 1 }).slice(0, -1),
@@ -1287,6 +1477,9 @@ export const INTERACTION_SCENARIOS = Object.freeze([
       ).slice(1),
     ]),
   }),
+  // The Phase 4 gestures. The first two are the pair the whole phase turns on:
+  // the same path, at two speeds, so "a slow drag and a fast swipe are visually
+  // distinct" is a comparison of two runs rather than an assertion.
   Object.freeze({
     id: "slow-drag",
     label: "Slow drag",
@@ -1307,6 +1500,122 @@ export const INTERACTION_SCENARIOS = Object.freeze([
     gesture: (point, state) => swipe(
       { x: point.x, y: point.y },
       { x: state.cols * 0.75, y: point.y - 2 },
+      { at: 1, seconds: 0.3 },
+    ),
+  }),
+  // A finger that is turning. Interception only works on a line, so a curled
+  // drag should be followed rather than headed off - which is a difference in
+  // the cast's behaviour that comes out of one number on the event.
+  Object.freeze({
+    id: "curved-drag",
+    label: "Curved slow drag",
+    context: "stocked",
+    describe: "A finger drawn through an arc across mid-water over 3.5 s.",
+    anchor: (state) => ({ x: state.cols * 0.25, y: midWaterY(state) }),
+    gesture: (point, state) => drag([
+      { x: point.x, y: point.y },
+      { x: state.cols * 0.42, y: point.y - 4 },
+      { x: state.cols * 0.58, y: point.y + 3 },
+      { x: state.cols * 0.75, y: point.y - 1 },
+    ], { at: 1, seconds: 3.5 }),
+  }),
+  // Past a fish rather than at one: the finger goes somewhere and the fish
+  // decides what to do about that, which is the difference between a moving
+  // stimulus and a cursor.
+  Object.freeze({
+    id: "fish-drag",
+    label: "Drag past a fish",
+    context: "stocked",
+    describe: "A finger drawn slowly past the fish nearest mid-water.",
+    anchor: (state) => {
+      const fish = midWaterFish(state);
+      return { x: clamp(fish.x - 9, 2, state.cols - 3), y: clamp(fish.y - 1, 2, state.rows - 5) };
+    },
+    gesture: (point, state) => drag(
+      [{ x: point.x, y: point.y }, { x: clamp(point.x + 18, 2, state.cols - 2), y: point.y + 1 }],
+      { at: 1, seconds: 2.6 },
+    ),
+  }),
+  // Through the busiest bed of stems in the tank, low and level, so the stems
+  // are what the water reaches.
+  Object.freeze({
+    id: "plant-drag",
+    label: "Drag through plant mass",
+    context: "stocked",
+    describe: "A finger drawn through the densest planting in the tank over 2.6 s.",
+    anchor: (state) => {
+      const bed = densestPlanting(state);
+      return { x: clamp(bed.x - 7, 2, state.cols - 3), y: substrateTapY(state, bed.x) - 1.5 };
+    },
+    gesture: (point, state) => drag(
+      [{ x: point.x, y: point.y }, { x: clamp(point.x + 14, 2, state.cols - 2), y: point.y }],
+      { at: 1, seconds: 2.6 },
+    ),
+  }),
+  // Across a rising column. A bubble has no mass and no opinion, which makes it
+  // the cheapest way to see water that is moving.
+  Object.freeze({
+    id: "bubble-drag",
+    label: "Drag through bubbles",
+    context: "stocked",
+    describe: "A finger drawn across the column a bubble is rising in.",
+    anchor: (state) => {
+      const bubble = lowestBubble(state);
+      const x = bubble ? bubble.worldX : state.cols / 2;
+      const y = bubble ? bubble.worldY : midWaterY(state);
+      return { x: clamp(x - 6, 2, state.cols - 3), y: clamp(y - 1, 2, state.rows - 5) };
+    },
+    gesture: (point, state) => drag(
+      [{ x: point.x, y: point.y }, { x: clamp(point.x + 12, 2, state.cols - 2), y: point.y }],
+      { at: 1, seconds: 2 },
+    ),
+  }),
+  // Down and across. A diagonal swipe is the one that tests whether the water's
+  // direction is a direction at all: plants take only its horizontal share, and
+  // the school is pushed less vertically than horizontally.
+  Object.freeze({
+    id: "diagonal-swipe",
+    label: "Fast diagonal swipe",
+    context: "stocked",
+    describe: "A swipe from the upper left to the lower right in 0.3 s.",
+    anchor: (state) => ({ x: state.cols * 0.28, y: WATERLINE_ROWS + 1.5 }),
+    gesture: (point, state) => swipe(
+      { x: point.x, y: point.y },
+      { x: state.cols * 0.72, y: substrateTapY(state, state.cols * 0.72) - 1 },
+      { at: 1, seconds: 0.3 },
+    ),
+  }),
+  // The boundedness gate for a gesture rather than for a presence: four swipes
+  // through the same water, and nothing may accumulate across them.
+  Object.freeze({
+    id: "repeated-swipes",
+    label: "Repeated swipes",
+    context: "stocked",
+    observeSeconds: 16,
+    describe: "Four swipes through the same water, 1.2 s apart, alternating direction.",
+    anchor: (state) => ({ x: state.cols * 0.3, y: midWaterY(state) }),
+    gesture: (point, state) => pointerHistory(
+      [0, 1, 2, 3].flatMap((index) => {
+        const left = { x: point.x, y: point.y };
+        const right = { x: state.cols * 0.7, y: point.y + (index % 2 ? 1 : -1) };
+        return index % 2
+          ? swipe(right, left, { at: 1 + index * 1.2, seconds: 0.3 })
+          : swipe(left, right, { at: 1 + index * 1.2, seconds: 0.3 });
+      }),
+    ),
+  }),
+  // Through two fish that are already busy with each other. A chase is the
+  // liveliest thing the aquarium does on its own, and the swipe must read
+  // against it rather than replace it.
+  Object.freeze({
+    id: "chase-swipe",
+    label: "Swipe through a chase",
+    context: "stocked",
+    waitFor: [ACTIVITIES.playfulChase],
+    describe: "A swipe through the water two fish are chasing in.",
+    gesture: (point, state) => swipe(
+      { x: clamp(point.x - 12, 2, state.cols - 2), y: point.y },
+      { x: clamp(point.x + 12, 2, state.cols - 2), y: point.y - 1 },
       { at: 1, seconds: 0.3 },
     ),
   }),

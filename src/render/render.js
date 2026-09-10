@@ -831,22 +831,47 @@ function drawForageDebris(builder, state, palette, metrics) {
   });
 }
 
+// How far a directed disturbance's ring is carried downstream over its life, and
+// how much longer it is along the flow than across it. Both are fractions of the
+// ring's own radius: water that is going somewhere leaves an oval that travels,
+// where water that was merely struck leaves a circle that sits.
+const WAKE_DRIFT = 0.5;
+const WAKE_STRETCH = 0.55;
+
 // The visible correlate of an impulse: the ring the water makes where it was
 // disturbed. One per live impulse, each a scene object of its own so the
 // renderer damages the water it actually rang and nothing else.
+//
+// This is the placeholder AGENTS.md describes, and a wake is the same
+// placeholder: the ring an impulse with a direction draws is drawn out along
+// that direction and drifts with it, so that a swipe does not read as a row of
+// taps. What is settled underneath it is the impulse - a position, a strength, a
+// radius, an envelope, what it touched, and now which way the water is going.
 function drawImpulseRipples(builder, state, palette, metrics) {
   for (const impulse of state.impulses ?? []) {
     const progress = clamp(impulse.ageSeconds / impulse.durationSeconds, 0, 1);
     const radius = 0.62 + smoothstep(progress) * 5.15;
+    const directed = Boolean(impulse.dirX || impulse.dirY);
+    const drift = directed ? smoothstep(progress) * radius * WAKE_DRIFT : 0;
+    const centreX = impulse.x + (impulse.dirX ?? 0) * drift;
+    const centreY = impulse.y + (impulse.dirY ?? 0) * drift * 0.5;
     const samples = 16;
     const glyphs = [];
     for (let index = 0; index < samples; index += 1) {
       const angle = (index / samples) * TAU;
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      // Stretched downstream and gathered upstream, so the ring reads as
+      // something the water carried rather than as a circle that happens to be
+      // somewhere else.
+      const stretch = directed
+        ? 1 + WAKE_STRETCH * (cosine * (impulse.dirX ?? 0) + sine * (impulse.dirY ?? 0))
+        : 1;
       const char = progress < 0.3 ? "O" : progress < 0.68 ? "o" : index % 2 ? "." : "'";
       glyphs.push(positionedGlyph(metrics, {
         char,
-        worldX: impulse.x + Math.cos(angle) * radius,
-        worldY: impulse.y + Math.sin(angle) * radius * 0.5,
+        worldX: centreX + cosine * radius * stretch,
+        worldY: centreY + sine * radius * stretch * 0.5,
         fg: palette.ripple,
         scaleX: 0.78,
         scaleY: 0.78,
@@ -854,8 +879,8 @@ function drawImpulseRipples(builder, state, palette, metrics) {
     }
     glyphs.push(positionedGlyph(metrics, {
       char: progress < 0.5 ? "o" : ".",
-      worldX: impulse.x,
-      worldY: impulse.y,
+      worldX: centreX,
+      worldY: centreY,
       fg: palette.ripple,
       scaleX: 0.72,
       scaleY: 0.72,

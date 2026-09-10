@@ -21,6 +21,7 @@ import {
   ageInteractionEvents,
   dominantStimulus,
   holdAttenuation,
+  impulseFlowAt,
   stimulusSalience,
 } from "./interaction-events.js";
 import {
@@ -57,6 +58,14 @@ const STARVATION_DAMPING = 0.45;
 // summons this whole stage exists to end.
 const SCHOOL_HOLD_PATIENCE_SECONDS = 1.8;
 const SCHOOL_HOLD_FLOOR = 0.12;
+
+// How hard moving water pushes the school along. Comparable to the pull a press
+// exerts on a shoal beside it, so a swipe through a shoal reads as forcefully
+// as a tap next to one - and, unlike that pull, it does not care whether the
+// fish noticed. Vertical water moves them less than horizontal water does,
+// because a schooling fish holds its depth against everything else too.
+const SCHOOL_FLOW_RESPONSE = 2.2;
+const VERTICAL_FLOW_SHARE = 0.6;
 
 const FACING_THRESHOLD = 0.11;
 const PITCH_DEADZONE = 0.035;
@@ -210,6 +219,18 @@ function tickSchool(state, realDelta, motionScale) {
         ax += toward.x * reactionStrength * reach;
         ay += toward.y * reactionStrength * reach;
       }
+    }
+
+    // Water that is moving carries the shoal with it. This is not attention -
+    // there is nothing here about noticing or caring, and it applies to a fish
+    // facing the other way with its eyes shut - it is the school being in the
+    // water a swipe went through. It is why a swipe reads as a physical event
+    // and a drag reads as a passing interest: the same term, at a quarter of
+    // the strength, for a hand that is merely moving.
+    const flow = impulseFlowAt(state, fish.x, fish.y);
+    if (flow.x || flow.y) {
+      ax += flow.x * SCHOOL_FLOW_RESPONSE;
+      ay += flow.y * SCHOOL_FLOW_RESPONSE * VERTICAL_FLOW_SHARE;
     }
 
     const velocity = limitVelocity(

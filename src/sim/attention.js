@@ -46,10 +46,22 @@
  * arrives later, stops further out, and gives up sooner, because patience,
  * standoff and latency all come off different traits.
  *
- * The hold is re-read on a slow beat rather than every frame (see `applyHold`
- * in src/sim/state.js), which is what lets a fish arrive late, follow a
- * companion to the glass, or quietly hand over to a fish that has not yet had
- * its turn. Everything a hold can do it does inside the same caps a tap has.
+ * The hold is re-read on a slow beat rather than every frame (see
+ * `applyContact` in src/sim/state.js), which is what lets a fish arrive late,
+ * follow a companion to the glass, or quietly hand over to a fish that has not
+ * yet had its turn. Everything a hold can do it does inside the same caps a tap
+ * has.
+ *
+ * Phase 4 adds the one thing a contact that *moves* needs, and it is not a new
+ * behaviour: it is a different point to swim to. A fish answering a drag cuts
+ * the corner in front of it, follows the water it went through, or picks a
+ * piece of its trail and investigates that while the finger goes on without it
+ * (`stimulusFocus`). Nothing here moves a fish - a finger may never overwrite a
+ * position or a velocity - and when a contact is not moving all three collapse
+ * onto the point the fish remembers, which is why a hold reads exactly as it
+ * did before there was such a thing as a drag. A swipe is the other half: fast
+ * water is a shock rather than an invitation, so it costs a timid fish interest
+ * in proportion to how timid it is and widens the circle of turned heads.
  */
 
 import { clamp, traitsFromSeed } from "./entities.js";
@@ -62,6 +74,7 @@ import {
   stimulusSalience,
 } from "./interaction-events.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
+import { GESTURES, pathPointBefore } from "./pointer-path.js";
 import { sampleRange } from "./prng.js";
 
 export const RESPONSE_ROLES = Object.freeze({
@@ -108,6 +121,19 @@ const UNAVAILABLE_COMMITMENT = 1;
 const WATCH_RADIUS_CELLS = 16;
 // Shy fish inside the watch radius lean away instead of looking.
 const WARY_TEMPERAMENT = 0.42;
+
+// A swipe is not a louder tap, it is a different kind of event: water arriving
+// rather than something to look at. Three terms carry that, and all three are
+// scaled by the fish rather than applied to the cast, so a swipe scatters the
+// timid half of the aquarium and leaves the bold half curious about it.
+//
+// It is a lean away and a wider circle of turned heads. It is deliberately not
+// flight, not a lasting fear, and not a thing the aquarium is worse for: the
+// startle is spent inside one response, and the fish that leant away is back on
+// its line a few seconds later with nothing remembered against the viewer.
+const SWIPE_STARTLE = 0.22;
+const SWIPE_WARY_TEMPERAMENT = 0.68;
+const SWIPE_WATCH_SCALE = 1.25;
 
 // How long a response lasts, as a fraction of the stimulus's own life. Seeded
 // per fish and per event so responders do not all let go on the same frame -
@@ -239,6 +265,110 @@ const MAX_NEAR_SECONDS = 30;
 // is what makes the release read as peeling away rather than as switching off.
 const DEPARTURE_STANDOFF_CELLS = 3.4;
 
+/* ------------------------------------------------------------------ *
+ * A press that goes somewhere
+ * ------------------------------------------------------------------ */
+
+/**
+ * How a fish goes after a disturbance that is moving.
+ *
+ * Not three behaviours - one behaviour aimed at three different points. A fish
+ * chasing a drag is doing exactly what a fish crossing to a held finger does;
+ * what differs is where it thinks the interesting place is, and that is the
+ * whole of what makes a drag read as a room of animals rather than as a cursor
+ * with fish stuck to it. Nothing here moves a fish: it moves the point a fish
+ * has decided to swim to, and the fish gets there at its own speed or does not.
+ */
+export const PURSUITS = Object.freeze({
+  // Cuts the corner: aims at where the finger is going to be. The confident
+  // answer, and the one that arrives first when it is right.
+  intercept: "intercept",
+  // Follows the water the finger went through, a beat behind it. Arrives after
+  // the finger has passed, which is most of what a real fish does.
+  trail: "trail",
+  // Picks a piece of the trail and investigates that instead, while the finger
+  // goes on without it.
+  mark: "mark",
+});
+
+// Where the two cuts between them fall on boldness. A little over a third of a
+// cast intercepts, a little under a third trails, and the rest never chase at
+// all - they find something the finger left behind and look at that.
+const INTERCEPT_BOLDNESS = 0.62;
+const TRAIL_BOLDNESS = 0.34;
+
+// How far ahead an intercepting fish aims, and how far behind a trailing one
+// follows. The lead is capped because a swipe's speed would otherwise send a
+// fish at a point on the far wall, which is not interception, it is leaving.
+const PURSUIT_LEAD_SECONDS = 0.45;
+const PURSUIT_LEAD_CELLS = 9;
+const PURSUIT_TRAIL_SECONDS = 0.35;
+
+// Under this the finger is not going anywhere worth aiming off, and every
+// pursuit collapses onto the contact itself - which is what makes a drag that
+// stops behave exactly like the presence it has become.
+const PURSUIT_MINIMUM_SPEED = 4;
+
+/**
+ * Which of the three this fish is doing, derived rather than stored.
+ *
+ * Boldness decides, and curvature moves the whole cast down the scale: heading
+ * off a finger that is turning does not work, and a fish that tries it swims to
+ * where the finger would have been. So a curling drag is followed and a
+ * straight one is cut off, which is also the difference a viewer can see.
+ */
+export function attentionPursuit(fish, stimulus, traits = traitsFromSeed(fish.seed, fish.history)) {
+  const curl = clamp((stimulus?.curvature ?? 0) / (Math.PI / 2), 0, 1);
+  const confidence = traits.boldness * (1 - curl * 0.75)
+    + sampleRange(fish.seed, attentionSalt(stimulus ?? {}) + 3, -0.08, 0.08);
+  if (confidence >= INTERCEPT_BOLDNESS) return PURSUITS.intercept;
+  return confidence >= TRAIL_BOLDNESS ? PURSUITS.trail : PURSUITS.mark;
+}
+
+/**
+ * The place this fish is actually swimming to.
+ *
+ * For everything that is not a moving contact this is the point the fish
+ * remembers the disturbance at, which is what it has always been - a tap, a
+ * hold, and the aftermath of either read exactly as they did before there was
+ * such a thing as a drag. A moving contact is the one case where the fish and
+ * the finger want different points, and the path is what makes that answerable
+ * without storing a trail: six samples, and every pursuit is a lookup in them.
+ */
+export function stimulusFocus(stimulus, attention, fish) {
+  const remembered = { x: attention.x, y: attention.y };
+  if (!stimulus?.held || stimulus.gesture === GESTURES.press) return remembered;
+  if ((stimulus.speed ?? 0) < PURSUIT_MINIMUM_SPEED) return remembered;
+  const pursuit = attentionPursuit(fish, stimulus);
+  if (pursuit === PURSUITS.intercept) {
+    const lead = Math.min(PURSUIT_LEAD_CELLS, stimulus.speed * PURSUIT_LEAD_SECONDS);
+    return { x: stimulus.x + stimulus.dirX * lead, y: stimulus.y + stimulus.dirY * lead };
+  }
+  if (pursuit === PURSUITS.trail) {
+    return pathPointBefore(stimulus.path, PURSUIT_TRAIL_SECONDS) ?? remembered;
+  }
+  // The oldest place the aquarium still remembers the finger being. Beyond the
+  // window there is nothing to mark, so a fish that has been left behind is
+  // looking at the last thing it saw rather than at an invented trail.
+  return stimulus.path?.[0] ?? remembered;
+}
+
+/**
+ * The place this fish is swimming to, looked up from the aquarium.
+ *
+ * The same answer as `stimulusFocus`, for the callers that have a state and a
+ * fish rather than an event in hand. It is asked every frame rather than stored
+ * because the contact moves every frame: a focus refreshed on the re-read beat
+ * would send a fish at a point two thirds of a second stale, which on a swipe
+ * is on the far side of the tank.
+ */
+export function attentionFocus(state, fish) {
+  const record = fish?.attention ?? null;
+  if (!record) return null;
+  const live = (state?.stimuli ?? []).find((entry) => entry.id === record.stimulusId) ?? null;
+  return stimulusFocus(live, record, fish);
+}
+
 /** How long this fish stays interested in a finger that does not move. */
 export function attentionPatience(traits, affinities) {
   return HOLD_PATIENCE_SECONDS
@@ -329,6 +459,10 @@ export function attentionInterest(fish, stimulus, {
   // Species and body: a fish built to work the sand has a reason to nose into a
   // disturbance in it that a mid-water fish simply does not have.
   const bodySuits = stimulus.context === "substrate" && speciesCanBottomFeed(fish.seed) ? 0.06 : 0;
+  // Water arriving fast is not an invitation. A bold fish barely notices the
+  // difference; a timid one wants nothing to do with it and answers by leaning
+  // away, which `passiveRole` gives it below.
+  const startled = stimulus.gesture === GESTURES.swipe ? SWIPE_STARTLE * (1 - traits.boldness) : 0;
   const interest = 0.30 * proximity
     + 0.16 * affinities.glass
     + 0.14 * contextTaste
@@ -338,6 +472,7 @@ export function attentionInterest(fish, stimulus, {
     + (companion ? 0.08 : 0)
     + (engagedSeconds === null ? 0 : HOLD_ENGAGEMENT_BONUS)
     + bodySuits
+    - startled
     // Being busy makes a fish a little less curious, but mostly it decides
     // *when* it goes rather than whether it cares: an absorbed fish that is
     // interested becomes a delayed investigator, which is why the penalty here
@@ -353,10 +488,14 @@ export function attentionInterest(fish, stimulus, {
     * holdInterestScale(stimulus, traits, affinities, engagedSeconds);
 }
 
-function passiveRole(fish, distance, traits, affinities) {
-  if (distance > WATCH_RADIUS_CELLS) return RESPONSE_ROLES.acknowledge;
+function passiveRole(fish, distance, traits, affinities, startling = false) {
+  // A shove is felt further than a tap is noticed, and by fish that would have
+  // watched a tap go by.
+  if (distance > WATCH_RADIUS_CELLS * (startling ? SWIPE_WATCH_SCALE : 1)) return RESPONSE_ROLES.acknowledge;
   const temperament = (traits.boldness + affinities.glass) / 2;
-  return temperament < WARY_TEMPERAMENT ? RESPONSE_ROLES.wary : RESPONSE_ROLES.watch;
+  return temperament < (startling ? SWIPE_WARY_TEMPERAMENT : WARY_TEMPERAMENT)
+    ? RESPONSE_ROLES.wary
+    : RESPONSE_ROLES.watch;
 }
 
 /**
@@ -414,7 +553,7 @@ export function createAttention(fish, stimulus, role, distance = Math.hypot(stim
 /**
  * Carry an answer already under way across a re-read of a held press.
  *
- * A hold is re-assessed every so often (see `applyHold`), and most of the time
+ * A contact is re-assessed every so often (see `applyContact`), and most of the time
  * the assessment comes back saying what it said before. Rebuilding the record
  * then would restart the response, reset the beat a delayed responder is
  * counting down, and forget how long the fish has been hovering - the fish
@@ -487,7 +626,7 @@ export function mergeHoldAttention(previous, assigned, stimulus) {
  * turns back toward the glass is inspecting again, and one whose finger has
  * gone is departing from the moment it goes.
  */
-export function holdPhase(attention, fish) {
+export function holdPhase(attention, fish, focus = attention) {
   if (!attention) return null;
   // A fish that only ever glanced has nothing to depart from. The departure is
   // for the ones that were still answering when the finger went.
@@ -501,7 +640,12 @@ export function holdPhase(attention, fish) {
     if (holdHabituation(attention, fish) <= HABITUATION_SPENT) return HOLD_PHASES.settle;
     return attention.ageSeconds < NOTICE_SECONDS ? HOLD_PHASES.notice : HOLD_PHASES.orient;
   }
-  const distance = Math.hypot(attention.x - fish.x, attention.y - fish.y);
+  // Measured to the place this fish is going, not to the fingertip. On a drag
+  // they are different points on purpose: a fish that has caught up with the
+  // water the finger went through has arrived, even though the finger is now a
+  // body length further on.
+  const point = focus ?? attention;
+  const distance = Math.hypot(point.x - fish.x, point.y - fish.y);
   if (distance > INSPECT_RADIUS_CELLS + attentionStandoff(attention)) return HOLD_PHASES.approach;
   return attention.nearSeconds >= LINGER_SECONDS ? HOLD_PHASES.linger : HOLD_PHASES.inspect;
 }
@@ -542,6 +686,7 @@ export function assignAttention(state, stimulus, {
   guarantee = true,
 } = {}) {
   const fish = state.individuals ?? [];
+  const startling = stimulus.gesture === GESTURES.swipe;
   const candidates = fish.map((one, index) => {
     const distance = Math.hypot(stimulus.x - one.x, stimulus.y - one.y);
     const traits = traitsFromSeed(one.seed, one.history);
@@ -645,7 +790,7 @@ export function assignAttention(state, stimulus, {
     // investigator, whatever its interest. A fish that is not available at all
     // only ever watches.
     if (!available(candidate)) {
-      candidate.role = passiveRole(candidate.fish, candidate.distance, candidate.traits, candidate.affinities);
+      candidate.role = passiveRole(candidate.fish, candidate.distance, candidate.traits, candidate.affinities, startling);
       continue;
     }
     if (commitment >= COMMITMENT_HESITATES) {
@@ -664,7 +809,7 @@ export function assignAttention(state, stimulus, {
       secondary += 1;
       continue;
     }
-    candidate.role = passiveRole(candidate.fish, candidate.distance, candidate.traits, candidate.affinities);
+    candidate.role = passiveRole(candidate.fish, candidate.distance, candidate.traits, candidate.affinities, startling);
   }
 
   return candidates.map((candidate) => (candidate.role
@@ -688,6 +833,9 @@ export function assignAttention(state, stimulus, {
  */
 export function ageAttention(attention, realDelta, { fish = null, stimulus = null } = {}) {
   if (!attention) return null;
+  // Hovering is measured against the place the fish decided to hover at, which
+  // on a moving contact is not where the finger is. See `stimulusFocus`.
+  const focus = fish && stimulus ? stimulusFocus(stimulus, attention, fish) : attention;
   const ageSeconds = attention.ageSeconds + realDelta;
   if (attention.held) {
     if (stimulus?.held) {
@@ -698,7 +846,7 @@ export function ageAttention(attention, realDelta, { fish = null, stimulus = nul
         // grows is a leak however slowly it does it.
         ageSeconds: Math.min(MAX_HOLD_SECONDS, ageSeconds),
         holdSeconds: stimulus.holdSeconds,
-        nearSeconds: nextNearSeconds(attention, fish, realDelta),
+        nearSeconds: nextNearSeconds(attention, fish, realDelta, focus),
       };
     }
     // The finger has gone. The answer is not cancelled - it drains over the
@@ -721,17 +869,18 @@ export function ageAttention(attention, realDelta, { fish = null, stimulus = nul
       released: true,
       ageSeconds: attention.durationSeconds * (1 - remaining),
       delaySeconds: Math.max(0, attention.delaySeconds - attention.ageSeconds),
-      nearSeconds: nextNearSeconds(attention, fish, realDelta),
+      nearSeconds: nextNearSeconds(attention, fish, realDelta, focus),
     };
   }
   if (ageSeconds >= attention.durationSeconds) return null;
-  return { ...attention, ageSeconds, nearSeconds: nextNearSeconds(attention, fish, realDelta) };
+  return { ...attention, ageSeconds, nearSeconds: nextNearSeconds(attention, fish, realDelta, focus) };
 }
 
-function nextNearSeconds(attention, fish, realDelta) {
+function nextNearSeconds(attention, fish, realDelta, focus = attention) {
   const near = attention.nearSeconds ?? 0;
   if (!fish) return near;
-  const distance = Math.hypot(attention.x - fish.x, attention.y - fish.y);
+  const point = focus ?? attention;
+  const distance = Math.hypot(point.x - fish.x, point.y - fish.y);
   if (distance > INSPECT_RADIUS_CELLS + attentionStandoff(attention)) return near;
   return Math.min(MAX_NEAR_SECONDS, near + realDelta);
 }
