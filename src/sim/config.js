@@ -12,6 +12,12 @@ export const WATERLINE_ROWS = 2;
 // A shallow floor occupies 15% of landscape, enough for rooted colonies at
 // different distances. Terrain relief is applied around its rear edge.
 export const SUBSTRATE_ROWS = 3;
+// The lowest row a press can reach. A viewer cannot touch inside the gravel, so
+// a press here is a press *on* the sand: it is where the substrate bubble burst
+// comes from and what makes a tap read as one at the bottom. `applyTouch`
+// clamps to it, the impulse's contact test uses it, and the stimulus classifier
+// calls it the substrate.
+export const TOUCH_FLOOR_ROWS = 5;
 // Continuous visual depth can enlarge an individual beyond its authored logical
 // footprint. The simulation uses the same hard ceiling for conservative water
 // and substrate clearance without importing the renderer's depth module.

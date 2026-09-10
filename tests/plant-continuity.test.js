@@ -29,7 +29,8 @@ function specimenRecord(speciesId, {
     ...createAquariumState({ seed, wallClockHours: 12 }),
     elapsedRealSeconds: 6.3,
     individuals: [],
-    reaction: null,
+    stimuli: [],
+    impulses: [],
   };
   const metrics = {
     cellWidth: target.pixelWidth / target.cols,

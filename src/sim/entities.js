@@ -132,5 +132,8 @@ export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {
       pitch: 0,
       targetPitch: 0,
     },
+    // The response role this fish is playing, if a disturbance is live. Set by
+    // applyTouch, aged by the activity tick, and never persisted.
+    attention: null,
   };
 }

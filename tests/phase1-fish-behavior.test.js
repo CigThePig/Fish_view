@@ -12,6 +12,7 @@ import {
 } from "../src/sim/state.js";
 import { stockedAquarium } from "./support/aquarium.js";
 import { tick, trajectoryPitchDegrees } from "../src/sim/tick.js";
+import { createStimulus } from "../src/sim/interaction-events.js";
 
 function run(state, count, dt = 0.1) {
   let result = state;
@@ -45,7 +46,12 @@ test("visual pitch is deterministic, smooth, and remains real-time under acceler
   const base = createAquariumState({ seed: 220, wallClockHours: 12 });
   const diving = {
     ...base,
-    reaction: { x: base.individuals[0].x + 1, y: base.individuals[0].y + 8, ageSeconds: 0, durationSeconds: 3.2 },
+    stimuli: [createStimulus({
+      id: "touch:test",
+      x: base.individuals[0].x + 1,
+      y: base.individuals[0].y + 8,
+      radius: Math.hypot(base.cols, base.rows),
+    })],
     individuals: base.individuals.map((fish, index) => index === 0
       ? { ...fish, vx: 0.25, vy: 0.8, visual: { ...fish.visual, pitch: 0, targetPitch: 0 } }
       : fish),

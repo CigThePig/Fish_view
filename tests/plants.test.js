@@ -19,6 +19,7 @@ import {
 import { LAYERS, render, renderPlantLabScene } from "../src/render/render.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { SUBSTRATE_ROWS } from "../src/sim/config.js";
+import { createImpulse } from "../src/sim/interaction-events.js";
 import {
   createPlantFrameContext,
   createPlantSpecimen,
@@ -54,7 +55,7 @@ function poseState(rows, seed = 71) {
     rows,
     elapsedRealSeconds: 18.4,
     individuals: [],
-    reaction: null,
+    impulses: [],
   };
 }
 
@@ -175,7 +176,7 @@ test("strong current, touch, and fish poses remain finite and bounded", () => {
       });
       const state = {
         ...poseState(rows, 123),
-        reaction: { x: 6.5, y: rows - 7, ageSeconds: 1.1, durationSeconds: 3.2 },
+        impulses: [createImpulse({ id: "touch:test", x: 6.5, y: rows - 7, ageSeconds: 1.1 })],
         individuals: [{ x: 8, y: rows - 8, vx: 0.64, vy: 0.06 }],
       };
       const pose = posePlant(plant, state, {
@@ -198,7 +199,7 @@ test("touch and fish disturbance are one bounded influence per plant", () => {
   const quiet = { ...poseState(rows), elapsedRealSeconds: 4 };
   const touched = {
     ...quiet,
-    reaction: { x: 7, y: 12, ageSeconds: 1, durationSeconds: 3.2 },
+    impulses: [createImpulse({ id: "touch:test", x: 7, y: 12, ageSeconds: 1 })],
     individuals: [{ x: 9.4, y: 12, vx: 0.7, vy: 0 }],
   };
   const quietPose = posePlant(mid, quiet, { frameContext: createPlantFrameContext(quiet, { interactions: false }) });
@@ -206,6 +207,12 @@ test("touch and fish disturbance are one bounded influence per plant", () => {
   assert.equal(quietPose.disturbance, 0);
   assert.ok(activePose.disturbance > 0 && activePose.disturbance <= 0.42);
   assert.notEqual(activePose.joints.at(-1).x, quietPose.joints.at(-1).x);
+
+  // The impulse alone has to bend the plant: a plant has no behaviour and never
+  // perceives anything, so this is the only channel a touch reaches it through.
+  const impulseOnly = { ...quiet, impulses: touched.impulses };
+  const impulsePose = posePlant(mid, impulseOnly, { frameContext: createPlantFrameContext(impulseOnly) });
+  assert.ok(impulsePose.disturbance > 0 && impulsePose.disturbance <= 0.42);
 
   const fishOnly = { ...quiet, individuals: touched.individuals };
   const backgroundPose = posePlant(background, fishOnly, { frameContext: createPlantFrameContext(fishOnly) });
@@ -289,7 +296,7 @@ test("quantized background poses can skip frames without synchronizing the garde
   assert.ok(moving.some((object) => moved.get(object.id).signature !== object.signature));
 
   const tips = base.plants.slice(0, 8).map((plant) => {
-    const state = { ...base, elapsedRealSeconds: 4.3, individuals: [], reaction: null };
+    const state = { ...base, elapsedRealSeconds: 4.3, individuals: [], impulses: [] };
     const pose = posePlant(plant, state, { frameContext: createPlantFrameContext(state) });
     return pose.joints.at(-1).x - plant.x;
   });

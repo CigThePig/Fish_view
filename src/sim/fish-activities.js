@@ -7,6 +7,13 @@ import { chasePhase, choreographyFor } from "./fish-choreography.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import { fishShoals } from "./fish-roster.js";
 import {
+  ageAttention,
+  attentionInvestigates,
+  attentionStandoff,
+  shapeTargetForAttention,
+} from "./attention.js";
+import { dominantStimulus } from "./interaction-events.js";
+import {
   MAX_FISH_PITCH_DEGREES,
   forageActivity,
   forageEligible,
@@ -83,6 +90,36 @@ const ACTIVITY_BEHAVIOR = Object.freeze({
   [ACTIVITIES.arrivalEnter]: "explore",
   [ACTIVITIES.driftingInspect]: "explore",
 });
+
+// How absorbed a fish is in each activity - how much it costs to interrupt it.
+// A wandering fish has nothing to put down; a fish with its mouth in the sand,
+// a sheltering fish or a fish halfway through a chase does. Attention scoring
+// reads this so that a disturbance pulls the fish that were free to look, and
+// leaves the ones that were in the middle of something to finish it first.
+const ACTIVITY_COMMITMENT = Object.freeze({
+  [ACTIVITIES.cruise]: 0.18,
+  [ACTIVITIES.wander]: 0.2,
+  [ACTIVITIES.plantInvestigate]: 0.46,
+  [ACTIVITIES.plantWeave]: 0.5,
+  [ACTIVITIES.bubbleInvestigate]: 0.54,
+  [ACTIVITIES.surfaceInvestigate]: 0.48,
+  [ACTIVITIES.schoolFollow]: 0.42,
+  [ACTIVITIES.individualFollow]: 0.44,
+  [ACTIVITIES.companionCruise]: 0.46,
+  [ACTIVITIES.playfulChase]: 0.68,
+  [ACTIVITIES.substrateSearch]: 0.72,
+  [ACTIVITIES.openWaterRest]: 0.66,
+  [ACTIVITIES.plantShelter]: 0.78,
+  // Already answering, and an arrival swimming into the tank for the first time
+  // is not available to be interrupted at all.
+  [ACTIVITIES.touchReact]: 0,
+  [ACTIVITIES.arrivalEnter]: 1,
+  [ACTIVITIES.driftingInspect]: 0.5,
+});
+
+export function activityCommitment(activity) {
+  return ACTIVITY_COMMITMENT[activity] ?? 0.3;
+}
 
 export const DWELL_SECONDS = Object.freeze({
   [ACTIVITIES.cruise]: [6, 18, 28],
@@ -755,6 +792,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
   affinities = affinitiesFromSeed(fish.seed),
   bubbles = [],
   school = state.school,
+  attention = fish.attention ?? null,
 } = {}) {
   if (activity.current === ACTIVITIES.driftingInspect) {
     const tuft = livingWorldRecords(state).find((r) => r.id === activity.targetId);
@@ -775,16 +813,24 @@ export function resolveActivityTarget(fish, index, state, activity, {
     });
   }
   if (activity.current === ACTIVITIES.touchReact) {
-    if (!state.reaction) return null;
-    const away = safeNormalize(fish.x - state.reaction.x, fish.y - state.reaction.y, fish.vx < 0 ? -1 : 1, 0);
-    const standoff = 0.2 + (1 - affinities.glass) * 0.82;
+    // Where the fish is going is remembered by its own response, not read from
+    // the event: a responder can still be finishing its look after the
+    // disturbance itself has faded. The stimulus is the fallback for
+    // hand-posed lab states that have no attention record.
+    const point = attention ?? dominantStimulus(state);
+    if (!point) return null;
+    const away = safeNormalize(fish.x - point.x, fish.y - point.y, fish.vx < 0 ? -1 : 1, 0);
+    // A secondary or delayed responder stops further out. That gap is the
+    // difference between "came to look" and "came partway", and it is the most
+    // legible thing separating two fish answering the same press.
+    const standoff = 0.2 + (1 - affinities.glass) * 0.82 + attentionStandoff(attention);
     return choreographed(state, activity.current, {
-      x: state.reaction.x + away.x * standoff,
-      y: state.reaction.y + away.y * standoff,
+      x: point.x + away.x * standoff,
+      y: point.y + away.y * standoff,
       speed: 0.56 + affinities.glass * 0.25,
       postureBias: 0,
       touchReact: true,
-      choreographyPhase: "approach",
+      choreographyPhase: attentionStandoff(attention) > 0 ? "standoff" : "approach",
     });
   }
   if (activity.current === ACTIVITIES.wander) {
@@ -1178,37 +1224,67 @@ function naturalCompletion(fish, activity, target, dwell) {
 export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   const traits = context.traits ?? traitsFromSeed(fish.seed, fish.history);
   const affinities = context.affinities ?? affinitiesFromSeed(fish.seed);
-  if (state.reaction) {
-    const previous = normalizedActivity(fish);
-    const activity = previous.current === ACTIVITIES.touchReact
-      ? { ...previous, ageRealSeconds: previous.ageRealSeconds + realDelta }
-      : {
+  const resolve = (activity, attention) => resolveActivityTarget(fish, index, state, activity, {
+    ...context,
+    traits,
+    affinities,
+    attention,
+  });
+
+  // The response this fish is giving to the last disturbance it noticed, one
+  // frame older. Roles are assigned once, when the press lands (see
+  // src/sim/attention.js); this is where they play out and expire.
+  const previousAttention = fish.attention ?? null;
+  let attention = ageAttention(previousAttention, realDelta);
+  const previous = normalizedActivity(fish);
+
+  if (attentionInvestigates(attention)) {
+    const entering = previous.current !== ACTIVITIES.touchReact;
+    // What the fish was doing when it turned, so it has something to go back
+    // to. A delayed investigator captures this at the moment it converts, which
+    // is the activity it was actually finishing.
+    if (entering && !attention.resume) attention = { ...attention, resume: previous };
+    const activity = entering
+      ? {
         ...createActivityState(ACTIVITIES.touchReact, previous.current),
         targetType: "touch",
-        targetX: state.reaction.x,
-        targetY: state.reaction.y,
-      };
-    return {
-      activity,
-      target: resolveActivityTarget(fish, index, state, activity, { ...context, traits, affinities }),
-    };
+        targetId: attention.stimulusId,
+        targetX: attention.x,
+        targetY: attention.y,
+      }
+      : { ...previous, ageRealSeconds: previous.ageRealSeconds + realDelta };
+    return { activity, attention, target: resolve(activity, attention) };
   }
 
-  let activity = normalizedActivity(fish);
+  let activity = previous;
+  // Recovery. A response that ends must not be a hard cancellation into a fresh
+  // utility choice - that is what made the old global reaction feel like a
+  // switch being flipped. A fish that has finished looking goes back to what it
+  // was doing, if that is still something it could be doing.
+  if (previous.current === ACTIVITIES.touchReact) {
+    const resume = previousAttention?.resume ?? null;
+    const resumable = resume
+      && resume.current !== ACTIVITIES.touchReact
+      && activityMatchesBehavior(resume.current, fish.behavior?.current);
+    const resumed = resumable ? { ...resume, ageRealSeconds: 0 } : null;
+    if (resumed && resolve(resumed, null)) activity = resumed;
+  }
+
   const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);
   if (!compatible) activity = selectActivity(fish, index, state, { ...context, traits, affinities });
+  else if (activity !== previous) activity = { ...activity };
   else activity = { ...activity, ageRealSeconds: activity.ageRealSeconds + realDelta };
 
-  let target = resolveActivityTarget(fish, index, state, activity, { ...context, traits, affinities });
+  let target = resolve(activity, attention);
   const dwell = activityDwell(fish, activity.current);
   if (!target || activity.ageRealSeconds >= dwell.maximum || naturalCompletion(fish, activity, target, dwell)) {
     activity = selectActivity({ ...fish, activity }, index, state, { ...context, traits, affinities });
-    target = resolveActivityTarget(fish, index, state, activity, { ...context, traits, affinities });
+    target = resolve(activity, attention);
   }
 
   if (!target) {
     activity = createActivityState(defaultActivityForBehavior(fish.behavior?.current), activity.current);
-    target = resolveActivityTarget(fish, index, state, activity, { ...context, traits, affinities });
+    target = resolve(activity, attention);
   }
   return {
     activity: latchForageContact(activity, {
@@ -1216,7 +1292,10 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
       peck: target?.peck,
       eventSeed: target?.forageEventSeed,
     }),
-    target,
+    attention,
+    // A fish that is not going anywhere still shows that it noticed: the
+    // response is shaped into the motion it was already making.
+    target: shapeTargetForAttention(target, fish, attention),
   };
 }
 

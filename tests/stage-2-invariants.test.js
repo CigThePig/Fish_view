@@ -75,8 +75,15 @@ test("a decade of aquarium and repeated interaction does not grow the save", () 
 
   // Transient interaction state is reconstructed, never restored: a reaction,
   // stimulus or impulse that survived a reload would replay an old gesture.
-  for (const key of ["reaction", "stimuli", "impulses", "pointer", "gestures"]) {
+  for (const key of ["reaction", "stimuli", "impulses", "interactionSequence", "pointer", "gestures"]) {
     assert.equal(key in payload, false, `${key} must not be persisted`);
+  }
+  // The same goes for what a fish was doing about one. A response role is
+  // something a fish is doing this second, not something it is.
+  for (const fish of payload.individuals) {
+    for (const key of ["attention", "activity", "role"]) {
+      assert.equal(key in fish, false, `${key} must not be persisted per fish`);
+    }
   }
 });
 

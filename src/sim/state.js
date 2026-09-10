@@ -11,14 +11,19 @@ import {
   DRIVE_MINIMUM,
   INITIAL_INDIVIDUAL_COUNT,
   MAX_INDIVIDUALS,
+  TOUCH_FLOOR_ROWS,
   WATERLINE_ROWS,
   DISPLAY,
   sanitizeSettings,
 } from "./config.js";
 import { clamp, createIndividual, createIndividualFromSeed, createSchoolFish } from "./entities.js";
+import { assignAttention, attentionInvestigates } from "./attention.js";
+import { classifyStimulusContext } from "./interaction-context.js";
+import { createInteractionState, registerTouch } from "./interaction-events.js";
 import {
   ACTIVITIES,
   BEHAVIORS,
+  activityCommitment,
   createActivityState,
   defaultActivityForBehavior,
 } from "./fish-activities.js";
@@ -83,7 +88,9 @@ export function createAquariumState({
     // Bounded long-horizon bookkeeping. This is a processing cursor, not a
     // hidden user-facing statistic, and it cannot grow with aquarium age.
     content: createContentState(),
-    reaction: null,
+    // Transient interaction events. Never serialised, capped, and cleared by a
+    // reload or an offline gap - see src/sim/interaction-events.js.
+    ...createInteractionState(),
   };
 }
 
@@ -93,48 +100,107 @@ function normalizeVector(x, y) {
 }
 
 export function applyTouch(state, x, y) {
-  const safeX = clamp(x, 0, state.cols - 1);
-  const safeY = clamp(y, 2, state.rows - 5);
-  let nearestIndex = 0;
-  let nearestDistance = Number.POSITIVE_INFINITY;
+  // Where the viewer pressed, and where the aquarium can act on it. They are
+  // not the same point: a press above the visible waterline or down in the
+  // gravel is clamped into the band a fish can be sent to, but what it *landed
+  // on* is decided by the raw point. Classifying the clamped one made a press
+  // on the surface read as open water whenever the wave happened to sit a
+  // hundredth of a row too low.
+  const pressX = clamp(x, 0, state.cols - 1);
+  const pressY = clamp(y, 0, state.rows - 1);
+  const safeX = pressX;
+  const safeY = clamp(pressY, WATERLINE_ROWS, state.rows - TOUCH_FLOOR_ROWS);
 
+  // A press is three things: water that moves, something the inhabitants can
+  // notice, and - now - a role for each of them. All of it happens in the frame
+  // the press arrives, because a viewer must never wait a tick to be
+  // acknowledged, and because a response chosen a frame later would be a
+  // response to an aquarium that had already moved.
+  const context = classifyStimulusContext(state, pressX, pressY);
+  const events = registerTouch(state, safeX, safeY, context);
+  const stimulus = events.stimulus;
+  const attention = assignAttention({ ...state, stimuli: events.stimuli }, stimulus, {
+    commitmentFor: (fish) => activityCommitment(fish.activity?.current),
+  });
+
+  // The school drifts toward a disturbance it is near and ignores one across
+  // the tank. It used to swing at every tap wherever it fell, which is most of
+  // what made a tap look like a summons.
   const school = state.school.map((fish) => {
-    const direction = normalizeVector(safeX - fish.x, safeY - fish.y);
+    const distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y);
+    const reach = clamp(1 - distance / stimulus.radius, 0, 1);
+    if (reach <= 0) return fish;
+    const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
+    const speed = state.settings.schoolSpeed * (1 + 0.18 * reach);
     return {
       ...fish,
-      vx: direction.x * state.settings.schoolSpeed * 1.18,
-      vy: direction.y * state.settings.schoolSpeed * 1.18,
+      vx: fish.vx + (direction.x * speed - fish.vx) * reach,
+      vy: fish.vy + (direction.y * speed - fish.vy) * reach,
     };
   });
 
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
   const individuals = state.individuals.map((fish, index) => {
-    const distance = Math.hypot(safeX - fish.x, safeY - fish.y);
+    const distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y);
     if (distance < nearestDistance) {
       nearestDistance = distance;
       nearestIndex = index;
     }
-    const direction = normalizeVector(safeX - fish.x, safeY - fish.y);
-    const glassAffinity = affinitiesFromSeed(fish.seed).glass;
-    return {
+    // A fish that is already answering an earlier press keeps that answer,
+    // whatever this press does to it. A response has its own seeded life and
+    // ends when it is spent: a press somewhere else must not cut short a lean
+    // or a glance, and it must not overwrite the activity a responder put down
+    // with the `touch-react` it is currently in - recovery would have nothing
+    // to resume, and a second tap would quietly cost the fish its thread.
+    const answering = fish.activity?.current === ACTIVITIES.touchReact;
+    const carried = fish.attention?.resume ?? null;
+    const assigned = attention[index];
+    const role = assigned
+      ? (carried ? { ...assigned, resume: carried } : assigned)
+      : fish.attention ?? null;
+    const base = {
       ...fish,
-      vx: direction.x * (0.58 + glassAffinity * 0.22),
-      vy: direction.y * (0.38 + glassAffinity * 0.14),
       drives: { ...fish.drives },
       history: {
         ...fish.history,
         socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, fish.seed),
       },
       behavior: { ...fish.behavior },
+      visual: { ...fish.visual },
+      attention: role,
+    };
+    // Only the fish that are going anywhere are turned toward the disturbance.
+    // Everything else keeps the activity and the heading it had; its response
+    // is shaped into that motion by src/sim/attention.js on the next frame,
+    // which is what a fish noticing something actually looks like.
+    if (!attentionInvestigates(role)) return base;
+    const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
+    const glassAffinity = affinitiesFromSeed(fish.seed).glass;
+    // What it was doing when it turned, carried by the response so it has
+    // somewhere to go back to when the response is over - the thread it was
+    // already holding if this is not the first press it has answered.
+    const resume = carried
+      ?? (answering ? null : fish.activity)
+      ?? createActivityState(defaultActivityForBehavior(fish.behavior.current));
+    return {
+      ...base,
+      attention: { ...role, resume },
+      vx: direction.x * (0.58 + glassAffinity * 0.22),
+      vy: direction.y * (0.38 + glassAffinity * 0.14),
       activity: {
         ...createActivityState(ACTIVITIES.touchReact, fish.activity?.current ?? fish.behavior.current),
         targetType: "touch",
-        targetX: safeX,
-        targetY: safeY,
+        targetId: stimulus.id,
+        targetX: stimulus.x,
+        targetY: stimulus.y,
       },
-      visual: { ...fish.visual },
     };
   });
 
+  // The fish nearest the glass when it was tapped is the one that remembers it.
+  // Phase 6 turns this drift into a relationship; today it is the same two
+  // hundredths of boldness it has always been.
   const chosen = individuals[nearestIndex];
   individuals[nearestIndex] = {
     ...chosen,
@@ -150,12 +216,9 @@ export function applyTouch(state, x, y) {
     ...state,
     school,
     individuals,
-    reaction: {
-      x: safeX,
-      y: safeY,
-      ageSeconds: 0,
-      durationSeconds: 3.2,
-    },
+    stimuli: events.stimuli,
+    impulses: events.impulses,
+    interactionSequence: events.interactionSequence,
   };
 }
 
@@ -490,7 +553,10 @@ export function advanceOffline(state, realSeconds) {
     ...advanced,
     elapsedSimSeconds: state.elapsedSimSeconds + seconds,
     timeOfDayHours: hour,
-    reaction: null,
+    // A gesture cannot survive the device being off. The counter does, so ids
+    // stay unique across a resume.
+    stimuli: Object.freeze([]),
+    impulses: Object.freeze([]),
     individuals: advanced.individuals.map(({ exhale, ...fish }) => ({
       ...fish,
       forageDip: 0,
@@ -505,6 +571,9 @@ export function advanceOffline(state, realSeconds) {
           .map((entry) => ({ ...entry })),
       },
       behavior: { ...fish.behavior },
+      // A response to a press from before the device was off is not a response
+      // to anything.
+      attention: null,
       // Transient intentions are rebuilt rather than resumed, with one
       // exception: a fish that arrived during the gap keeps its entry swim, so
       // the next viewer sees it joining instead of finding it already parked.
