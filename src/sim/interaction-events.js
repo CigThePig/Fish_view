@@ -767,8 +767,12 @@ export const SUBSTRATE_RELEASE_INTENSITY = 0.46;
 // Water still breaking where something went in. Shorter, because a surface
 // settles quickly, and weaker, because it is a patch of chop rather than a
 // hand on the glass.
-export const SURFACE_BREAK_SECONDS = 4.5;
-export const SURFACE_BREAK_RADIUS_CELLS = 9;
+export const SURFACE_BREAK_SECONDS = 6;
+// Wider than the cloud on the bottom, because it is at the top of a twenty-row
+// tank and most of the aquarium is below it: a patch of water breaking overhead
+// is the kind of thing a fish two thirds of the way down can see. Still well
+// under the thirty cells a hand on the glass carries.
+export const SURFACE_BREAK_RADIUS_CELLS = 14;
 export const SURFACE_BREAK_INTENSITY = 0.4;
 // How close to the waterline the water has to be disturbed to break it. A press
 // is clamped to WATERLINE_ROWS, which is over a row below the swell, so this is
@@ -881,11 +885,20 @@ export function chainEnvironmentStimuli(state, { stimuli, impulses }) {
  * snail pulling in. It is the strongest single disturbance rather than their
  * sum, so a point inside two impulses is not disturbed twice as hard as
  * physics allows.
+ *
+ * Vertical distance counts double by default, so the reach is the circle a
+ * viewer sees rather than the ellipse the cell grid would give. `flat` drops
+ * that for the readers that live on the bottom: a viewer cannot reach below the
+ * lowest touchable row, so a press aimed *at* a shrimp is always a couple of
+ * rows above it, and measured on the panel it would never be close to anything
+ * standing on the sand.
  */
-export function impulsePressureAt(state, x, y) {
+export function impulsePressureAt(state, x, y, { flat = false } = {}) {
   let pressure = 0;
   for (const impulse of state.impulses ?? []) {
-    const distance = visualDistance(x - impulse.x, y - impulse.y);
+    const distance = flat
+      ? Math.hypot(x - impulse.x, y - impulse.y)
+      : visualDistance(x - impulse.x, y - impulse.y);
     if (distance >= impulse.radius) continue;
     pressure = Math.max(pressure, (1 - distance / impulse.radius) * impulseStrength(impulse));
   }

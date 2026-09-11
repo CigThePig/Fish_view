@@ -27,7 +27,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 2 | Attention, response roles, contextual tap | Done | [phase 2](phase-2-attention-and-roles.md) |
 | 3 | Hold and persistent presence | Done | [phase 3](phase-3-hold-presence.md) |
 | 4 | Drag, swipe and local water impulse | Done | [phase 4](phase-4-drag-swipe.md) |
-| 5 | Environmental interaction and causal chains | In progress — water/plant slice complete | [phase 5 progress](phase-5-water-and-plants.md) |
+| 5 | Environmental interaction and causal chains | Done | [phase 5](phase-5-environment-and-chains.md) · [first slice](phase-5-water-and-plants.md) |
 | 6 | Persistent fish–viewer relationship | Not started | — |
 | 7A | Flagship chase redesign | Not started | — |
 | 7B | Remaining behaviour readability pass | Not started | — |
@@ -36,12 +36,34 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
 
-Phase 5 has started with the water and plant response. Tap/drag/swipe marks are
-now subdued raster crests rather than bright glyph rings. Local stems visibly
-bend with the pressure, recoil, and settle; a high touch no longer bends every
-plant beneath its horizontal position. Sections 11.2–11.7 of the plan still need
-work and validation before the complete Phase 5 gate can pass. See the
-[progress report](phase-5-water-and-plants.md) for the comparison and open work.
+Phase 5 made the aquarium itself answer. It ran in two slices. The first
+replaced the bright placeholder rings with subdued water crests and gave rooted
+stems a proper local bend, recoil and settle; it closed nothing but the
+appearance, and said so.
+
+The second is the rest of it. A disturbance now **leaves something behind**, and
+what it leaves is a stimulus of the same kind a press is: a cloud of silt and
+the air trapped under it where the sand was pressed, a patch of surface still
+breaking where something went in. Those are what a chain is made of — a press on
+the gravel raises a burst that is still rising half a minute later, and a fish
+that has finished answering the press goes to look at it. Before this the burst
+existed only while the water moved, so it could be *marked* investigable and
+never be investigated; that dead end is what section 11.2 of the plan names, and
+it is repaired.
+
+Everything else the environment does reads the live impulses and stores nothing:
+bubbles are hurried, pushed sideways and broken up and re-form when the water
+settles; a shrimp bolts a cell or two and drifts back; a snail pulls its foot in;
+tufts and dust are carried, which is the cheapest picture of a current the
+aquarium can draw. Three rules make a storm structurally impossible rather than
+merely unlikely — one generation deep, its own three slots out of six, raised
+once and then left alone.
+
+47 of the 87 runs in the production sweep reproduce field for field against the
+first slice; every one of the 40 that differ touches the sand, the surface, or
+water that is moving. Mean damage across the sweep moves 0.04 percentage points,
+there are no full redraws, and the save schema is untouched. See the
+[phase report](phase-5-environment-and-chains.md).
 
 Phase 4 gave the **motion in a gesture** meaning, and gave it by moving points
 rather than by moving fish. A finger drawn slowly is a point of interest that is

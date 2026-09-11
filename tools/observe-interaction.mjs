@@ -95,6 +95,7 @@ console.log([
   pad("gesture", 26),
   pad("school", 13),
   pad("env p/b/r", 10),
+  pad("chain c/pk/fish", 14),
   pad("damage", 13, true),
   pad("rect", 6, true),
   pad("full", 5, true),
@@ -140,6 +141,9 @@ for (const seed of options.seeds) {
       pad(gestureSummary(result.observation.gesture), 26),
       pad(`${aquarium.schoolCentroidDisplacement.toFixed(2)}/${aquarium.schoolSpreadChange.toFixed(2)}`, 13),
       pad(`${aquarium.plantsDisturbed}/${aquarium.bubblesCreated}/${aquarium.residentsAffected}`, 10),
+      // Phase 5: what the press left in the aquarium, the most of it live at
+      // once against its cap, and how many fish chose to go and look at it.
+      pad(`${aquarium.consequencesRaised}/${aquarium.peakConsequences}≤${aquarium.consequenceCap}/${aquarium.chainResponders}`, 14),
       pad(`${renderCost.averageDamagePercent.toFixed(1)}/${renderCost.worstDamagePercent.toFixed(1)}%`, 13, true),
       pad(renderCost.averageRectangles.toFixed(1), 6, true),
       pad(renderCost.fullRedraws, 5, true),
@@ -264,8 +268,28 @@ if (options.compare) {
       unmatched += 1;
       continue;
     }
-    const changed = compared.filter((field) => JSON.stringify(before[field] ?? null)
-      !== JSON.stringify(field === "moments" ? entry.moments ?? null : entry.observation?.[field] ?? entry[field] ?? null));
+    // Compared on the baseline's own fields. A later phase that adds a
+    // measurement - Phase 5 added six, for the chains - must not thereby report
+    // every scenario in the sweep as changed: the question this answers is
+    // whether what the earlier phase measured still reads the same, and a field
+    // it never had cannot answer it. A field it *had* and this run does not is
+    // still a difference, because the measurement went away.
+    // Both sides are read the same way. The measurements live under
+    // `observation` in a written report and at the top level on a live run, and
+    // reading the baseline only at the top level made every field null - so
+    // every scenario in the sweep compared as changed, whatever it did.
+    const readField = (entry, field) => (field === "moments"
+      ? entry.moments ?? entry.observation?.moments ?? null
+      : entry.observation?.[field] ?? entry[field] ?? null);
+    const sameField = (field) => {
+      const was = readField(before, field);
+      const now = readField(entry, field);
+      if (was === null || typeof was !== "object" || Array.isArray(was)) {
+        return JSON.stringify(was) === JSON.stringify(now);
+      }
+      return Object.keys(was).every((key) => JSON.stringify(was[key]) === JSON.stringify(now?.[key]));
+    };
+    const changed = compared.filter((field) => !sameField(field));
     if (changed.length) differing.push(`${key(entry)}: ${changed.join(", ")}`);
     else identical += 1;
   }

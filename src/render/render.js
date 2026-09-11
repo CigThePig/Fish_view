@@ -207,9 +207,13 @@ const SILT_SPREAD_COLUMNS = 2.1;
 // breaks into. Deliberately drawn as marks on the existing surface rather than
 // as a change to it - the background band, the meniscus and the swell are
 // untouched, so a break repaints its own patch and nothing else.
-const SURFACE_BREAK_MARKS = 7;
-const SURFACE_BREAK_SPREAD = 0.72;
-const SURFACE_BREAK_LIFT_ROWS = 0.34;
+const SURFACE_BREAK_MARKS = 9;
+const SURFACE_BREAK_SPREAD = 0.46;
+// Enough that a struck crest stands proud of the chop beside it. The ambient
+// ripple marks sit SURFACE_RIPPLE_DROP below the swell; a break lifts out of
+// that and settles back into it, which is what reads as water thrown up rather
+// than as more texture.
+const SURFACE_BREAK_LIFT_ROWS = 0.62;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));

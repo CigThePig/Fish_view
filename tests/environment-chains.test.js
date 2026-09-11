@@ -329,8 +329,30 @@ test("a patch of broken surface opens a trip that otherwise comes round once a m
     if (disturbed[ACTIVITIES.surfaceInvestigate] !== undefined) opened += 1;
   }
   assert.ok(closed >= 1, "every fish was already due a surface trip, so nothing was opened");
-  assert.ok(outOfReach >= 1, "every fish in the tank was inside one break's radius");
+  assert.ok(inReach >= 1, "no fish was near enough to the break to be offered anything");
   assert.equal(opened, inReach, `${opened} of ${inReach} fish under the break could see it`);
+
+  // And it is a patch of water, not an announcement. A fish at the far end of
+  // the tank, on the bottom, is offered exactly what it was offered before.
+  const [far, farIndex] = [base.individuals[base.individuals.length - 1], base.individuals.length - 1];
+  const distant = {
+    ...far,
+    behavior: { ...far.behavior, current: "explore" },
+    x: 2,
+    y: base.rows - 4,
+  };
+  const posed = { ...base, individuals: base.individuals.map((one, at) => (at === farIndex ? distant : one)) };
+  const quiet = activityUtilities(distant, farIndex, tick(posed, STEP));
+  const broken = tick(applyTouch(posed, base.cols - 3, 2), STEP);
+  const [patch] = environmentStimuli(broken, "surface-break");
+  assert.ok(patch);
+  assert.equal(perceivesStimulus(broken.individuals[farIndex], patch), false,
+    "a break at the far end of the tank reached the bottom corner");
+  assert.equal(
+    activityUtilities(broken.individuals[farIndex], farIndex, broken)[ACTIVITIES.surfaceInvestigate],
+    quiet[ACTIVITIES.surfaceInvestigate],
+    "a fish out of reach of the break was offered the trip anyway",
+  );
 });
 
 /* ------------------------------------------------------------------ *

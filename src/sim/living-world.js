@@ -64,7 +64,7 @@ export function driftwoodPath(state, index = 0) {
 
 /** How alarming the water is here, 0..1, above the threshold worth answering. */
 function alarmAt(state, x, y) {
-  const pressure = impulsePressureAt(state, x, y);
+  const pressure = impulsePressureAt(state, x, y, { flat: true });
   if (pressure <= RESIDENT_ALARM_PRESSURE) return 0;
   return clamp((pressure - RESIDENT_ALARM_PRESSURE) / (1 - RESIDENT_ALARM_PRESSURE), 0, 1);
 }

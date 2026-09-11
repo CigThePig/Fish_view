@@ -1,0 +1,2059 @@
+{
+  "baselineCommit": "41efb11",
+  "seeds": [
+    5,
+    147,
+    1234
+  ],
+  "note": "Compared on the baseline report's own fields: Phase 5 added six measurements the baseline never had, and a field it never had cannot say whether what it measured still reads the same.",
+  "scenarios": [
+    {
+      "id": "open-water-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 53.27,
+        "worst": 96.88,
+        "rectangles": 19.85,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.27,
+        "worst": 96.88,
+        "rectangles": 19.85,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "substrate-tap",
+      "seed": 5,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 55.38,
+        "worst": 94.79,
+        "rectangles": 17.92,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.63,
+        "worst": 94.79,
+        "rectangles": 18.52,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 3
+      }
+    },
+    {
+      "id": "plant-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 54.25,
+        "worst": 81,
+        "rectangles": 17.17,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.25,
+        "worst": 81,
+        "rectangles": 17.17,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-taps",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 59.7,
+        "worst": 96.88,
+        "rectangles": 16.34,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 59.7,
+        "worst": 96.88,
+        "rectangles": 16.34,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "mature-aquarium-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 53.91,
+        "worst": 96.88,
+        "rectangles": 19.33,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.91,
+        "worst": 96.88,
+        "rectangles": 19.33,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "new-aquarium-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 9.92,
+        "worst": 13.5,
+        "rectangles": 16.42,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 9.92,
+        "worst": 13.5,
+        "rectangles": 16.42,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "night-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 53.32,
+        "worst": 72.54,
+        "rectangles": 17.94,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.32,
+        "worst": 72.54,
+        "rectangles": 17.94,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "feeding-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 58.78,
+        "worst": 97.08,
+        "rectangles": 16.47,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 58.78,
+        "worst": 97.08,
+        "rectangles": 16.47,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "chase-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 54.43,
+        "worst": 94.38,
+        "rectangles": 17.78,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.43,
+        "worst": 94.38,
+        "rectangles": 17.78,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "rest-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 57.43,
+        "worst": 96.88,
+        "rectangles": 17.79,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 57.43,
+        "worst": 96.88,
+        "rectangles": 17.79,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "bubble-tap",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 54.52,
+        "worst": 96.88,
+        "rectangles": 18.04,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.52,
+        "worst": 96.88,
+        "rectangles": 18.04,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "two-point-tap",
+      "seed": 5,
+      "changed": [
+        "moments"
+      ],
+      "before": {
+        "damage": 53.92,
+        "worst": 82.82,
+        "rectangles": 16.46,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.92,
+        "worst": 82.82,
+        "rectangles": 16.46,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "two-finger-press",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 55.64,
+        "worst": 96.88,
+        "rectangles": 17.18,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.64,
+        "worst": 96.88,
+        "rectangles": 17.18,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "open-water-hold",
+      "seed": 5,
+      "changed": [
+        "aquarium"
+      ],
+      "before": {
+        "damage": 55.61,
+        "worst": 96.88,
+        "rectangles": 18.48,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.61,
+        "worst": 96.88,
+        "rectangles": 18.48,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "long-hold",
+      "seed": 5,
+      "changed": [
+        "aquarium"
+      ],
+      "before": {
+        "damage": 56.15,
+        "worst": 97.92,
+        "rectangles": 16.14,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 56.15,
+        "worst": 97.92,
+        "rectangles": 16.14,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "endurance-hold",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 54.54,
+        "worst": 98.13,
+        "rectangles": 15.24,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.54,
+        "worst": 98.13,
+        "rectangles": 15.24,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "substrate-hold",
+      "seed": 5,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 52.88,
+        "worst": 95,
+        "rectangles": 19.31,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.25,
+        "worst": 95,
+        "rectangles": 19.16,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 2,
+        "peakConsequences": 2,
+        "chainResponders": 2
+      }
+    },
+    {
+      "id": "feeding-hold",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 58.89,
+        "worst": 98.13,
+        "rectangles": 17.56,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 58.89,
+        "worst": 98.13,
+        "rectangles": 17.56,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-hold",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 50.95,
+        "worst": 95,
+        "rectangles": 19.36,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.95,
+        "worst": 95,
+        "rectangles": 19.36,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "hold-then-wander",
+      "seed": 5,
+      "changed": [
+        "render"
+      ],
+      "before": {
+        "damage": 55.2,
+        "worst": 97.08,
+        "rectangles": 18.05,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.4,
+        "worst": 97.08,
+        "rectangles": 17.95,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "slow-drag",
+      "seed": 5,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 55.7,
+        "worst": 94.58,
+        "rectangles": 17.69,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.71,
+        "worst": 94.58,
+        "rectangles": 17.72,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "fast-swipe",
+      "seed": 5,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 54.93,
+        "worst": 97.08,
+        "rectangles": 16.7,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.95,
+        "worst": 97.08,
+        "rectangles": 16.72,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "curved-drag",
+      "seed": 5,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 56.04,
+        "worst": 94.58,
+        "rectangles": 17.52,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 56.05,
+        "worst": 94.58,
+        "rectangles": 17.57,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "fish-drag",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 54.23,
+        "worst": 72.8,
+        "rectangles": 16.53,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.23,
+        "worst": 72.8,
+        "rectangles": 16.53,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "plant-drag",
+      "seed": 5,
+      "changed": [],
+      "before": {
+        "damage": 54.17,
+        "worst": 70.67,
+        "rectangles": 17.03,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.17,
+        "worst": 70.67,
+        "rectangles": 17.03,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "bubble-drag",
+      "seed": 5,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 54.16,
+        "worst": 77.55,
+        "rectangles": 18.73,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.44,
+        "worst": 77.55,
+        "rectangles": 19.58,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 5,
+        "peakConsequences": 3,
+        "chainResponders": 2
+      }
+    },
+    {
+      "id": "diagonal-swipe",
+      "seed": 5,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 53.99,
+        "worst": 96.88,
+        "rectangles": 20.54,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.07,
+        "worst": 96.88,
+        "rectangles": 20.53,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-swipes",
+      "seed": 5,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 53.2,
+        "worst": 76.02,
+        "rectangles": 19.27,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.3,
+        "worst": 76.02,
+        "rectangles": 19.3,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "chase-swipe",
+      "seed": 5,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 61.01,
+        "worst": 97.08,
+        "rectangles": 16.67,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 61.08,
+        "worst": 97.08,
+        "rectangles": 16.63,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "open-water-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 53.19,
+        "worst": 78.05,
+        "rectangles": 24.08,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.19,
+        "worst": 78.05,
+        "rectangles": 24.08,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "substrate-tap",
+      "seed": 147,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 55.89,
+        "worst": 74.49,
+        "rectangles": 20.98,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 56.47,
+        "worst": 82.75,
+        "rectangles": 20.74,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "plant-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 52.14,
+        "worst": 78.28,
+        "rectangles": 21.43,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.14,
+        "worst": 78.28,
+        "rectangles": 21.43,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-taps",
+      "seed": 147,
+      "changed": [
+        "aquarium"
+      ],
+      "before": {
+        "damage": 52.91,
+        "worst": 97.71,
+        "rectangles": 25.03,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.91,
+        "worst": 97.71,
+        "rectangles": 25.03,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "mature-aquarium-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 53.92,
+        "worst": 78.05,
+        "rectangles": 23.62,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.92,
+        "worst": 78.05,
+        "rectangles": 23.62,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "new-aquarium-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 10.05,
+        "worst": 16.51,
+        "rectangles": 18.36,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 10.05,
+        "worst": 16.51,
+        "rectangles": 18.36,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "night-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 47.79,
+        "worst": 60.69,
+        "rectangles": 19.61,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 47.79,
+        "worst": 60.69,
+        "rectangles": 19.61,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "feeding-tap",
+      "seed": 147,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 55.02,
+        "worst": 74.04,
+        "rectangles": 18.51,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.19,
+        "worst": 74.04,
+        "rectangles": 18.3,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "chase-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 51.14,
+        "worst": 71.03,
+        "rectangles": 15.95,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.14,
+        "worst": 71.03,
+        "rectangles": 15.95,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "rest-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 51.26,
+        "worst": 74.07,
+        "rectangles": 23.53,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.26,
+        "worst": 74.07,
+        "rectangles": 23.53,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "bubble-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 53.99,
+        "worst": 97.92,
+        "rectangles": 19.59,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.99,
+        "worst": 97.92,
+        "rectangles": 19.59,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "two-point-tap",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 55.46,
+        "worst": 72.18,
+        "rectangles": 20.27,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.46,
+        "worst": 72.18,
+        "rectangles": 20.27,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "two-finger-press",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 54.06,
+        "worst": 79.21,
+        "rectangles": 20.63,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.06,
+        "worst": 79.21,
+        "rectangles": 20.63,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "open-water-hold",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 52.58,
+        "worst": 77.83,
+        "rectangles": 23.97,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.58,
+        "worst": 77.83,
+        "rectangles": 23.97,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "long-hold",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 50.82,
+        "worst": 98.13,
+        "rectangles": 17.56,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.82,
+        "worst": 98.13,
+        "rectangles": 17.56,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "endurance-hold",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 50.86,
+        "worst": 97.92,
+        "rectangles": 16.05,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.86,
+        "worst": 97.92,
+        "rectangles": 16.05,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "substrate-hold",
+      "seed": 147,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 52.57,
+        "worst": 96.25,
+        "rectangles": 20.2,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.48,
+        "worst": 96.25,
+        "rectangles": 19.37,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 2,
+        "peakConsequences": 2,
+        "chainResponders": 1
+      }
+    },
+    {
+      "id": "feeding-hold",
+      "seed": 147,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 56.07,
+        "worst": 97.92,
+        "rectangles": 18.6,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 56.4,
+        "worst": 97.92,
+        "rectangles": 18.3,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 2,
+        "peakConsequences": 2,
+        "chainResponders": 2
+      }
+    },
+    {
+      "id": "repeated-hold",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 54.88,
+        "worst": 97.71,
+        "rectangles": 17.79,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.88,
+        "worst": 97.71,
+        "rectangles": 17.79,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "hold-then-wander",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 52.86,
+        "worst": 79.97,
+        "rectangles": 21.34,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.86,
+        "worst": 79.97,
+        "rectangles": 21.34,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "slow-drag",
+      "seed": 147,
+      "changed": [],
+      "before": {
+        "damage": 51.99,
+        "worst": 75.05,
+        "rectangles": 25.1,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.99,
+        "worst": 75.05,
+        "rectangles": 25.1,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "fast-swipe",
+      "seed": 147,
+      "changed": [
+        "render"
+      ],
+      "before": {
+        "damage": 54.29,
+        "worst": 97.5,
+        "rectangles": 21.95,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.36,
+        "worst": 97.5,
+        "rectangles": 21.89,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "curved-drag",
+      "seed": 147,
+      "changed": [
+        "render"
+      ],
+      "before": {
+        "damage": 51.75,
+        "worst": 78.69,
+        "rectangles": 24.21,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.75,
+        "worst": 78.69,
+        "rectangles": 24.24,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "fish-drag",
+      "seed": 147,
+      "changed": [
+        "aquarium",
+        "render"
+      ],
+      "before": {
+        "damage": 52.31,
+        "worst": 79.51,
+        "rectangles": 20.62,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.32,
+        "worst": 79.51,
+        "rectangles": 20.61,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "plant-drag",
+      "seed": 147,
+      "changed": [
+        "aquarium"
+      ],
+      "before": {
+        "damage": 55.12,
+        "worst": 74.82,
+        "rectangles": 18.03,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.12,
+        "worst": 74.82,
+        "rectangles": 18.03,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "bubble-drag",
+      "seed": 147,
+      "changed": [
+        "render"
+      ],
+      "before": {
+        "damage": 50.99,
+        "worst": 73.26,
+        "rectangles": 26.05,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.99,
+        "worst": 73.26,
+        "rectangles": 26.08,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "diagonal-swipe",
+      "seed": 147,
+      "changed": [
+        "aquarium",
+        "render"
+      ],
+      "before": {
+        "damage": 55.71,
+        "worst": 81.23,
+        "rectangles": 20.18,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 55.71,
+        "worst": 81.23,
+        "rectangles": 20.21,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-swipes",
+      "seed": 147,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 56.27,
+        "worst": 85.95,
+        "rectangles": 19.74,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 56.29,
+        "worst": 85.95,
+        "rectangles": 19.79,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "chase-swipe",
+      "seed": 147,
+      "changed": [
+        "render"
+      ],
+      "before": {
+        "damage": 53.25,
+        "worst": 97.92,
+        "rectangles": 14.91,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.25,
+        "worst": 97.92,
+        "rectangles": 14.93,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "open-water-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 48.88,
+        "worst": 71.96,
+        "rectangles": 20.45,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 48.88,
+        "worst": 71.96,
+        "rectangles": 20.45,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "substrate-tap",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 50.33,
+        "worst": 69.62,
+        "rectangles": 14.81,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.22,
+        "worst": 69.27,
+        "rectangles": 13.2,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 2
+      }
+    },
+    {
+      "id": "plant-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 47.29,
+        "worst": 63.83,
+        "rectangles": 18.47,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 47.29,
+        "worst": 63.83,
+        "rectangles": 18.47,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-taps",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 52.64,
+        "worst": 78.56,
+        "rectangles": 15.85,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.64,
+        "worst": 78.56,
+        "rectangles": 15.85,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "mature-aquarium-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 53.81,
+        "worst": 95.21,
+        "rectangles": 18.38,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.81,
+        "worst": 95.21,
+        "rectangles": 18.38,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "new-aquarium-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 11.32,
+        "worst": 16.45,
+        "rectangles": 19.58,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 11.32,
+        "worst": 16.45,
+        "rectangles": 19.58,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "night-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 46.38,
+        "worst": 59.85,
+        "rectangles": 16.96,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 46.38,
+        "worst": 59.85,
+        "rectangles": 16.96,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "feeding-tap",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 50.72,
+        "worst": 77.03,
+        "rectangles": 17.32,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.6,
+        "worst": 77.03,
+        "rectangles": 17.35,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "chase-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 50.1,
+        "worst": 66.09,
+        "rectangles": 17.17,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.1,
+        "worst": 66.09,
+        "rectangles": 17.17,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "rest-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 53.39,
+        "worst": 66.35,
+        "rectangles": 15.88,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 53.39,
+        "worst": 66.35,
+        "rectangles": 15.88,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "bubble-tap",
+      "seed": 1234,
+      "changed": [
+        "aquarium"
+      ],
+      "before": {
+        "damage": 59.55,
+        "worst": 75.04,
+        "rectangles": 11.47,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 59.55,
+        "worst": 75.04,
+        "rectangles": 11.47,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "two-point-tap",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 50.39,
+        "worst": 71.15,
+        "rectangles": 20.85,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 50.39,
+        "worst": 71.15,
+        "rectangles": 20.85,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "two-finger-press",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 47.47,
+        "worst": 77.82,
+        "rectangles": 22.03,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 47.47,
+        "worst": 77.82,
+        "rectangles": 22.03,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "open-water-hold",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 47.97,
+        "worst": 62.77,
+        "rectangles": 18.32,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 47.97,
+        "worst": 62.77,
+        "rectangles": 18.32,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "long-hold",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 51.49,
+        "worst": 95.42,
+        "rectangles": 17.29,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.49,
+        "worst": 95.42,
+        "rectangles": 17.29,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "endurance-hold",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 54.35,
+        "worst": 97.29,
+        "rectangles": 16.38,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.35,
+        "worst": 97.29,
+        "rectangles": 16.38,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "substrate-hold",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 58.34,
+        "worst": 97.29,
+        "rectangles": 11.45,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 58.47,
+        "worst": 97.29,
+        "rectangles": 11.16,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 2,
+        "peakConsequences": 2,
+        "chainResponders": 1
+      }
+    },
+    {
+      "id": "feeding-hold",
+      "seed": 1234,
+      "changed": [
+        "aquarium"
+      ],
+      "before": {
+        "damage": 54.09,
+        "worst": 97.29,
+        "rectangles": 14.08,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 54.09,
+        "worst": 97.29,
+        "rectangles": 14.08,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-hold",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 49.8,
+        "worst": 97.29,
+        "rectangles": 16.88,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 49.8,
+        "worst": 97.29,
+        "rectangles": 16.88,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "hold-then-wander",
+      "seed": 1234,
+      "changed": [],
+      "before": {
+        "damage": 49.37,
+        "worst": 95.63,
+        "rectangles": 19.43,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 49.37,
+        "worst": 95.63,
+        "rectangles": 19.43,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "slow-drag",
+      "seed": 1234,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 48.99,
+        "worst": 97.08,
+        "rectangles": 19.63,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 48.99,
+        "worst": 97.08,
+        "rectangles": 19.68,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "fast-swipe",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 47.54,
+        "worst": 60.24,
+        "rectangles": 23.42,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 47.48,
+        "worst": 60.24,
+        "rectangles": 23.5,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "curved-drag",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "render"
+      ],
+      "before": {
+        "damage": 49.32,
+        "worst": 69.65,
+        "rectangles": 18.33,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 49.32,
+        "worst": 69.65,
+        "rectangles": 18.37,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "fish-drag",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "moments"
+      ],
+      "before": {
+        "damage": 46.13,
+        "worst": 58.21,
+        "rectangles": 23.14,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 46.13,
+        "worst": 58.21,
+        "rectangles": 23.14,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "plant-drag",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "moments"
+      ],
+      "before": {
+        "damage": 52.17,
+        "worst": 97.08,
+        "rectangles": 17.78,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 52.17,
+        "worst": 97.08,
+        "rectangles": 17.78,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "bubble-drag",
+      "seed": 1234,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 49.49,
+        "worst": 73.69,
+        "rectangles": 17.58,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 49.49,
+        "worst": 73.69,
+        "rectangles": 17.61,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "diagonal-swipe",
+      "seed": 1234,
+      "changed": [
+        "aquarium",
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 47.29,
+        "worst": 67.08,
+        "rectangles": 21.71,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 47.29,
+        "worst": 67.08,
+        "rectangles": 21.78,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "repeated-swipes",
+      "seed": 1234,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 51.07,
+        "worst": 77.31,
+        "rectangles": 18.11,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.08,
+        "worst": 77.31,
+        "rectangles": 18.29,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    },
+    {
+      "id": "chase-swipe",
+      "seed": 1234,
+      "changed": [
+        "render",
+        "moments"
+      ],
+      "before": {
+        "damage": 51.79,
+        "worst": 67.94,
+        "rectangles": 14.66,
+        "fullRedraws": 0
+      },
+      "after": {
+        "damage": 51.74,
+        "worst": 67.94,
+        "rectangles": 14.68,
+        "fullRedraws": 0
+      },
+      "chain": {
+        "consequencesRaised": 0,
+        "peakConsequences": 0,
+        "chainResponders": 0
+      }
+    }
+  ],
+  "identical": 47,
+  "changed": 40,
+  "meanDamageBefore": 51.57,
+  "meanDamageAfter": 51.61,
+  "fullRedrawsBefore": 0,
+  "fullRedrawsAfter": 0,
+  "largestDamageIncrease": {
+    "id": "substrate-hold",
+    "seed": 147,
+    "before": 52.57,
+    "after": 54.48
+  }
+}
