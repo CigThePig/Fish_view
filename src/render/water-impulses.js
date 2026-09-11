@@ -10,6 +10,7 @@ import { mixColor } from "./palette.js";
 import { addGlyphObject } from "./scene.js";
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
+const positiveModulo = (value, modulus) => ((value % modulus) + modulus) % modulus;
 // Two broken crests, 32 short raster spans each. No particles, alpha buffer,
 // canvas paths or framebuffer sampling: firmware can draw these as RGB565 fills.
 const ARC_STEPS = 32;
@@ -45,12 +46,48 @@ export function waterBandIndexAtY(state, y, bandCount) {
   return Math.min(bandCount - 1, Math.floor(depth * bandCount));
 }
 
+// Reconstruct the color already painted beneath a crest span from the scene's
+// background recipe. This stays on the same cheap raster model as the rest of
+// the renderer: no framebuffer readback, alpha buffer, or per-pixel history.
+// Bands and ordered-dither transitions are applied in the same order as the
+// canvas renderer, then the side falloff wins last just as it does on screen.
+export function backgroundWaterColorAtPixel(builder, x, y) {
+  const background = builder.background;
+  let color = background.baseColor;
+
+  for (const band of background.bands ?? []) {
+    if (x >= 0 && x < builder.width && y >= band.y && y < band.y + band.height + 1) {
+      color = band.color;
+    }
+  }
+
+  for (const transition of background.transitions ?? []) {
+    const block = transition.blockSize;
+    const startY = transition.y - transition.height / 2;
+    const endY = transition.y + transition.height / 2;
+    const blockY = Math.floor(y / block) * block;
+    const firstY = Math.floor(startY / block) * block;
+    if (blockY < firstY || blockY >= endY) continue;
+    const progress = clamp01((blockY + block / 2 - startY) / transition.height);
+    const matrixY = positiveModulo(Math.floor(blockY / block), 4);
+    const matrixX = positiveModulo(Math.floor(x / block), 4);
+    const threshold = (transition.matrix[matrixY][matrixX] + 0.5) / 16;
+    color = threshold < progress ? transition.to : transition.from;
+  }
+
+  for (const edge of background.edges ?? []) {
+    if (x >= edge.x && x < edge.x + edge.width && y >= edge.y && y < edge.y + edge.height) {
+      color = edge.color;
+    }
+  }
+
+  return color;
+}
+
 export function drawWaterImpulses(builder, state, palette, metrics) {
   for (const impulse of state.impulses ?? []) {
     const shape = waterImpulseGeometry(impulse);
     if (shape.visibility < 0.018 || impulse.strength <= 0) continue;
-    const bandIndex = waterBandIndexAtY(state, shape.y, palette.waterBands.length);
-    const color = mixColor(palette.waterBands[bandIndex], palette.ambient, shape.visibility);
     // A tap has two opposing curved glints, not a closed target ring. A wake
     // turns those glints along the sides of the flow and carries them with it.
     const axisX = shape.directed ? -shape.flowY : 0;
@@ -71,10 +108,14 @@ export function drawWaterImpulses(builder, state, palette, metrics) {
         if (previous) {
           const left = Math.min(x, previous.x), top = Math.min(y, previous.y);
           const width = Math.abs(x - previous.x) + 1, height = Math.abs(y - previous.y) + 1;
-          const worldX = (left + width / 2) / metrics.cellWidth;
+          const centerX = left + width / 2;
+          const centerY = top + height / 2;
+          const worldX = centerX / metrics.cellWidth;
           const surface = (SURFACE_Y_ROWS + surfaceWaveOffset(state, worldX)) * metrics.cellHeight;
           const floor = substrateSurfaceY(state, worldX) * metrics.cellHeight;
           if (left >= 0 && left + width <= builder.width && top >= surface && top + height <= floor) {
+            const water = backgroundWaterColorAtPixel(builder, centerX, centerY);
+            const color = mixColor(water, palette.ambient, shape.visibility);
             fill.push({ x: left, y: top, width, height, color });
           }
         }

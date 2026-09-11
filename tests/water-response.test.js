@@ -6,6 +6,7 @@ import { createImpulse, MAX_IMPULSES } from "../src/sim/interaction-events.js";
 import { render } from "../src/render/render.js";
 import { mixColor, scenePalette } from "../src/render/palette.js";
 import {
+  backgroundWaterColorAtPixel,
   MAX_WATER_SPANS_PER_IMPULSE,
   waterBandIndexAtY,
   waterImpulseGeometry,
@@ -76,7 +77,52 @@ test("deep water crests fade toward the same band as the surrounding background"
   const scene = render({ ...base, impulses: [impulse] });
   const crest = scene.objects.find((object) => object.id === "reaction:ripple:deep-band");
   assert.ok(crest?.fill.length > 0);
-  const expected = mixColor(palette.waterBands[5], palette.ambient, shape.visibility);
-  assert.ok(crest.fill.every((span) => span.color === expected),
-    "crest visibility must blend out from the background band under the impulse");
+  for (const span of crest.fill) {
+    const centerX = span.x + span.width / 2;
+    const centerY = span.y + span.height / 2;
+    const expected = mixColor(backgroundWaterColorAtPixel(scene, centerX, centerY), palette.ambient, shape.visibility);
+    assert.equal(span.color, expected,
+      "each deep crest span must blend out from the background color directly beneath it");
+  }
+});
+
+test("crest spans use local band and side-falloff colors instead of one center color", () => {
+  const base = stockedAquarium({ seed: 5 });
+  const palette = scenePalette(base);
+
+  const boundaryImpulse = createImpulse({ id: "band-cross", x: 30, y: 14.55, radius: 8, ageSeconds: 0.8 });
+  const boundaryShape = waterImpulseGeometry(boundaryImpulse);
+  const boundaryScene = render({ ...base, impulses: [boundaryImpulse] });
+  const boundaryCrest = boundaryScene.objects.find((object) => object.id === "reaction:ripple:band-cross");
+  assert.ok(boundaryCrest?.fill.length > 0);
+  const localBackgrounds = new Set();
+  for (const span of boundaryCrest.fill) {
+    const centerX = span.x + span.width / 2;
+    const centerY = span.y + span.height / 2;
+    const localWater = backgroundWaterColorAtPixel(boundaryScene, centerX, centerY);
+    localBackgrounds.add(localWater);
+    assert.equal(span.color, mixColor(localWater, palette.ambient, boundaryShape.visibility));
+  }
+  assert.ok(localBackgrounds.size > 1,
+    "a crest crossing a background transition must inherit more than one local water color");
+
+  const edgeImpulse = createImpulse({ id: "edge-falloff", x: 3.5, y: 8, radius: 5, ageSeconds: 0.6 });
+  const edgeShape = waterImpulseGeometry(edgeImpulse);
+  const edgeScene = render({ ...base, impulses: [edgeImpulse] });
+  const edgeCrest = edgeScene.objects.find((object) => object.id === "reaction:ripple:edge-falloff");
+  assert.ok(edgeCrest?.fill.length > 0);
+  let checkedEdge = false;
+  for (const span of edgeCrest.fill) {
+    const centerX = span.x + span.width / 2;
+    const centerY = span.y + span.height / 2;
+    const edge = [...edgeScene.background.edges].reverse().find((entry) =>
+      centerX >= entry.x && centerX < entry.x + entry.width
+      && centerY >= entry.y && centerY < entry.y + entry.height);
+    if (!edge) continue;
+    assert.equal(span.color, mixColor(edge.color, palette.ambient, edgeShape.visibility),
+      "edge crests must fade into the same dimmed water painted by the tank falloff");
+    checkedEdge = true;
+    break;
+  }
+  assert.ok(checkedEdge, "test impulse must produce at least one span inside the side falloff");
 });
