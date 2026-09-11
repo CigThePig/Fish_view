@@ -374,8 +374,7 @@
       "seed": 5,
       "changed": [
         "aquarium",
-        "render",
-        "moments"
+        "render"
       ],
       "before": {
         "damage": 52.88,
@@ -384,15 +383,15 @@
         "fullRedraws": 0
       },
       "after": {
-        "damage": 53.25,
+        "damage": 52.99,
         "worst": 95,
-        "rectangles": 19.16,
+        "rectangles": 19.3,
         "fullRedraws": 0
       },
       "chain": {
-        "consequencesRaised": 2,
-        "peakConsequences": 2,
-        "chainResponders": 2
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 0
       }
     },
     {
@@ -598,13 +597,13 @@
         "fullRedraws": 0
       },
       "after": {
-        "damage": 54.44,
+        "damage": 54.68,
         "worst": 77.55,
-        "rectangles": 19.58,
+        "rectangles": 20.17,
         "fullRedraws": 0
       },
       "chain": {
-        "consequencesRaised": 5,
+        "consequencesRaised": 3,
         "peakConsequences": 3,
         "chainResponders": 2
       }
@@ -722,9 +721,9 @@
         "fullRedraws": 0
       },
       "after": {
-        "damage": 56.47,
+        "damage": 56.54,
         "worst": 82.75,
-        "rectangles": 20.74,
+        "rectangles": 20.7,
         "fullRedraws": 0
       },
       "chain": {
@@ -1062,15 +1061,15 @@
         "fullRedraws": 0
       },
       "after": {
-        "damage": 54.48,
+        "damage": 52.61,
         "worst": 96.25,
-        "rectangles": 19.37,
+        "rectangles": 20.39,
         "fullRedraws": 0
       },
       "chain": {
-        "consequencesRaised": 2,
-        "peakConsequences": 2,
-        "chainResponders": 1
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 0
       }
     },
     {
@@ -1088,15 +1087,15 @@
         "fullRedraws": 0
       },
       "after": {
-        "damage": 56.4,
+        "damage": 56.26,
         "worst": 97.92,
-        "rectangles": 18.3,
+        "rectangles": 18.4,
         "fullRedraws": 0
       },
       "chain": {
-        "consequencesRaised": 2,
-        "peakConsequences": 2,
-        "chainResponders": 2
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 0
       }
     },
     {
@@ -1290,7 +1289,6 @@
       "id": "diagonal-swipe",
       "seed": 147,
       "changed": [
-        "aquarium",
         "render"
       ],
       "before": {
@@ -1737,15 +1735,15 @@
         "fullRedraws": 0
       },
       "after": {
-        "damage": 58.47,
+        "damage": 58.37,
         "worst": 97.29,
-        "rectangles": 11.16,
+        "rectangles": 11.42,
         "fullRedraws": 0
       },
       "chain": {
-        "consequencesRaised": 2,
-        "peakConsequences": 2,
-        "chainResponders": 1
+        "consequencesRaised": 1,
+        "peakConsequences": 1,
+        "chainResponders": 0
       }
     },
     {
@@ -2047,13 +2045,13 @@
   "identical": 47,
   "changed": 40,
   "meanDamageBefore": 51.57,
-  "meanDamageAfter": 51.61,
+  "meanDamageAfter": 51.59,
   "fullRedrawsBefore": 0,
   "fullRedrawsAfter": 0,
   "largestDamageIncrease": {
-    "id": "substrate-hold",
+    "id": "substrate-tap",
     "seed": 147,
-    "before": 52.57,
-    "after": 54.48
+    "before": 55.89,
+    "after": 56.54
   }
 }

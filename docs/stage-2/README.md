@@ -61,7 +61,7 @@ once and then left alone.
 
 47 of the 87 runs in the production sweep reproduce field for field against the
 first slice; every one of the 40 that differ touches the sand, the surface, or
-water that is moving. Mean damage across the sweep moves 0.04 percentage points,
+water that is moving. Mean damage across the sweep moves 0.02 percentage points,
 there are no full redraws, and the save schema is untouched. See the
 [phase report](phase-5-environment-and-chains.md).
 

@@ -837,23 +837,36 @@ function surfaceBreak(state, impulse) {
 }
 
 /**
- * Add one environmental event, without ever spending a press's slot.
+ * Add one environmental event, without disturbing anything already in the list.
  *
- * An event already in the list is left exactly as it is - it is ageing, and the
- * disturbance that raised it saying so again does not make it newer.
+ * Three ways a candidate is declined, and all three of them leave the list
+ * exactly as it was, because **a consequence is never removed before it has
+ * finished settling.** Cutting one short is the defect the whole idea exists to
+ * avoid: what disappears with it is a cloud of silt still visible and a column
+ * of bubbles still halfway up the water, which is precisely the mid-water
+ * vanishing act that made the old impulse-derived burst unreachable.
+ *
+ * - **Already raised.** It is ageing, and the disturbance that raised it saying
+ *   so again does not make it newer.
+ * - **The same patch, stirred again.** A press that repeats within
+ *   COALESCE_RADIUS_CELLS is the same gesture continuing - `admit` merges it
+ *   into the live impulse rather than spending a slot - but the merged impulse
+ *   takes the *new* position's seed, so a fingertip's worth of jitter would
+ *   otherwise raise a second cloud on top of the first and a child drumming on
+ *   one spot would stack three. The aquarium has one disturbed patch there, not
+ *   three. Measured against consequences of the same kind, because a cloud on
+ *   the bottom and a break at the surface are never the same patch of water.
+ * - **No room among its own kind.** A chain that cannot find a slot simply does
+ *   not happen. A press may evict a consequence; a consequence may evict
+ *   neither a press nor another consequence.
  */
 function admitEnvironment(list, candidate) {
   if (list.some((entry) => entry.id === candidate.id)) return list;
+  if (list.some((entry) => entry.source === candidate.source
+    && Math.hypot(entry.x - candidate.x, entry.y - candidate.y) <= COALESCE_RADIUS_CELLS)) return list;
   const environment = list.filter(isEnvironmentStimulus);
-  if (environment.length < MAX_ENVIRONMENT_STIMULI && list.length < MAX_STIMULI) {
-    return Object.freeze([...list, candidate]);
-  }
-  if (!environment.length) return list;
-  let faintest = environment[0];
-  for (const entry of environment) {
-    if (stimulusSalience(entry) < stimulusSalience(faintest)) faintest = entry;
-  }
-  return Object.freeze(list.map((entry) => (entry === faintest ? candidate : entry)));
+  if (environment.length >= MAX_ENVIRONMENT_STIMULI || list.length >= MAX_STIMULI) return list;
+  return Object.freeze([...list, candidate]);
 }
 
 /**

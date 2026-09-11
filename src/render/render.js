@@ -202,6 +202,9 @@ const SURFACE_RIPPLE_DROP = 0.5;
 const SILT_SECONDS = 3.4;
 const SILT_GRAINS = 9;
 const SILT_RISE_ROWS = 1.5;
+// Under one, so the sine peaks early: the sand is thrown up quickly and takes
+// the rest of the cloud's life to come down.
+const SILT_SETTLE_SKEW = 0.62;
 const SILT_SPREAD_COLUMNS = 2.1;
 // The surface: how far a break spreads across the swell and how many marks it
 // breaks into. Deliberately drawn as marks on the existing surface rather than
@@ -884,9 +887,18 @@ function drawSubstrateSilt(builder, state, palette, metrics) {
     const floorY = substrateSurfaceY(state, release.x);
     const count = Math.max(2, Math.round(SILT_GRAINS * strength));
     const glyphs = [];
+    // Silt lifts, hangs, and falls back into the floor it came from. A rise
+    // that only ever increased left every grain at its highest in the frame
+    // before the cloud stopped being drawn - a cloud vanishing in mid-water
+    // rather than sand going back to being sand, which is the opposite of
+    // settling. The lift is quicker than the fall, because that is what a
+    // disturbed bottom does, and it reaches zero exactly where the cloud ends.
+    const lift = Math.sin(Math.PI * progress ** SILT_SETTLE_SKEW);
     for (let grain = 0; grain < count; grain += 1) {
       const salt = 5200 + grain * 7;
-      const rise = progress * sampleRange(release.seed, salt, 0.45, 1.35) * SILT_RISE_ROWS;
+      const rise = lift * sampleRange(release.seed, salt, 0.45, 1.35) * SILT_RISE_ROWS;
+      // Spreading does not reverse: grains that have drifted apart settle where
+      // they got to rather than gathering back up.
       const spread = sampleSigned(release.seed, salt + 1) * (0.25 + progress * 0.9) * SILT_SPREAD_COLUMNS;
       const choice = sample01(release.seed, salt + 2);
       const char = choice < 0.42 ? "." : choice < 0.72 ? "," : choice < 0.88 ? "'" : ":";

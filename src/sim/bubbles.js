@@ -346,10 +346,20 @@ function substrateReleaseRecords(state) {
 // It is a deflection rather than a displacement - the impulse envelope rises and
 // falls, so the bubble drifts across and comes back to the line it was on.
 const BUBBLE_FLOW_CELLS = 1.6;
-// The same water, felt the other way up. Water shoved past a bubble lifts it:
-// the rise is what a bubble does for a living, so a push that arrives while it
-// is doing it reads as the bubble hurrying rather than as it being moved.
-const BUBBLE_LIFT_CELLS = 1.1;
+// There is deliberately no vertical term here, and the reason is worth keeping.
+// Everything in this function is a *position offset* read off the live impulses
+// and nothing else, which is what makes it free: no bubble remembers having
+// been pushed. An offset must therefore return to zero when the impulse that
+// produced it expires - which sideways is exactly right (the bubble drifts
+// across and comes back to the line it was on) and vertically is a bubble
+// sinking. A 1.1-cell lift came back at over a cell a second against an ascent
+// of half that, so a shove made four frames of a bubble visibly falling.
+//
+// Expressing "the water hurried it" honestly means changing the *rate* of a
+// rise, and a rate change has to be integrated - the bubble would have to
+// remember what has been done to it, which is the per-object memory the
+// boundedness invariant exists to refuse. So a disturbed bubble is carried,
+// shaken and broken up, and it goes on rising at its own speed throughout.
 // A shove that is not going anywhere in particular still shakes. This is the
 // wobble it adds, in cells, on top of the two the bubble already carries.
 const BUBBLE_WOBBLE_CELLS = 0.34;
@@ -387,10 +397,6 @@ function disturbedByWater(state, records) {
     return {
       ...record,
       worldX: clamp(record.worldX + flow.x * BUBBLE_FLOW_CELLS + wobble, 0.4, state.cols - 0.4),
-      // Downward water does not push a bubble under: it slows the rise it was
-      // already making, which is why the lift is clamped at zero on that side.
-      worldY: Math.max(bubbleWaterTop(),
-        record.worldY + Math.min(0, flow.y * BUBBLE_LIFT_CELLS)),
       // How far this bubble is from holding together, 0..1. The renderer draws
       // it smaller and thinner; nothing in the simulation reads it, so a
       // dispersing bubble is still a bubble and a fish following one is not

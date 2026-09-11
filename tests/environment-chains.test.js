@@ -24,6 +24,7 @@ import { createBubbleWorldRecords, isInvestigableBubble } from "../src/sim/bubbl
 import { substrateSurfaceY, waterSurfaceY } from "../src/sim/environment.js";
 import { ACTIVITIES, activityUtilities, tickFishActivity } from "../src/sim/fish-activities.js";
 import {
+  COALESCE_RADIUS_CELLS,
   MAX_ENVIRONMENT_STIMULI,
   MAX_STIMULI,
   SUBSTRATE_RELEASE_SECONDS,
@@ -159,6 +160,50 @@ test("a chain is exactly one generation deep", () => {
     [...chainEnvironmentStimuli(pressed, { stimuli: pressed.stimuli, impulses: pressed.impulses })],
     [...pressed.stimuli],
   );
+});
+
+// Both halves of what admission may not do, and both were real: a fingertip's
+// worth of jitter stacked a second cloud on the first, and a fourth consequence
+// evicted a live one - which put a cloud and a column of half-risen bubbles out
+// of the water 1.1 s into an 18 s life. A consequence that disappears before it
+// has settled is the mid-water vanishing act this whole phase exists to end.
+test("a consequence is never stacked on another, and never cut short by one", () => {
+  const base = settled(5);
+  const at = (x) => sandY(base, x);
+
+  // A repeat inside the press's own coalescing radius is the same patch of sand
+  // being stirred again, and `admit` has already merged the impulse - but the
+  // merged impulse takes the new position's seed, which is what used to raise a
+  // second cloud beside the first.
+  let state = tick(applyTouch(base, 30, at(30)), STEP);
+  state = tick(applyRelease(state), STEP);
+  assert.equal(environmentStimuli(state, "substrate-release").length, 1);
+  state = tick(applyTouch(state, 30 + COALESCE_RADIUS_CELLS * 0.4, at(30.5)), STEP);
+  assert.equal(state.impulses.filter((entry) => entry.source === "touch").length, 1,
+    "the presses did not coalesce, so this is not testing what it claims to");
+  assert.equal(environmentStimuli(state, "substrate-release").length, 1,
+    "fingertip jitter stacked a second cloud on the one already there");
+
+  // Far enough away to be a different patch: that is a second cloud, correctly.
+  state = tick(applyTouch(state, 46, at(46)), STEP);
+  assert.equal(environmentStimuli(state, "substrate-release").length, 2);
+
+  // And nothing a later disturbance does may take a live one out of the water.
+  let live = new Map(environmentStimuli(state).map((entry) => [entry.id, entry]));
+  let contact = applyTouch(base, 8, at(8));
+  live = new Map();
+  for (let frame = 1; frame <= 240; frame += 1) {
+    const elapsed = Number((frame * STEP).toFixed(4));
+    const x = 8 + Math.min(1, frame / 30) * (base.cols - 16);
+    contact = tick(applyContact(contact, x, at(x), elapsed), STEP);
+    const now = new Map(environmentStimuli(contact).map((entry) => [entry.id, entry]));
+    for (const [id, entry] of live) {
+      if (now.has(id)) continue;
+      assert.ok(entry.ageSeconds >= entry.durationSeconds - STEP * 2.5,
+        `${id} was taken out of the water at ${entry.ageSeconds.toFixed(1)} s of ${entry.durationSeconds}`);
+    }
+    live = now;
+  }
 });
 
 test("the aquarium's own events never cost the viewer a press", () => {
@@ -359,7 +404,7 @@ test("a patch of broken surface opens a trip that otherwise comes round once a m
  * What the water does to everything floating in it
  * ------------------------------------------------------------------ */
 
-test("bubbles are carried, lifted and broken up by moving water, and recover from it", () => {
+test("bubbles are carried and broken up by moving water, never pushed under, and recover", () => {
   const base = settled(5);
   const rest = createBubbleWorldRecords(base);
   const target = rest.find((record) => record.phase === "rise" && record.worldY > 6);
@@ -380,9 +425,29 @@ test("bubbles are carried, lifted and broken up by moving water, and recover fro
   const moved = createBubbleWorldRecords(pushed).find((record) => record.id === target.id);
   assert.ok(moved);
   assert.ok(moved.worldX - target.worldX > 0.2, "moving water did not carry the bubble along");
-  assert.ok(moved.worldY < target.worldY, "upward water did not hurry the bubble's rise");
   assert.ok(impulsePressureAt(pushed, target.worldX, target.worldY) > 0);
   assert.ok((moved.disturbance ?? 0) > 0, "a shove left the bubble perfectly intact");
+
+  // A bubble may never be pushed under. Every displacement here is a position
+  // offset read off the live impulses, so it has to return to zero when the
+  // impulse expires - which sideways is a drift back to the line it was on and
+  // vertically would be the bubble falling as the envelope decayed. Walk the
+  // whole envelope and assert the ascent is never reversed.
+  let previous = null;
+  for (let age = 0; age <= wake.durationSeconds; age += 0.05) {
+    const moment = {
+      ...base,
+      elapsedRealSeconds: base.elapsedRealSeconds + age,
+      impulses: Object.freeze([createImpulse({ ...wake, ageSeconds: age })]),
+    };
+    const live = createBubbleWorldRecords(moment).find((record) => record.id === target.id);
+    if (!live) break;
+    if (previous !== null) {
+      assert.ok(live.worldY <= previous + 1e-9,
+        `a shove made the bubble sink ${(live.worldY - previous).toFixed(3)} cells at ${age.toFixed(2)} s`);
+    }
+    previous = live.worldY;
+  }
 
   // A shove is not a displacement. When the water settles the column is the
   // column it was, which is what keeps this bounded and reconstructable.

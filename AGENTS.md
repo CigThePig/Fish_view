@@ -298,7 +298,10 @@ frame, in the tick, after the events have aged:
 - a **substrate release** — the sand lifted off the bottom by anything that
   touched it, and the air that was trapped under it. It lasts
   `SUBSTRATE_RELEASE_SECONDS`, far longer than the water that freed it, because
-  the cloud settles in a few seconds and the bubbles are still rising.
+  the cloud settles in a few seconds and the bubbles are still rising. The cloud
+  lifts and falls back into the floor over `SILT_SECONDS`: a rise that only ever
+  increased left every grain at its highest in the frame before the cloud
+  stopped being drawn, which is the opposite of settling.
 - a **surface break** — water still breaking where something went in near the
   waterline. Drawn as marks on the swell, never as a change to it: the
   background, the band, the cut along the wave and the meniscus are untouched,
@@ -313,12 +316,20 @@ structural rather than tuned:
   consequences.
 - **Its own slots.** At most `MAX_ENVIRONMENT_STIMULI` of the `MAX_STIMULI`
   slots hold them, and a chain that cannot find room among its own kind simply
-  does not happen. A press can evict a consequence; a consequence can never
-  evict a press.
-- **Raised once, then left alone.** Identity is the impulse and the place, so a
-  finger drumming on one shelf of sand stirs the cloud that is there rather than
-  stacking clouds, and a wake slot reused at the far end of the tank raises a new
-  one there rather than teleporting the old one.
+  does not happen. A press can evict a consequence; a consequence can evict
+  neither a press nor another consequence. Evicting the faintest instead put a
+  visible cloud and a column of half-risen bubbles out of the water 1.1 s into
+  an 18 s life, which is the mid-water vanishing act the whole idea exists to
+  end.
+- **Raised once, then left alone.** A consequence is never removed before it
+  has finished settling, and never stacked on one already there. Identity is the
+  impulse and the place, and admission also coalesces inside
+  `COALESCE_RADIUS_CELLS` of a live consequence of the same kind: a press that
+  repeats within a fingertip's wander is merged into the live impulse but takes
+  the new position's seed, so without that a child drumming on one spot would
+  raise three overlapping clouds. A wake slot reused at the far end of the tank
+  is a different patch and raises a new one there rather than teleporting the
+  old one.
 
 That repairs the dead end the plan names. The touch burst used to be derived
 from the impulse, so it existed only while the water moved — three seconds, at
@@ -332,9 +343,14 @@ decide, and a fish with no taste for bubbles picks its thread back up.
 
 The rest of the environment reads the impulses directly and stores nothing.
 `impulsePressureAt` is the companion to `impulseFlowAt` for everything that is
-shaken rather than carried: bubbles are hurried, pushed sideways and broken up
-by it and recover when the water settles; a shrimp bolts and comes back; a snail
-only pulls in. Every one of those is a shape over the disturbance's own
+shaken rather than carried: bubbles are pushed sideways and broken up by it and
+recover when the water settles; a shrimp bolts and comes back; a snail only
+pulls in. A bubble is never pushed *under*: everything here is a position offset
+read off the live impulses, so it must return to zero when the impulse expires -
+sideways that is the drift back to the line it was on, and vertically it was
+four frames of a bubble visibly falling. Changing the *rate* of a rise would
+have to be integrated, and that is the per-object memory the boundedness
+invariant refuses. Every one of those is a shape over the disturbance's own
 envelope, which rises and falls, so the animal leaves and returns without
 anything remembering that it went. Tufts and dust are carried by `impulseFlowAt`
 — ten specks and two tufts that already existed, moved, which is the cheapest

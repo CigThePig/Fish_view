@@ -20,12 +20,13 @@ import {
   prepareScenario,
 } from "../src/dev/interaction-observation.js";
 import { createBubbleWorldRecords, isInvestigableBubble } from "../src/sim/bubbles.js";
-import { ACTIVITIES } from "../src/sim/fish-activities.js";
+import { ACTIVITIES, tickFishActivity } from "../src/sim/fish-activities.js";
 import {
   MAX_ENVIRONMENT_STIMULI,
   MAX_STIMULI,
   chainEnvironmentStimuli,
   environmentStimuli,
+  isEnvironmentStimulus,
 } from "../src/sim/interaction-events.js";
 import { livingWorldRecords } from "../src/sim/living-world.js";
 import { serializePersistentState } from "../src/sim/state.js";
@@ -57,6 +58,9 @@ const NATIVE = { width: 800, height: 480 };
 // can see them at.
 const CLOSEUP = { width: 150, height: 90, scale: 5, frames: [9, 11, 13, 16, 22, 40] };
 const CLOSEUP_SCENARIOS = ["substrate-release", "waterline-tap", "resident-tap"];
+// How far a grazer's route has to move toward a cloud before it counts as
+// having been drawn to it rather than as floating-point noise.
+const GRAZE_PULL_CELLS = 0.05;
 
 await mkdir(output, { recursive: true });
 
@@ -99,6 +103,7 @@ for (const seed of seeds) {
       burstInvestigators: new Set(),
       surfaceTrips: new Set(),
       grazersDrawn: new Set(),
+      grazePullPeak: 0,
       // The environment's own response, as a displacement against the same
       // aquarium at the same second with the water left alone.
       residentDisplacement: 0,
@@ -146,11 +151,19 @@ for (const seed of seeds) {
 
         // The chain. A burst that is investigable and a fish that went to it
         // are two different claims, so both are counted; a third counts the
-        // grazing fish whose patch leaned onto a fresh cloud.
-        const burst = createBubbleWorldRecords(state)
-          .filter((record) => record.kind === "touch" && isInvestigableBubble(record));
+        // grazing fish whose patch actually leaned onto a fresh cloud.
+        const bubbles = createBubbleWorldRecords(state);
+        const burst = bubbles.filter((record) => record.kind === "touch" && isInvestigableBubble(record));
         if (burst.length) run.investigableBurstFrames += 1;
-        for (const fish of state.individuals) {
+        // The counterfactual for the grazing chain: this fish, at this position,
+        // on this frame, with the consequences taken out of the water and
+        // nothing else changed. Counting a grazer merely because it was standing
+        // near a cloud would credit the chain for a fish that was working that
+        // patch of sand anyway, which is no evidence of anything.
+        const withoutConsequences = consequences.length
+          ? { ...state, stimuli: Object.freeze(state.stimuli.filter((entry) => !isEnvironmentStimulus(entry))) }
+          : state;
+        state.individuals.forEach((fish, index) => {
           const target = fish.activity?.targetId;
           if (fish.activity?.current === ACTIVITIES.bubbleInvestigate
             && typeof target === "string" && target.includes("substrate-release")) {
@@ -161,12 +174,22 @@ for (const seed of seeds) {
               && Math.abs(consequence.x - (fish.activity.targetX ?? -99)) <= consequence.radius)) {
             run.surfaceTrips.add(fish.seed.toString(16));
           }
-          if (fish.activity?.current === ACTIVITIES.substrateSearch
-            && consequences.some((consequence) => consequence.source === "substrate-release"
-              && Math.abs(consequence.x - fish.x) <= consequence.radius)) {
+          if (fish.activity?.current !== ACTIVITIES.substrateSearch) return;
+          const cloud = consequences.find((consequence) => consequence.source === "substrate-release"
+            && Math.abs(consequence.x - fish.x) <= consequence.radius);
+          if (!cloud) return;
+          const context = { bubbles, school: state.school };
+          const drawn = tickFishActivity(fish, index, state, 1 / report.fps, context).target;
+          const ignored = tickFishActivity(fish, index, withoutConsequences, 1 / report.fps, context).target;
+          if (!drawn || !ignored) return;
+          // Only a graze line that moved toward the cloud counts, and only by
+          // more than a rounding: the pull is a lean, so it is small on purpose.
+          if (Math.abs(drawn.x - cloud.x) < Math.abs(ignored.x - cloud.x) - GRAZE_PULL_CELLS) {
             run.grazersDrawn.add(fish.seed.toString(16));
+            run.grazePullPeak = Math.max(run.grazePullPeak,
+              Math.abs(ignored.x - cloud.x) - Math.abs(drawn.x - cloud.x));
           }
-        }
+        });
 
         // The environment against its own control: the same aquarium, the same
         // second, with nothing done to the water. This isolates what the press
@@ -245,6 +268,7 @@ for (const seed of seeds) {
     run.burstInvestigators = [...run.burstInvestigators];
     run.surfaceTrips = [...run.surfaceTrips];
     run.grazersDrawn = [...run.grazersDrawn];
+    run.grazePullPeak = Number(run.grazePullPeak.toFixed(3));
     run.residentDisplacement = Number(run.residentDisplacement.toFixed(3));
     run.driftDisplacement = Number(run.driftDisplacement.toFixed(3));
     run.bubbleDisplacement = Number(run.bubbleDisplacement.toFixed(3));

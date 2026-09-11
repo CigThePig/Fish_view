@@ -1217,16 +1217,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const sweptCenter = state.cols * (
       0.5 + 0.34 * Math.sin(state.elapsedRealSeconds / 97 + sampleRange(fish.seed, 26, 0, TAU))
     );
-    // A cloud of silt is a promise of something to eat, and a fish already
-    // working the bottom is the one the promise is for. Its patch leans toward
-    // a fresh disturbance and drifts back off it as the cloud settles - a lean
-    // rather than a summons: the route still sweeps, the fish still creeps, and
-    // a disturbance at the far end of the tank is simply somewhere else.
-    const patchCenter = sweptCenter + (nearestConsequence(state, fish, "substrate-release")
-      ? (nearestConsequence(state, fish, "substrate-release").x - sweptCenter)
-        * consequenceReach(state, fish, "substrate-release") * SILT_FORAGE_PULL
-      : 0);
-    const routeX = clamp(patchCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
+    const routeX = clamp(sweptCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
     const descentX = clamp(routeX, fish.x - 2.35, fish.x + 2.35);
     const recoveryScoot = forage.recovery * forage.scootDirection
       * (0.52 + affinities.substrate * 0.34);
@@ -1235,12 +1226,35 @@ export function resolveActivityTarget(fish, index, state, activity, {
     // away spends the entire steering direction on the horizontal and leaves
     // nothing for the descent. The patch still leads the fish, only never by
     // further than it can answer.
+    // A cloud of silt is a promise of something to eat, and a fish already
+    // working the bottom is the one the promise is for.
+    //
+    // The lean is applied to the graze line itself rather than to the patch the
+    // route sweeps, and that is the whole of why it is visible. The route point
+    // swings up to searchSpanColumns either side of its centre and is then
+    // clamped into the routeLeadColumns the fish can actually creep to this
+    // frame, so it spends nearly every frame pinned against one edge of that
+    // window: moving the centre of the sweep changes which edge only rarely,
+    // and the measured pull toward a fresh cloud was seventeen thousandths of a
+    // cell. Leaning the clamped point instead changes the direction the fish
+    // creeps, which is what "its patch leans toward the disturbance" means.
+    //
+    // It stays a lean and not a summons. It is bounded by the same lead the
+    // route is - the fish creeps, it never darts - and it fades with the
+    // cloud's own salience, so the fish drifts back onto its sweep as the sand
+    // settles rather than parking where the finger was.
+    const graze = clamp(
+      routeX + recoveryScoot,
+      fish.x - tuning.routeLeadColumns,
+      fish.x + tuning.routeLeadColumns,
+    );
+    const cloud = nearestConsequence(state, fish, "substrate-release");
+    const lean = cloud
+      ? Math.sign(cloud.x - fish.x) * consequenceReach(state, fish, "substrate-release")
+        * SILT_FORAGE_PULL * tuning.routeLeadColumns
+      : 0;
     const grazeX = clamp(
-      clamp(
-        routeX + recoveryScoot,
-        fish.x - tuning.routeLeadColumns,
-        fish.x + tuning.routeLeadColumns,
-      ),
+      clamp(graze + lean, fish.x - tuning.routeLeadColumns, fish.x + tuning.routeLeadColumns),
       halfWidth,
       state.cols - halfWidth,
     );

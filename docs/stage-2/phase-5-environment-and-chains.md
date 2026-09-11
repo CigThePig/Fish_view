@@ -43,16 +43,18 @@ Production:
   rather than from the impulse, and rises through the shared generator with a
   `topY` of its own — a pocket of gas shaken out of gravel rises a few cells and
   dissolves rather than reaching the air. `disturbedByWater` replaces
-  `deflectedByFlow`: horizontal carry (unchanged), a lift from upward flow, a
-  per-bubble wobble, and a `disturbance` scalar for dispersal.
+  `deflectedByFlow`: horizontal carry (unchanged), a per-bubble wobble, and a
+  `disturbance` scalar for dispersal. Deliberately **no** vertical term — see
+  "What a bubble may not do" below.
 - `src/sim/living-world.js`: shrimp escape hop, snail retraction, and tufts
   carried by `impulseFlowAt`. All three read the live impulses and store
   nothing.
 - `src/sim/fish-activities.js`: the released burst carries
   `RELEASED_BUBBLE_INTEREST` in bubble selection; `noticedConsequence` gives a
-  fish one look around at the end of a response; a grazing fish's patch leans
-  onto a fresh cloud; a live surface break opens the surface trip that otherwise
-  comes round about once every ninety seconds.
+  fish one look around at the end of a response; a grazing fish's **graze line**
+  leans onto a fresh cloud, bounded by the same `routeLeadColumns` the route is;
+  a live surface break opens the surface trip that otherwise comes round about
+  once every ninety seconds.
 - `src/render/render.js`: `drawSubstrateSilt` and `drawSurfaceBreak`, one scene
   object each, drawn with the same grains and colours the feeding puff already
   uses and as marks on the swell rather than as a change to it.
@@ -96,6 +98,7 @@ nothing is pushed by one.
 | Surface break life | `SURFACE_BREAK_SECONDS` = 6 s | `ageStimuli` |
 | Bubbles per release | 3–6, scaled by impulse strength | `substrateReleaseRecords` |
 | Silt grains per cloud | 9 | `drawSubstrateSilt` |
+| Silt cloud, lift to settled | `SILT_SECONDS` = 3.4 s | `drawSubstrateSilt` |
 | Surface marks per break | 9 | `drawSurfaceBreak` |
 
 Three structural rules, rather than tuned ones, are what make a chain explosion
@@ -108,19 +111,46 @@ impossible:
   alone is a no-op.
 - **Its own slots.** Environmental events may occupy at most three of the six
   stimulus slots, and one that cannot find room among its own kind simply does
-  not happen. A press can evict a consequence; a consequence can never evict a
-  press.
+  not happen. A press may evict a consequence; a consequence may evict neither a
+  press nor another consequence. **A consequence is never removed before it has
+  finished settling** — that is the rule the whole idea rests on, because what
+  disappears with a cut-short release is a cloud still visible and a column of
+  bubbles still halfway up the water, which is exactly the mid-water vanishing
+  act that made the old impulse-derived burst unreachable.
 - **Raised once, then left alone.** Identity is the impulse and the place it
-  happened, so a finger drumming on one shelf of sand stirs the cloud that is
-  already there rather than stacking clouds, and a reused wake slot at the far
-  end of the tank raises a new one there rather than teleporting the old one.
-  The chain is idempotent: running it twice against the same impulses changes
-  nothing.
+  happened, and admission also coalesces inside `COALESCE_RADIUS_CELLS` of a
+  live consequence of the same kind. Both halves are needed: a press repeating
+  within a fingertip's wander is merged into the live impulse by `admit`, but
+  the merged impulse takes the *new* position's seed, so identity alone let a
+  child drumming on one spot stack three overlapping clouds. A reused wake slot
+  at the far end of the tank is a different patch and raises a new one there
+  rather than teleporting the old one. The chain is idempotent: running it twice
+  against the same impulses changes nothing.
 
 Everything else the environment does — the bubbles, the shrimp, the snail, the
 tufts, the dust — is a pure function of the live impulses and the aquarium's own
 clock. No new array, no history, no per-object record, and nothing to reconcile
 after a reload.
+
+### What a bubble may not do
+
+That purity has one consequence worth stating, because it decides what the
+bubble response can be. Every displacement here is a **position offset** read
+off the live impulses and nothing else, so it must return to zero when the
+impulse expires. Sideways that is exactly right: the bubble drifts across and
+comes back to the line it was on, which is what a passing current does. Upward
+it is not: as the envelope decayed, a 1.1-cell lift came back at over a cell a
+second against an ascent of half that, and a shove made four frames of a bubble
+visibly *falling*. A bubble may not sink.
+
+Expressing "the water hurried it" honestly means changing the **rate** of a
+rise, and a rate change has to be integrated — the bubble would have to remember
+what has been done to it, which is the per-object memory the boundedness
+invariant exists to refuse. So the vertical term is gone. A disturbed bubble is
+carried sideways, shaken and broken up, and it goes on rising at its own speed
+throughout. Of the plan's four suggested bubble responses (11.2 lists them as
+possibilities, not requirements) three are implemented and "increased rise" is
+not, for that reason.
 
 ## Visual result
 
@@ -160,7 +190,9 @@ and neither has a glow, a ring or a colour that is not already in the tank.
 | Bubbles are carried, hurried and broken up, and recover | Impulse applied and removed, records compared | `tests/environment-chains.test.js` |
 | A shrimp bolts and returns; a snail only pulls in | `livingWorldRecords` with and without an impulse | `tests/environment-chains.test.js` |
 | Drifting matter shows the current | Tuft displacement and dust object signatures | `tests/environment-chains.test.js` |
-| A grazing fish leans its patch onto a fresh cloud | The production target resolver, same pose, with and without | `tests/environment-chains.test.js` |
+| A grazing fish's graze line leans onto a fresh cloud | The production target resolver, same pose and frame, with and without the consequences | `tests/environment-chains.test.js`; `measure:environment` counterfactual |
+| A consequence is never stacked on another, nor cut short by one | Jitter taps inside the coalescing radius; 24 s of sand drag watching every id leave | `tests/environment-chains.test.js` |
+| A bubble is never pushed under | The whole envelope of an upward wake, frame by frame | `tests/environment-chains.test.js` |
 | A broken surface opens the surface trip, and only for fish that can see it | `activityUtilities` for every fish, plus a fish at the far corner | `tests/environment-chains.test.js` |
 | Nothing is written to disk or survives being switched off | Serialise, restore, `advanceOffline` | `tests/environment-chains.test.js` |
 | Incremental rendering still equals full rendering | 1 046 native 800 × 480 frames per seed across six scenarios | `measure:environment` |
@@ -176,24 +208,39 @@ strike-gap tolerance.
 `npm run measure:environment --seeds=5,147,1234,83`, four seeds, production
 scenarios, nothing posed. Each cell is the four seeds in order.
 
-| Scenario | Consequences raised | Live at once (cap 3) | Fish that went to the burst | Fish that grazed the cloud | Frames the burst was investigable |
+The grazing column is a **counterfactual**, not a proximity count: for each
+grazing fish beside a cloud it resolves that fish's graze line twice on the same
+frame and the same position, once with the consequences in the water and once
+with them taken out, and counts the fish only when the line moved toward the
+cloud. Counting grazers who happened to be standing near one would credit the
+chain for a fish that was working that patch of sand anyway.
+
+| Scenario | Consequences raised | Live at once (cap 3) | Fish that went to the burst | Fish whose graze line was pulled | Frames the burst was investigable |
 | --- | --- | --- | ---: | ---: | ---: |
-| Tap on the sand | 1/1/1/1 | 1/1/1/1 | 3/0/2/0 | 0/0/2/0 | 125/124/101/138 of 261 |
-| Drag along the sand | 10/10/10/10 | 3/3/3/3 | 3/0/1/2 | 2/2/3/2 | 150/150/150/150 of 241 |
-| Tap beside a shrimp | 1/1/1/1 | 1/1/1/1 | 0/0/1/1 | 2/2/2/0 | 110/96/100/127 of 221 |
+| Tap on the sand | 1/1/1/1 | 1/1/1/1 | 3/0/2/0 | 0/0/0/0 | 125/124/101/138 of 261 |
+| Drag along the sand | 3/3/3/3 | 3/3/3/3 | 3/0/1/1 | 0/2/1/0 | 133/119/107/121 of 241 |
+| Tap beside a shrimp | 1/1/1/1 | 1/1/1/1 | 0/0/1/1 | 0/2/1/0 | 110/96/100/127 of 221 |
 | Tap at the waterline | 1/1/1/1 | 1/1/1/1 | — | — | — |
 | Drag through plants | 0/0/0/0 | 0/0/0/0 | 0 | 0 | 0 |
 | Tap in open water | 0/0/0/0 | 0/0/0/0 | 0 | 0 | 0 |
 
-Read it as written: the burst chain fires on three of the four seeds for a tap
+Read it as written. The burst chain fires on three of the four seeds for a tap
 on the sand and on three of four for a drag, and never carries more than three
-of fifteen fish. The grazing chain fires on every seed for a drag. The surface
-trip is the rarest — one fish on one of the four seeds inside the observed
-window — and that is an honest limitation rather than a rounding: the fish has
-to be exploring, in reach, and choosing a new activity inside the six seconds
-the break lasts. The regression proves the option is offered to every fish that
-can see a break and to none that cannot; the sweep says how often a fish then
-takes it.
+of fifteen fish. The grazing chain fires on the two seeds that had a fish
+working the bottom near the cloud at all, pulling its graze line 0.15 – 0.42
+cells toward the disturbance; on the other two seeds nobody was foraging there,
+so there was nothing to pull. The surface trip is the rarest — one fish on one
+of the four seeds inside the observed window — and that is an honest limitation
+rather than a rounding: the fish has to be exploring, in reach, and choosing a
+new activity inside the six seconds the break lasts. The regression proves the
+option is offered to every fish that can see a break and to none that cannot;
+the sweep says how often a fish then takes it.
+
+A drag along the sand now raises **three** consequences where it used to report
+ten. The difference is not a smaller effect, it is the eviction defect: the
+other seven were raised and then thrown out of the water 1.1 s into an 18 s
+life, taking a visible cloud and a column of half-risen bubbles with them.
+Three raised and three settled is the same drag, drawn honestly.
 
 The two control scenarios matter as much: a drag through plants and a tap in
 open water raise nothing at all. A chain that happened everywhere would be the
@@ -213,18 +260,23 @@ commit `41efb11`.
 | Measure | Before | After |
 | --- | --- | --- |
 | Mature untouched avg / max damage (seeds 5/147/1234) | 57.5/98.1 %, 51.3/97.9 %, 52.1/95.4 % | identical |
-| Mean interaction damage across the 87 sweep runs | 51.57 % | 51.61 % |
-| Largest single regression (substrate hold, seed 147) | 52.57 % | 54.48 % |
-| Dirty rectangles per frame, across the sweep | 11.45 – 26.05 | 11.16 – 26.08 |
+| Mean interaction damage across the 87 sweep runs | 51.57 % | 51.59 % |
+| Largest single regression (substrate tap, seed 147) | 55.89 % | 56.54 % |
+| Dirty rectangles per frame, across the sweep | 11.45 – 26.05 | 11.42 – 26.08 |
 | Full redraws | 0 | 0 |
-| Scene objects / glyphs, peak across the 24 measured runs | — | 236 – 265 / 1 094 – 1 215 |
+| Scene objects / glyphs, peak across the 24 measured runs | — | 236 – 265 / 1 094 – 1 216 |
 
-The mean moves four hundredths of a percentage point, and no single run moves by
-more than **+1.91** or **-0.75** points. The one regression worth naming is the
-top of that range: a finger held against the sand, which now keeps a cloud and a
-column of bubbles alive above it — in the one gesture that is asking the sand to
-do something. Every gesture that does not touch the bottom or the surface is
-unchanged to the digit.
+The mean moves two hundredths of a percentage point, and no single run moves by
+more than **+0.65** or **-0.75** points. The top of that range is a tap on the
+sand, which now keeps a cloud and a column of bubbles alive above it — the one
+gesture that is asking the sand to do something. Every gesture that does not
+touch the bottom or the surface is unchanged to the digit.
+
+The review that found the eviction defect also removed the largest regression
+this phase had: before the fix a finger *held* against the sand cost **+1.91**
+points, because it spent every frame raising a cloud that evicted the last one
+and repainting both. Not cutting a consequence short is cheaper as well as
+truer.
 
 Scene cost is one object and at most nine glyphs per cloud, one object and at
 most nine glyphs per break, and three to six single-glyph bubbles per release.
@@ -241,10 +293,10 @@ Against the first slice's sweep, **47 of the 87 runs reproduce field for
 field**. The 40 that differ fall into three groups and no others: the four
 scenarios that press or hold on the sand (the burst now outlives the impulse
 that freed it), every drag and swipe (moving water now carries tufts, dust and
-bubbles that used to be carried only sideways), and a handful of presses whose
-`bubblesDisturbed` count rose because an undirected press now lifts and shakes a
-nearby bubble rather than only a directed wake pushing it. Each of those is the
-change this phase exists to make.
+bubbles that used to be carried sideways only by a directed wake), and a handful
+of presses whose `bubblesDisturbed` count rose because an undirected press now
+shakes a nearby bubble rather than only a directed wake pushing it. Each of
+those is the change this phase exists to make.
 
 ## Persistence
 
@@ -254,7 +306,7 @@ the regression asserts that neither `substrate-release` nor `surface-break`
 appears anywhere in a save taken with both live, that a restore clears them, and
 that an offline gap does too.
 
-Measured saves across the 24 runs are **20 195 – 21 012 bytes**, the same band as
+Measured saves across the 24 runs are **20 195 – 21 008 bytes**, the same band as
 the first slice's 20 425 – 20 471; the spread is the ordinary drift of social
 memory across four seeds and observations up to twice as long, not anything this
 phase writes.
@@ -274,15 +326,26 @@ adds nothing to it and does not claim to have fixed it.
   the regression proves the option is offered correctly; it is not reliable.
   Phase 8 (scene salience) is where making a rarer event compete properly
   belongs.
-- **A bubble disperses; it does not pop.** "Pop/disperse when directly
-  disturbed" is met by dispersal. A true pop would need the aquarium to remember
-  which bubble burst, and per-object memory is exactly what the boundedness
-  invariant forbids. The end of a released bubble's own rise is still drawn with
-  the existing pop.
+- **A bubble disperses; it does not pop, and it is not hurried.** "Pop/disperse
+  when directly disturbed" is met by dispersal: a true pop would need the
+  aquarium to remember which bubble burst, and per-object memory is exactly what
+  the boundedness invariant forbids. The end of a released bubble's own rise is
+  still drawn with the existing pop. "Increased rise" is not implemented at all,
+  for the same reason — see "What a bubble may not do" above. Both are listed in
+  11.2 as possible responses rather than required ones.
 - **The shrimp's escape is not itself a stimulus.** The plan offers it as an
   optional chain ("only if visually useful"); making it one would be a second
   generation, and one generation is the rule that makes a storm structurally
   impossible. It was left out on purpose.
+- **The three consequence slots are shared between the two kinds.** Three live
+  surface breaks will refuse a substrate release until one of them expires, and
+  the other way round. It is bounded and short — a break lasts six seconds — and
+  a per-kind sub-cap would be more machinery than the case is worth, but it is a
+  real interaction rather than an oversight.
+- **A long drag raises three clouds, not one per touched place.** That is the
+  price of never cutting a consequence short, and it is the right side of the
+  trade: the alternative put a visible cloud and a column of half-risen bubbles
+  out of the water a second into their life.
 - **This is the browser reference, not the device.** Bounded cost here is a
   compatibility result. Physical frame time, heap, LCD transfer and touch
   latency are Phase 10's.
