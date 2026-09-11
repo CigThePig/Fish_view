@@ -6,6 +6,7 @@ import {
 import { SUBSTRATE_ROWS, WATERLINE_ROWS } from "./config.js";
 import { PLANT_ROOT_BURIAL_ROWS } from "./environment.js";
 import { plantGroundY, plantDepthScale } from "./habitat-depth.js";
+import { visualDistance } from "./pointer-path.js";
 import { impulseStrength } from "./interaction-events.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
@@ -329,25 +330,39 @@ export function createPlantFrameContext(state, {
   };
 }
 
-// Plants bend in water that is moving, which is an impulse - they have no idea
-// anything is out there and no behaviour to run. The bend used to hard-code the
-// radius and the rise-and-fall envelope; both now belong to the event, so a
-// stronger or wider disturbance in a later phase bends them further without
-// touching this function.
-function impulseDisturbance(plant, state) {
+// Sample the plant's grown vertical extent, not an infinite column above its
+// root. This uses the same growth stages and depth scale as the skeleton, so a
+// high touch can reach a tall canopy without pushing a seedling underneath it.
+function impulseDisturbance(plant, state, species, growth) {
+  if (!state.impulses?.length) return 0;
+  const rootY = plantGroundY(state, plant) + PLANT_ROOT_BURIAL_ROWS;
+  // Reconstruct the resting skeleton's vertical reach using the already
+  // computed growth. At most twelve joints; no second pose or persistent state.
+  const rest = [{ y: rootY, angle: UP }];
+  const scale = plant.matureHeight / species.nominalHeight * plantDepthScale(plant);
+  let canopyY = rootY;
+  for (let index = 1; index < species.joints.length; index += 1) {
+    const joint = species.joints[index];
+    const parent = rest[joint.parent];
+    if (!growth.active[index] || !parent) continue;
+    const angle = parent.angle + joint.angle;
+    const y = parent.y + Math.sin(angle) * joint.length * scale * growth.maturity[index];
+    rest[index] = { y, angle };
+    canopyY = Math.min(canopyY, y);
+  }
   let total = 0;
   for (const impulse of state.impulses ?? []) {
-    const distance = Math.abs(plant.x - impulse.x);
+    const nearestY = clamp(impulse.y, canopyY, rootY);
+    const distance = visualDistance(plant.x - impulse.x, nearestY - impulse.y);
     if (distance >= impulse.radius) continue;
-    // Which way the stem goes. A press is a shock outward from a point, so the
-    // plants either side of it lean apart; water that is *moving* takes them
-    // all the same way, downstream, which is what a hand drawn past a bed of
-    // stems looks like. `dirX` is a unit component, so a vertical sweep hardly
-    // bends them sideways at all and a diagonal one bends them a little - the
-    // horizontal share of the water it moved.
     const outward = plant.x === impulse.x ? (plant.seed & 1 ? -1 : 1) : Math.sign(plant.x - impulse.x);
     const push = impulse.dirX || impulse.dirY ? impulse.dirX : outward;
-    total += push * (1 - distance / impulse.radius) * impulseStrength(impulse) * 0.32;
+    const progress = clamp(impulse.ageSeconds / impulse.durationSeconds, 0, 1);
+    // Bend with the arriving pressure, then a smaller recoil before rest.
+    // The analytic envelope expires with its impulse, avoiding a spring buffer
+    // per stem and preserving deterministic offline reconstruction.
+    const recoil = Math.cos(progress * Math.PI * 0.9);
+    total += push * (1 - distance / impulse.radius) * impulseStrength(impulse) * recoil * 0.85;
   }
   return total;
 }
@@ -371,10 +386,10 @@ function fishDisturbance(plant, state, species) {
   return influence;
 }
 
-function disturbanceForPlant(plant, state, species, frameContext, override) {
+function disturbanceForPlant(plant, state, species, frameContext, override, growth) {
   if (Number.isFinite(override)) return clamp(override, -0.6, 0.6);
   if (!frameContext.interactions) return 0;
-  return clamp(impulseDisturbance(plant, state) + fishDisturbance(plant, state, species), -0.42, 0.42);
+  return clamp(impulseDisturbance(plant, state, species, growth) + fishDisturbance(plant, state, species), -0.85, 0.85);
 }
 
 export function posePlant(plant, state, {
@@ -407,7 +422,7 @@ export function posePlant(plant, state, {
   const waveSin = Math.sin(waveAngle);
   const waveCos = Math.cos(waveAngle);
   const secondary = Math.sin(time * plant.frequency * 0.61 + plant.secondaryPhase);
-  const disturbance = disturbanceForPlant(plant, state, species, frameContext, disturbanceOverride);
+  const disturbance = disturbanceForPlant(plant, state, species, frameContext, disturbanceOverride, growth);
   const flexibility = clamp(1.18 - species.stiffness * plant.stiffness, 0.26, 0.94);
   const scale = plant.matureHeight / species.nominalHeight * plantDepthScale(plant);
   let activeJointCount = 0;
@@ -423,7 +438,7 @@ export function posePlant(plant, state, {
     const sharedBend = current.primary * species.current * 0.09
       + laggedWave * species.sway * plant.sway * 0.045
       + (current.secondary + secondary) * 0.014
-      + disturbance * 0.12;
+      + disturbance * 0.42;
     const bend = sharedBend * (0.22 + progress * 0.78) * flexibility;
     const branchMotion = joint.branchSign * secondary * progress * 0.012;
     const angle = parentPoint.angle + joint.angle + bend + plant.lean * progress * 0.055 + branchMotion;

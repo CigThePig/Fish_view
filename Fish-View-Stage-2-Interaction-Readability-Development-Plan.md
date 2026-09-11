@@ -1103,6 +1103,23 @@ Make the aquarium itself interactive rather than limiting interaction to fish.
 
 ---
 
+## 11.0 Water appearance — direction clarified 2026-09-11
+
+Tap, release, drag and swipe feedback must look like a local disturbance in
+water. Replace the temporary bright expanding glyph rings with restrained,
+water-colored crests and directional wakes. Avoid neon animation, opaque cursor
+halos, glow and full-screen refraction. Use the existing impulse's position,
+strength, radius, envelope and direction; weaker release impulses should produce
+weaker marks. Crests must fade, remain inside the water, and yield visually to
+fish and vegetation. Bounded opaque raster spans are compatible with the current
+damage renderer and the ESP32-S3 target; no shader or second framebuffer is needed.
+
+The first Phase 5 slice implements this appearance and the plant response below.
+It does not close the full Phase 5 gate: the environmental responses and causal
+chains in sections 11.2–11.7 still need implementation/validation before Phase 6.
+
+---
+
 ## 11.1 Plants
 
 Extend existing plant disturbance architecture rather than replacing it.
@@ -1116,9 +1133,13 @@ Plants should be able to respond to:
 
 Improve spatial accuracy.
 
-Current touch disturbance that ignores vertical distance should be reconsidered.
+Touch disturbance must account for vertical distance to the grown canopy,
+including its growth stage and habitat depth.
 
-A high touch should not necessarily bend substrate plants directly below it with the same strength as a low touch.
+A high touch must not directly bend short substrate plants outside the local
+pressure field. Nearby stems should bend visibly downstream, keep their roots
+anchored and joints connected, then recoil gently and settle. Nearby fish motion
+should remain a smaller disturbance than direct interaction.
 
 ---
 

@@ -423,7 +423,8 @@ test("touch ripple is immediate, deterministic, and expands continuously", () =>
   const second = render(applyTouch(state, 20.25, 9.4));
   assert.deepEqual(first, second);
   const initial = objectByPrefix(first, "reaction:ripple");
-  assert.equal(initial.glyphCount, 17);
+  assert.equal(initial.glyphCount, 0);
+  assert.ok(initial.fill.length > 0 && initial.fill.length <= 64);
 
   // Object bounds are the pixels the object actually paints - glyph rasters,
   // not whole glyph cells - so they are exact and integral. A tenth of a second
@@ -433,5 +434,5 @@ test("touch ripple is immediate, deterministic, and expands continuously", () =>
   for (let step = 0; step < 3; step += 1) touched = tick(touched, 0.1);
   const expanded = objectByPrefix(render(touched), "reaction:ripple");
   assert.ok(expanded.bounds.width > initial.bounds.width);
-  assert.ok(expanded.bounds.width - initial.bounds.width < 12);
+  assert.ok(expanded.bounds.width - initial.bounds.width < 18);
 });

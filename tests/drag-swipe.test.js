@@ -1081,8 +1081,10 @@ test("a diagonal wake drifts the way the water is going", () => {
     const scene = renderScene(state);
     const object = scene.objects.find((entry) => entry.id === "reaction:ripple:wake:0");
     assert.ok(object, "the wake drew no ripple");
-    // The last glyph of the ring is its centre.
-    return scene.glyphs[object.glyphStart + object.glyphCount - 1];
+    // The two opposite raster crests share the wake's centre. Measure the
+    // painted bounds, independent of the replaced placeholder centre glyph.
+    return { x: object.bounds.x + object.bounds.width / 2,
+      y: object.bounds.y + object.bounds.height / 2 };
   };
   const drift = (dirX, dirY) => {
     const early = centre(0.05, dirX, dirY);

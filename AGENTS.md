@@ -63,18 +63,16 @@ so the headroom is thin: features that continuously change the background
 signature, or force full redraws, are regressions regardless of how they look
 on a desktop.
 
-> **The tap animation is a placeholder.** The expanding ring of `O o . '`
-> glyphs a press draws — `drawImpulseRipples` in `src/render/render.js`, the
-> gentler ring a release draws through the same code, and the drawn-out ring a
-> drag or a swipe leaves behind it — is a stand-in, not the final artwork. It
-> exists so that an impulse has *some* visible correlate while the interaction
-> layer is being built, and it is expected to be replaced. Do not treat its
-> current look, timing or glyph vocabulary as settled, do not build a
-> measurement or a phase gate on top of exactly how it looks, and do not spend
-> effort polishing it. What is settled underneath it is the impulse: a position,
-> a strength, a radius, an envelope, what it touched, and which way the water is
-> going (`src/sim/interaction-events.js`). A replacement should read that and
-> nothing else.
+> **Touch feedback is water.** Phase 5 replaces the placeholder rings of
+> `O o . '` glyphs with muted, broken raster crests in
+> `src/render/water-impulses.js`. They expand locally, fade, and drift along a
+> directed impulse behind inhabitants. No neon rings, cursor halo, glow or
+> full-screen distortion. The effect reads only the existing impulse position,
+> strength, radius, age/duration and direction. At most 64 small opaque spans
+> per impulse, six impulses overall; no new particles or saved state. Plant
+> response uses the grown canopy's vertical reach and a bounded bend/recoil
+> envelope. The remaining Phase 5 work is listed in its report; this first
+> water/plant slice does not complete the environmental causal-chain gate.
 
 **Nothing dies and interaction cannot punish the child.** No interaction may
 kill, remove, permanently harm or permanently frighten a fish, create chores or
@@ -106,6 +104,7 @@ plausible.
 | Gesture shape | `src/sim/pointer-path.js` | the bounded pointer path, its direction, speed and curvature, and the drag/swipe bands |
 | Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, the hold arc and per-fish patience, how a fish chases a moving contact, what a press landed on |
 | Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts |
+| Water feedback | `src/render/water-impulses.js` | Bounded opaque raster crests behind inhabitants; local damage |
 | Scene | `src/render/render.js` → `render(state)` | glyph scene: `objects`, `glyphs`, `background` |
 | Damage | `src/render/damage.js` → `calculateDamage(previous, next)` | dirty rectangles between two scenes |
 | Canvas | `src/render/canvas-renderer.js` | draws a scene; used by app and capture tools |
