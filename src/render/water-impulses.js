@@ -1,4 +1,10 @@
-import { substrateSurfaceY, SURFACE_Y_ROWS, surfaceWaveOffset } from "../sim/environment.js";
+import { SUBSTRATE_ROWS } from "../sim/config.js";
+import {
+  SUBSTRATE_RELIEF_ROWS,
+  substrateSurfaceY,
+  SURFACE_Y_ROWS,
+  surfaceWaveOffset,
+} from "../sim/environment.js";
 import { ROW_ASPECT } from "../sim/pointer-path.js";
 import { mixColor } from "./palette.js";
 import { addGlyphObject } from "./scene.js";
@@ -31,12 +37,19 @@ export function waterImpulseGeometry(impulse) {
     visibility: (0.3 + strength * 0.3) * (1 - progress) ** 1.6 };
 }
 
+export function waterBandIndexAtY(state, y, bandCount) {
+  const surface = SURFACE_Y_ROWS;
+  const substrate = Math.min(state.rows, state.rows - SUBSTRATE_ROWS + SUBSTRATE_RELIEF_ROWS);
+  const waterHeight = Math.max(Number.EPSILON, substrate - surface);
+  const depth = clamp01((y - surface) / waterHeight);
+  return Math.min(bandCount - 1, Math.floor(depth * bandCount));
+}
+
 export function drawWaterImpulses(builder, state, palette, metrics) {
   for (const impulse of state.impulses ?? []) {
     const shape = waterImpulseGeometry(impulse);
     if (shape.visibility < 0.018 || impulse.strength <= 0) continue;
-    const bandIndex = Math.min(palette.waterBands.length - 1,
-      Math.max(0, Math.floor(shape.y / state.rows * palette.waterBands.length)));
+    const bandIndex = waterBandIndexAtY(state, shape.y, palette.waterBands.length);
     const color = mixColor(palette.waterBands[bandIndex], palette.ambient, shape.visibility);
     // A tap has two opposing curved glints, not a closed target ring. A wake
     // turns those glints along the sides of the flow and carries them with it.
