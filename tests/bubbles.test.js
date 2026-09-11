@@ -143,6 +143,8 @@ test("a substrate touch releases a small deterministic bubble burst", () => {
     .filter((record) => record.kind === "touch");
   assert.ok(floorRecords.length >= 1 && floorRecords.length <= 6);
   assert.ok(floorRecords.every((record) => record.id.startsWith("bubble:touch:")));
+  // Identity is the impulse, not its seed: two disturbances can share a seed.
+  assert.equal(new Set(floorRecords.map((record) => record.id)).size, floorRecords.length);
 
   const midTouch = applyTouch(base, base.cols * 0.42, base.rows * 0.45);
   const midRecords = createBubbleRenderRecords(midTouch, scenePalette(midTouch), metricsFor(midTouch))

@@ -20,6 +20,7 @@ import {
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
 import { createImpulse } from "../sim/interaction-events.js";
+import { ROW_ASPECT } from "../sim/pointer-path.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
 import { sample01, sampleRange, sampleSigned } from "../sim/prng.js";
@@ -831,22 +832,60 @@ function drawForageDebris(builder, state, palette, metrics) {
   });
 }
 
+// How far a directed disturbance's ring is carried downstream over its life, and
+// how much longer it is along the flow than across it. Both are fractions of the
+// ring's own radius: water that is going somewhere leaves an oval that travels,
+// where water that was merely struck leaves a circle that sits.
+const WAKE_DRIFT = 0.5;
+const WAKE_STRETCH = 0.55;
+
 // The visible correlate of an impulse: the ring the water makes where it was
 // disturbed. One per live impulse, each a scene object of its own so the
 // renderer damages the water it actually rang and nothing else.
+//
+// This is the placeholder AGENTS.md describes, and a wake is the same
+// placeholder: the ring an impulse with a direction draws is drawn out along
+// that direction and drifts with it, so that a swipe does not read as a row of
+// taps. What is settled underneath it is the impulse - a position, a strength, a
+// radius, an envelope, what it touched, and now which way the water is going.
 function drawImpulseRipples(builder, state, palette, metrics) {
   for (const impulse of state.impulses ?? []) {
     const progress = clamp(impulse.ageSeconds / impulse.durationSeconds, 0, 1);
     const radius = 0.62 + smoothstep(progress) * 5.15;
+    const directed = Boolean(impulse.dirX || impulse.dirY);
+    // The ring is drawn as a circle on the *glass*: a row is twice as tall as a
+    // column, so its vertical radius is halved. Which means the direction has to
+    // be carried into that basis too, and halving the vertical component of a
+    // cell-space unit vector is not the same thing. On the axes the two agree;
+    // on a diagonal they do not, and the ripple drifted and stretched at a
+    // shallower angle than the water and the finger were travelling at.
+    //
+    // `glassPerCell` is how far a cell goes on the glass along this direction.
+    // Dividing by it turns the drift, which is a fraction of a radius and so a
+    // distance on the glass, back into cells; multiplying the vertical
+    // component by it gives the flow as a unit vector in glass space, which is
+    // the basis the ring's own points are in.
+    const glassPerCell = Math.hypot(impulse.dirX ?? 0, (impulse.dirY ?? 0) * ROW_ASPECT) || 1;
+    const drift = directed ? smoothstep(progress) * radius * WAKE_DRIFT / glassPerCell : 0;
+    const flowX = (impulse.dirX ?? 0) / glassPerCell;
+    const flowY = (impulse.dirY ?? 0) * ROW_ASPECT / glassPerCell;
+    const centreX = impulse.x + (impulse.dirX ?? 0) * drift;
+    const centreY = impulse.y + (impulse.dirY ?? 0) * drift;
     const samples = 16;
     const glyphs = [];
     for (let index = 0; index < samples; index += 1) {
       const angle = (index / samples) * TAU;
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      // Stretched downstream and gathered upstream, so the ring reads as
+      // something the water carried rather than as a circle that happens to be
+      // somewhere else.
+      const stretch = directed ? 1 + WAKE_STRETCH * (cosine * flowX + sine * flowY) : 1;
       const char = progress < 0.3 ? "O" : progress < 0.68 ? "o" : index % 2 ? "." : "'";
       glyphs.push(positionedGlyph(metrics, {
         char,
-        worldX: impulse.x + Math.cos(angle) * radius,
-        worldY: impulse.y + Math.sin(angle) * radius * 0.5,
+        worldX: centreX + cosine * radius * stretch,
+        worldY: centreY + sine * radius * stretch * 0.5,
         fg: palette.ripple,
         scaleX: 0.78,
         scaleY: 0.78,
@@ -854,8 +893,8 @@ function drawImpulseRipples(builder, state, palette, metrics) {
     }
     glyphs.push(positionedGlyph(metrics, {
       char: progress < 0.5 ? "o" : ".",
-      worldX: impulse.x,
-      worldY: impulse.y,
+      worldX: centreX,
+      worldY: centreY,
       fg: palette.ripple,
       scaleX: 0.72,
       scaleY: 0.72,

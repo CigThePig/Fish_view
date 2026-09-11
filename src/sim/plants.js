@@ -339,8 +339,15 @@ function impulseDisturbance(plant, state) {
   for (const impulse of state.impulses ?? []) {
     const distance = Math.abs(plant.x - impulse.x);
     if (distance >= impulse.radius) continue;
+    // Which way the stem goes. A press is a shock outward from a point, so the
+    // plants either side of it lean apart; water that is *moving* takes them
+    // all the same way, downstream, which is what a hand drawn past a bed of
+    // stems looks like. `dirX` is a unit component, so a vertical sweep hardly
+    // bends them sideways at all and a diagonal one bends them a little - the
+    // horizontal share of the water it moved.
     const outward = plant.x === impulse.x ? (plant.seed & 1 ? -1 : 1) : Math.sign(plant.x - impulse.x);
-    total += outward * (1 - distance / impulse.radius) * impulseStrength(impulse) * 0.32;
+    const push = impulse.dirX || impulse.dirY ? impulse.dirX : outward;
+    total += push * (1 - distance / impulse.radius) * impulseStrength(impulse) * 0.32;
   }
   return total;
 }

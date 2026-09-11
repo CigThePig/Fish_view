@@ -64,16 +64,17 @@ signature, or force full redraws, are regressions regardless of how they look
 on a desktop.
 
 > **The tap animation is a placeholder.** The expanding ring of `O o . '`
-> glyphs a press draws — `drawImpulseRipples` in `src/render/render.js`, and the
-> gentler ring a release draws through the same code — is a stand-in, not the
-> final artwork. It exists so that an impulse has *some* visible correlate while
-> the interaction layer is being built, and it is expected to be replaced. Do
-> not treat its current look, timing or glyph vocabulary as settled, do not
-> build a measurement or a phase gate on top of exactly how it looks, and do not
-> spend effort polishing it. What is settled underneath it is the impulse: a
-> position, a strength, a radius, an envelope and what it touched
-> (`src/sim/interaction-events.js`). A replacement should read that and nothing
-> else.
+> glyphs a press draws — `drawImpulseRipples` in `src/render/render.js`, the
+> gentler ring a release draws through the same code, and the drawn-out ring a
+> drag or a swipe leaves behind it — is a stand-in, not the final artwork. It
+> exists so that an impulse has *some* visible correlate while the interaction
+> layer is being built, and it is expected to be replaced. Do not treat its
+> current look, timing or glyph vocabulary as settled, do not build a
+> measurement or a phase gate on top of exactly how it looks, and do not spend
+> effort polishing it. What is settled underneath it is the impulse: a position,
+> a strength, a radius, an envelope, what it touched, and which way the water is
+> going (`src/sim/interaction-events.js`). A replacement should read that and
+> nothing else.
 
 **Nothing dies and interaction cannot punish the child.** No interaction may
 kill, remove, permanently harm or permanently frighten a fish, create chores or
@@ -94,15 +95,16 @@ plausible.
 | Area | Where | Notes |
 | --- | --- | --- |
 | World constants | `src/sim/config.js` | `DISPLAY`, cell metrics, clearances |
-| State, save, restore | `src/sim/state.js` | `createAquariumState`, `applyTouch`, `applyHold`, `applyRelease`, `serializePersistentState`, `restorePersistentState`, `advanceOffline` |
+| State, save, restore | `src/sim/state.js` | `createAquariumState`, `applyTouch`, `applyContact`, `applyRelease`, `serializePersistentState`, `restorePersistentState`, `advanceOffline` |
 | Tick | `src/sim/tick.js` | `tick(state, dt)`; behaviour utilities, daylight |
 | Activity selection | `src/sim/fish-activities.js` | `ACTIVITIES`, utilities, target resolution, dwell |
 | Locomotion | `src/sim/fish-motion.js` | steering, forage geometry, clearances |
 | Choreography | `src/sim/fish-choreography.js`, `src/sim/choreography-tuning.js` | chase evasion, per-activity motion shaping |
 | Identity | `src/sim/fish-personality.js`, `src/sim/fish-roster.js`, `src/sim/fish-growth.js` | traits and growth derived from seeds |
 | Long horizon | `src/sim/aquarium-history.js` | arrivals, propagation, offline progression |
-| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring; the held stimulus and its clock |
-| Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, the hold arc and per-fish patience, what a press landed on |
+| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring; the contact stimulus and its clock; the wake and the water it moves |
+| Gesture shape | `src/sim/pointer-path.js` | the bounded pointer path, its direction, speed and curvature, and the drag/swipe bands |
+| Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, the hold arc and per-fish patience, how a fish chases a moving contact, what a press landed on |
 | Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts |
 | Scene | `src/render/render.js` → `render(state)` | glyph scene: `objects`, `glyphs`, `background` |
 | Damage | `src/render/damage.js` → `calculateDamage(previous, next)` | dirty rectangles between two scenes |
@@ -119,8 +121,7 @@ growth; real time drives locomotion and activities. Keep that distinction.
 
 ### The interaction path as it stands today
 
-Phase 4 will give pointer *motion* meaning; until then this is the whole path,
-so know what it does before you change it.
+This is the whole of it, so know what it does before you change it.
 
 `src/app.js` handles the **primary pointer only** — a second finger on the
 five-point panel reaches nothing — maps each event through `aquariumPoint`, and
@@ -132,13 +133,9 @@ outside the developer hotspot drives three verbs in `src/sim/state.js`:
   (`src/sim/attention.js`), and turns only the fish that are actually going
   somewhere.
 - while the contact is down, once per tick and *before* the tick →
-  **`applyHold`**, given the point and how long the press has lasted. The app
+  **`applyContact`**, given the point and how long the press has lasted. The app
   owns that clock, because the simulation may not have one.
 - `pointerup`, `pointercancel`, or the drawer opening → **`applyRelease`**.
-
-Pointer movement is still not a disturbance of its own. It moves the contact,
-and a contact that has moved more than `HOLD_MOVEMENT_CELLS` from where it
-landed stops being a hold — a gesture with a direction in it is Phase 4's.
 
 The two event types are the Phase 1 architecture and the distinction is
 load-bearing:
@@ -146,21 +143,37 @@ load-bearing:
 - a **stimulus** is something inhabitants can notice — position, intensity, a
   30-cell perception radius, what it landed on, an age and a duration. Fish read
   it; nothing is pushed by it.
-- an **impulse** is water actually moving — position, strength, radius, envelope
-  and what it touched. Plants bend in it, a substrate impulse shakes bubbles
-  loose, the renderer draws its ripple. None of that needs a behaviour.
+- an **impulse** is water actually moving — position, strength, radius,
+  envelope, what it touched, and which way it is going. Plants bend in it, a
+  substrate impulse shakes bubbles loose, the renderer draws its ripple. None of
+  that needs a behaviour.
 
 Both are transient: capped at six each, coalesced when a press repeats within
 1.2 cells, dropped the frame they are spent, never serialised, and cleared by an
 offline gap. `tests/interaction-events.test.js` guards those rules.
 
-A press that stays put past `HOLD_THRESHOLD_SECONDS` becomes a **held
-stimulus** — the same event, refreshed in place, carrying a hold clock instead
-of decaying. There is at most one and it is never re-registered. Release turns
-it into a short decaying aftermath and rings the water once more, gently. The
-water is otherwise still for the whole hold: a finger resting on glass is not a
-continuous impulse, and making it one would repaint the same patch for as long
-as a child cared to lean on it.
+**One contact, three meanings, no modes.** `applyContact` reads what the
+gesture currently is from the contact itself and there is nothing for a viewer
+to select:
+
+- A press that stays inside `HOLD_MOVEMENT_CELLS` of where it landed and past
+  `HOLD_THRESHOLD_SECONDS` is a **held stimulus** — the same event, refreshed in
+  place, keeping *the position it landed on*, carrying a hold clock instead of
+  decaying. There is at most one and it is never re-registered.
+- A press that leaves that allowance is a **gesture with a direction in it**,
+  and from then on it is one: the allowance is latched (`wandered`), so a finger
+  that wanders and comes back to rest is a drag that stopped, not a presence
+  that started late. The stimulus now follows the finger and carries the
+  **bounded path** behind it.
+- Which gesture it is — a slow **drag** or a fast **swipe** — is read from the
+  speed along that path, in bands with hysteresis (`src/sim/pointer-path.js`),
+  so a hand slowing down does not change the meaning of what it is doing four
+  times on the way.
+
+Release turns whichever it was into a short decaying aftermath and rings the
+water once more, gently. A still finger otherwise leaves the water alone: a
+finger resting on glass is not a continuous impulse, and making it one would
+repaint the same patch for as long as a child cared to lean on it.
 
 A hold's habituation **outlives the finger**. Release clears `held` but keeps
 the hold clock, so anything that reads `held` alone treats the aftermath of a
@@ -203,11 +216,11 @@ One tap now leaves seven to ten activities standing where it used to leave one.
 Reproduce it with `npm run observe:interaction`, or look at it with
 `npm run capture:interaction -- --roles`.
 
-The Phase 3 hold arc sits on top of that again. While a finger is held the
-aquarium **re-reads** the press every `HOLD_REVIEW_SECONDS`, running the same
-Phase 2 assignment against a disturbance that has not gone away — which is what
-lets a fish arrive late, follow a companion to the glass, or hand over to one
-that has not had its turn. Two rules make it bounded and readable:
+The Phase 3 hold arc sits on top of that again. While a contact is down the
+aquarium **re-reads** it every `HOLD_REVIEW_SECONDS`, running the same Phase 2
+assignment against a disturbance that has not gone away — which is what lets a
+fish arrive late, follow a companion to the glass, or hand over to one that has
+not had its turn. Two rules make it bounded and readable:
 
 - **Patience is per fish, and it is spent on the fish's own answer.** A fish
   crossing the tank has not been staring at a finger, so habituation runs on its
@@ -234,6 +247,44 @@ that has not had its turn. Two rules make it bounded and readable:
 frame, from the record and where the fish actually is. Nothing stores a phase.
 See it with `npm run observe:interaction -- --scenario=long-hold
 --detail=long-hold`.
+
+Phase 4 gives the motion in a gesture meaning, and it does it by moving points
+rather than by moving fish. Three things follow from a contact that is going
+somewhere:
+
+- **The path.** Six samples, spaced by time rather than by frame, with the
+  newest kept live (`src/sim/pointer-path.js`). It is enough to estimate
+  position, direction, speed and curvature, and it does not grow by one entry if
+  a child drags for an hour. That cap is the contract; `PATH_MEMORY_SECONDS`
+  keeps the window the same half second whatever rate the platform confirms a
+  contact at.
+- **The wake.** A moving contact rings the water behind it, spaced by distance
+  rather than by frame and capped at `MAX_WAKE_IMPULSES` **live** wakes — the
+  fourth replaces the first, so a drag the length of a bedtime story costs what a
+  drag across the tank does. A wake carries a direction, and `impulseFlowAt` is
+  the one function that says which way the water is moving at a point: the
+  school is carried by it, a bubble is pushed sideways by it, and a plant leans
+  downstream in the horizontal share of it instead of leaning away.
+- **Pursuit.** A fish answering a moving contact aims at one of three places,
+  derived from its boldness and from how sharply the finger is turning
+  (`stimulusFocus`): the water ahead of the finger, the water it went through a
+  third of a second ago, or the oldest place the path still remembers. Nothing
+  drives the fish — the fish swims to that point at its own speed, and arrives,
+  or is left behind. **No finger may ever overwrite a fish's position or
+  velocity**, and `tests/drag-swipe.test.js` measures that as the longest
+  unbroken time any fish spends within a body length of a moving contact.
+
+A swipe is not a louder drag. Fast water is a shock rather than an invitation:
+timid fish lose interest in it in proportion to how timid they are and answer by
+leaning away, and the circle of turned heads is wider. That is bounded to one
+response and remembered against nobody — an interaction may never punish the
+child or leave a fish permanently frightened.
+
+Everything a still press does is unchanged by this. When a contact is not
+moving, all three pursuits collapse onto the point the fish remembers, no wake
+is due, and the gesture is `press`: 56 of the 66 scenarios in the observation
+sweep reproduce field for field against Phase 3's evidence, and nine of the ten
+that differ are the three gestures with motion in them.
 
 ## Working agreement
 
@@ -291,12 +342,14 @@ npm run measure:stage2-baseline           # tap synchronisation, damage headroom
 npm run observe:interaction               # replay pointer histories; per-fish and whole-aquarium response
 npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap
 npm run observe:interaction -- --scenario=long-hold --detail=long-hold --seconds=38
+npm run observe:interaction -- --scenario=slow-drag,fast-swipe --detail=slow-drag
 npm run measure:screen                    # panel legibility
 npm run measure:living                    # long observation summary
 npm run capture:behaviors -- --scenario playful-chase --scale 1 --gif
 npm run capture:interaction -- --scenario=open-water-tap --scale=1 --gif
 npm run capture:interaction -- --scenario=rest-tap --roles     # response roles drawn over the frame
 npm run capture:interaction -- --scenario=long-hold --roles   # roles plus the hold phase each fish is in
+npm run capture:interaction -- --scenario=slow-drag,fast-swipe --roles  # the path, the wake and how each fish is chasing
 npm run capture:depth
 npm run capture:living
 npm run build:pages

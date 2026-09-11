@@ -68,6 +68,13 @@ const report = {
   replays: [],
 };
 
+function gestureSummary(gesture) {
+  if (!gesture?.moving) return "—";
+  const kind = gesture.kinds.swipe > gesture.kinds.drag ? "swipe" : "drag";
+  return `${kind} ${gesture.peakSpeed} w${gesture.wakesCreated}/${gesture.peakLiveWakes}`
+    + ` c${gesture.chasing} lag${gesture.followLag ?? "—"}`;
+}
+
 function pad(value, width, right = false) {
   const text = String(value);
   return right ? text.padStart(width) : text.padEnd(width);
@@ -85,6 +92,7 @@ console.log([
   pad("roles", 24),
   pad("lat", 5, true),
   pad("hold", 16),
+  pad("gesture", 26),
   pad("school", 13),
   pad("env p/b/r", 10),
   pad("damage", 13, true),
@@ -125,6 +133,11 @@ for (const seed of options.seeds) {
         ? `${result.observation.hold.seconds}s e${result.observation.hold.engagedAtRelease}`
           + ` l${result.observation.hold.lingered} s${result.observation.hold.settled}`
         : "—", 16),
+      // What the aquarium made of the motion in the gesture: which kind it was,
+      // how fast at its peak, how many wakes it left and how many were in the
+      // water at once, how many fish chased it, and how far behind the finger
+      // the nearest one was. A gesture with no motion in it shows a dash.
+      pad(gestureSummary(result.observation.gesture), 26),
       pad(`${aquarium.schoolCentroidDisplacement.toFixed(2)}/${aquarium.schoolSpreadChange.toFixed(2)}`, 13),
       pad(`${aquarium.plantsDisturbed}/${aquarium.bubblesCreated}/${aquarium.residentsAffected}`, 10),
       pad(`${renderCost.averageDamagePercent.toFixed(1)}/${renderCost.worstDamagePercent.toFixed(1)}%`, 13, true),
@@ -158,6 +171,7 @@ if (detail) {
     pad("glass", 6, true),
     pad("start activity", 20),
     pad("role", 12),
+    pad("moving", 16),
     pad("after input", 14),
     pad("lat", 5, true),
     pad("start>near", 11, true),
@@ -178,6 +192,9 @@ if (detail) {
       pad(fish.glassAffinity.toFixed(2), 6, true),
       pad(fish.startActivity, 20),
       pad(fish.role ?? "—", 12),
+      pad(fish.movingRole
+        ? `${fish.movingRole.slice(0, 3)}${fish.pursuit ? `/${fish.pursuit}` : ""}`
+        : "—", 16),
       pad(fish.activityAfterInput ?? "—", 14),
       pad(fish.responseLatencySeconds ?? "—", 5, true),
       pad(`${fish.startDistance}>${fish.closestDistance}`, 11, true),
@@ -265,7 +282,11 @@ await writeAudit(options.output, "interaction-observation", report);
 // that says what each one is. The evidence file is meant to be committed.
 const FISH_COLUMNS = Object.freeze([
   "id", "boldness", "sociability", "activity", "preferredDepth", "curiosity",
-  "glassAffinity", "touches", "startActivity", "role", "activityAfterInput",
+  "glassAffinity", "touches", "startActivity", "role",
+  // What this fish was doing about the gesture while it was moving, and which
+  // way it went after it. Empty for a gesture that never moved.
+  "movingRole", "pursuit",
+  "activityAfterInput",
   "responseLatencySeconds", "startDistance", "closestDistance", "distanceTravelled",
   "averageSpeed", "peakSpeed", "peakAcceleration", "peakPitch", "turnDegrees",
   "turnCount", "secondsNearStimulus",
@@ -282,7 +303,8 @@ function fishRow(fish) {
   return [
     fish.id, fish.traits.boldness, fish.traits.sociability, fish.traits.activity,
     fish.traits.preferredDepth, fish.traits.curiosity, fish.glassAffinity,
-    fish.familiarity.touches, fish.startActivity, fish.role, fish.activityAfterInput,
+    fish.familiarity.touches, fish.startActivity, fish.role,
+    fish.movingRole, fish.pursuit, fish.activityAfterInput,
     fish.responseLatencySeconds, fish.startDistance, fish.closestDistance,
     fish.distanceTravelled, fish.averageSpeed, fish.peakSpeed, fish.peakAcceleration,
     fish.peakPitch, fish.turnDegrees, fish.turnCount, fish.secondsNearStimulus,
@@ -313,6 +335,7 @@ if (options.evidence) {
       pointer: entry.observation?.pointer ?? null,
       aquarium: entry.observation?.aquarium ?? null,
       hold: entry.observation?.hold ?? null,
+      gesture: entry.observation?.gesture ?? null,
       render: entry.observation?.render ?? null,
       moments: entry.moments ?? null,
       fish: entry.seed === referenceSeed && entry.observation

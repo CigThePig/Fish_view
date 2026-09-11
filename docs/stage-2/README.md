@@ -26,7 +26,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 1 | Stimulus and impulse architecture | Done | [phase 1](phase-1-stimulus-impulse.md) |
 | 2 | Attention, response roles, contextual tap | Done | [phase 2](phase-2-attention-and-roles.md) |
 | 3 | Hold and persistent presence | Done | [phase 3](phase-3-hold-presence.md) |
-| 4 | Drag, swipe and local water impulse | Not started | — |
+| 4 | Drag, swipe and local water impulse | Done | [phase 4](phase-4-drag-swipe.md) |
 | 5 | Environmental interaction and causal chains | Not started | — |
 | 6 | Persistent fish–viewer relationship | Not started | — |
 | 7A | Flagship chase redesign | Not started | — |
@@ -35,6 +35,18 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+Phase 4 gave the **motion in a gesture** meaning, and gave it by moving points
+rather than by moving fish. A finger drawn slowly is a point of interest that is
+going somewhere: fish cut the corner in front of it, follow the water it went
+through, or stop at a piece of its trail while it moves on without them. A
+finger thrown across the glass is water being pushed: stems lean downstream,
+bubbles are carried sideways, the shoal is swept along, and the timid half of
+the cast leans out of the way while the bold half comes to look. The whole
+record of a gesture is six path samples and three live wakes, whether it lasts a
+third of a second or a minute; no gesture forces a full redraw; and 56 of the
+sweep's 66 scenarios reproduce field for field against Phase 3, nine of the ten
+that differ being the three gestures that have motion in them.
 
 Phase 3 made a press that stays a **presence**. A finger held against the glass
 past 0.45 s stops being a tap and becomes a held stimulus that is re-read every
