@@ -19,7 +19,15 @@ import {
   surfaceWaveSlope,
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
-import { createImpulse } from "../sim/interaction-events.js";
+import {
+  CONSEQUENCE_VISIBLE_AMPLITUDE,
+  SUBSTRATE_RELEASE_INTENSITY,
+  SUBSTRATE_SILT_SECONDS,
+  createImpulse,
+  environmentStimuli,
+  substrateSiltAmplitude,
+  surfaceBreakAmplitude,
+} from "../sim/interaction-events.js";
 import { drawWaterImpulses } from "./water-impulses.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
 import { createPlantFrameContext, createPlantSpecimen } from "../sim/plants.js";
@@ -186,6 +194,27 @@ const SURFACE_GLINT_DRIFT = 0.38;
 const SURFACE_RIPPLE_SPACING = 3.6;
 const SURFACE_RIPPLE_DRIFT = 0.18;
 const SURFACE_RIPPLE_DROP = 0.5;
+// What the aquarium's own consequences cost to draw. Both are one scene object
+// each, both are inside their event's own radius, and both are capped by
+// MAX_ENVIRONMENT_STIMULI - three clouds and three broken patches is the most
+// the aquarium can ever be showing at once, whatever a viewer does to it.
+//
+// The silt: how many grains the cloud is. How long it is up, and the shape of
+// its lift and fall, belong to the simulation - see `substrateSiltAmplitude`.
+const SILT_GRAINS = 9;
+const SILT_RISE_ROWS = 1.5;
+const SILT_SPREAD_COLUMNS = 2.1;
+// The surface: how far a break spreads across the swell and how many marks it
+// breaks into. Deliberately drawn as marks on the existing surface rather than
+// as a change to it - the background band, the meniscus and the swell are
+// untouched, so a break repaints its own patch and nothing else.
+const SURFACE_BREAK_MARKS = 9;
+const SURFACE_BREAK_SPREAD = 0.46;
+// Enough that a struck crest stands proud of the chop beside it. The ambient
+// ripple marks sit SURFACE_RIPPLE_DROP below the swell; a break lifts out of
+// that and settles back into it, which is what reads as water thrown up rather
+// than as more texture.
+const SURFACE_BREAK_LIFT_ROWS = 0.62;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -832,6 +861,127 @@ function drawForageDebris(builder, state, palette, metrics) {
   });
 }
 
+/*
+ * What the press left on the bottom.
+ *
+ * A disturbance in the sand lifts silt, and silt is the one part of an
+ * interaction a viewer can watch settle. It is drawn with the same grains, the
+ * same colours and the same fade the feeding puff already uses, because it is
+ * the same physical event with a different cause - a finger instead of a mouth
+ * - and two different-looking clouds of sand would be a lie about the water.
+ *
+ * The cloud is the *front* of the release: it is up for SILT_SECONDS and gone,
+ * while the air it freed goes on rising for another quarter of a minute. That
+ * separation is what makes the chain legible - the sand settles, the bubbles
+ * are still there, and something comes to look at them.
+ */
+function drawSubstrateSilt(builder, state, palette, metrics) {
+  for (const release of environmentStimuli(state, "substrate-release")) {
+    const progress = clamp(release.ageSeconds / SUBSTRATE_SILT_SECONDS, 0, 1);
+    // Silt lifts, hangs, and falls back into the floor it came from. The
+    // envelope is shared with the simulation - see `substrateSiltAmplitude` -
+    // so what a grazing fish is drawn to and what a viewer can see are the same
+    // thing by construction rather than by two constants agreeing.
+    const lift = substrateSiltAmplitude(release);
+    if (progress >= 1) continue;
+    const strength = clamp((release.intensity ?? 0) / SUBSTRATE_RELEASE_INTENSITY, 0, 1);
+    const silt = mixColor(palette.substrateFg, palette.ripple, 0.62);
+    const settled = mixColor(palette.substrateFg, palette.ripple, 0.3);
+    const count = Math.max(2, Math.round(SILT_GRAINS * strength));
+    const glyphs = [];
+    for (let grain = 0; grain < count; grain += 1) {
+      const salt = 5200 + grain * 7;
+      const rise = lift * sampleRange(release.seed, salt, 0.45, 1.35) * SILT_RISE_ROWS;
+      // Spreading does not reverse: grains that have drifted apart settle where
+      // they got to rather than gathering back up.
+      const spread = sampleSigned(release.seed, salt + 1) * (0.25 + progress * 0.9) * SILT_SPREAD_COLUMNS;
+      const worldX = clamp(release.x + spread, 0.4, state.cols - 0.4);
+      const choice = sample01(release.seed, salt + 2);
+      const char = choice < 0.42 ? "." : choice < 0.72 ? "," : choice < 0.88 ? "'" : ":";
+      glyphs.push(positionedGlyph(metrics, {
+        char,
+        worldX,
+        // The floor under *this* grain, not under the middle of the cloud. The
+        // terrain has relief and a grain drifts a couple of columns, so a
+        // shared landing plane left it settling a third of a row into the sand
+        // at one end of the cloud and hanging above it at the other.
+        worldY: substrateSurfaceY(state, worldX) - 0.1 - rise,
+        fg: mixColor(silt, settled, progress),
+        scaleX: sampleRange(release.seed, salt + 3, 0.58, 0.86) * (1 - progress * 0.3) * (0.7 + strength * 0.3),
+        scaleY: sampleRange(release.seed, salt + 4, 0.58, 0.86) * (1 - progress * 0.3) * (0.7 + strength * 0.3),
+      }));
+    }
+    addGlyphObject(builder, {
+      // One object per release, at the near plane the burst it belongs to is
+      // drawn on, and beneath the substrate grain so the floor still reads as
+      // the floor.
+      id: `substrate-release:${release.id}`,
+      layer: worldLayer(1) - 0.002,
+      glyphs,
+      padding: 1,
+    });
+  }
+}
+
+/*
+ * What the press left at the top.
+ *
+ * A localized patch of broken water, drawn as marks *on* the swell rather than
+ * as a change *to* it. Everything about the surface - the band underneath, the
+ * cut along the wave, the lit meniscus - is untouched: the break is its own
+ * scene object inside its own radius, so it repaints a patch a few columns wide
+ * and the other sixty columns of surface are not touched at all. A global
+ * surface state would have repainted the whole waterline every frame for four
+ * and a half seconds, which is the regression section 11.4 warns about by name.
+ */
+function drawSurfaceBreak(builder, state, palette, metrics) {
+  for (const broken of environmentStimuli(state, "surface-break")) {
+    const progress = clamp(broken.ageSeconds / broken.durationSeconds, 0, 1);
+    // Loudest where it was struck and calming from there. Unlike the water's
+    // own envelope this does not ramp in: a surface that took half a second to
+    // notice it had been hit would be the one part of the aquarium that
+    // answered a press late. Shared with the simulation, so a fish can never
+    // set out toward a patch of surface this has stopped drawing.
+    const amplitude = surfaceBreakAmplitude(broken);
+    if (amplitude < CONSEQUENCE_VISIBLE_AMPLITUDE) continue;
+    const glyphs = [];
+    for (let mark = 0; mark < SURFACE_BREAK_MARKS; mark += 1) {
+      const salt = 5400 + mark * 5;
+      // Marks spread outward from the point as the ring does, and the ones the
+      // spread has not reached yet are simply not drawn.
+      const offset = sampleSigned(broken.seed, salt)
+        * broken.radius * SURFACE_BREAK_SPREAD * (0.3 + progress * 0.7);
+      const worldX = broken.x + offset;
+      if (worldX < 0.4 || worldX > state.cols - 0.4) continue;
+      const reach = clamp(1 - Math.abs(offset) / Math.max(1, broken.radius * SURFACE_BREAK_SPREAD), 0, 1);
+      const lit = amplitude * reach;
+      if (lit < CONSEQUENCE_VISIBLE_AMPLITUDE) continue;
+      const shape = sample01(broken.seed, salt + 1);
+      const char = shape < 0.4 ? "~" : shape < 0.72 ? "^" : shape < 0.88 ? "-" : "'";
+      glyphs.push(positionedGlyph(metrics, {
+        char,
+        worldX,
+        worldY: SURFACE_Y_ROWS + surfaceWaveOffset(state, worldX) + SURFACE_RIPPLE_DROP
+          - lit * SURFACE_BREAK_LIFT_ROWS,
+        // Brighter than the ambient chop beside it, and only while it lasts:
+        // this is the same ink the waterline already uses, lifted toward the
+        // meniscus so the patch reads as water standing up rather than as a
+        // new colour appearing in the tank.
+        fg: mixColor(palette.waterBands[0], palette.waterline, 0.5 + 0.45 * lit),
+        scaleX: (char === "~" ? 0.95 : 0.8) * (0.7 + lit * 0.5),
+        scaleY: 0.84 * (0.7 + lit * 0.5),
+      }));
+    }
+    if (!glyphs.length) continue;
+    addGlyphObject(builder, {
+      id: `surface-break:${broken.id}`,
+      layer: LAYERS.waterline + 0.001,
+      glyphs,
+      padding: 1,
+    });
+  }
+}
+
 function drawSubstrate(builder, state, palette, metrics) {
   const chunks = new Map();
   for (let row = 0; row < SUBSTRATE_ROWS; row += 1) {
@@ -882,9 +1032,11 @@ export function render(state, { deformationStrength = 1 } = {}) {
   for (const record of plantFrame.records) {
     addPlantRecord(builder, record);
   }
+  drawSurfaceBreak(builder, state, palette, metrics);
   drawBubbles(builder, state, palette, metrics, LAYERS.ambient);
   drawSchool(builder, state, palette, metrics);
   drawForageDebris(builder, state, palette, metrics);
+  drawSubstrateSilt(builder, state, palette, metrics);
   drawIndividuals(builder, state, palette, metrics, deformationStrength);
   drawWaterImpulses(builder, state, palette, metrics);
   drawSubstrate(builder, state, palette, metrics);

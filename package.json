@@ -13,6 +13,8 @@
     "audit:persistence": "node tools/audit-persistence.mjs",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
     "measure:stage2-baseline": "node tools/measure-stage2-baseline.mjs",
+    "measure:water": "node tools/measure-water-response.mjs",
+    "measure:environment": "node tools/measure-environment-response.mjs",
     "observe:interaction": "node tools/observe-interaction.mjs",
     "measure:screen": "node tools/measure-screen-legibility.mjs",
     "measure:feeding": "node tools/measure-substrate-feeding.mjs",

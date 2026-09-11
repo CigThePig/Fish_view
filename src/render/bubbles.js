@@ -151,11 +151,29 @@ function decorateBubbleRecord(state, palette, metrics, record) {
   }
 
   const color = bubbleColor(state, palette, record.worldY, distance);
-  const sizeMultiplier = record.kind === "touch" ? 1 : 1 + distance * NEAR_BUBBLE_SCALE;
-  return {
-    ...record,
-    glyphs: bubbleGlyphs(metrics, { ...record, color, sizeMultiplier }),
-  };
+  // A bubble in water that is being shoved does not hold its shape. It thins
+  // and breaks up, and comes back when the water settles - which is what the
+  // simulation's `disturbance` describes and the only thing the renderer does
+  // about it. Nothing here decides that a bubble is gone: a dispersing bubble
+  // is still a bubble, so a fish following one is not robbed of its target by
+  // water it happened to drift through.
+  const disturbance = clamp(record.disturbance ?? 0, 0, 1);
+  const sizeMultiplier = (record.kind === "touch" ? 1 : 1 + distance * NEAR_BUBBLE_SCALE)
+    * (1 - disturbance * 0.42);
+  const glyphs = bubbleGlyphs(metrics, { ...record, color, sizeMultiplier });
+  if (disturbance > 0.45) {
+    // Broken off it: one fleck to the side, so the shove reads as the bubble
+    // coming apart rather than merely shrinking.
+    glyphs.push(positionedGlyph(metrics, {
+      char: "'",
+      worldX: record.worldX + sampleSigned(record.seed, 72) * 0.4,
+      worldY: record.worldY - 0.26,
+      fg: mixColor(color, palette.waterline, 0.2),
+      scaleX: 0.4 * disturbance,
+      scaleY: 0.4 * disturbance,
+    }));
+  }
+  return { ...record, glyphs };
 }
 
 export function createBubbleRenderRecords(state, palette, metrics) {

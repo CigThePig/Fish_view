@@ -63,7 +63,7 @@ so the headroom is thin: features that continuously change the background
 signature, or force full redraws, are regressions regardless of how they look
 on a desktop.
 
-> **Touch feedback is water.** Phase 5 replaces the placeholder rings of
+> **Touch feedback is water.** Phase 5 replaced the placeholder rings of
 > `O o . '` glyphs with muted, broken raster crests in
 > `src/render/water-impulses.js`. They expand locally, fade, and drift along a
 > directed impulse behind inhabitants. No neon rings, cursor halo, glow or
@@ -71,8 +71,11 @@ on a desktop.
 > strength, radius, age/duration and direction. At most 64 small opaque spans
 > per impulse, six impulses overall; no new particles or saved state. Plant
 > response uses the grown canopy's vertical reach and a bounded bend/recoil
-> envelope. The remaining Phase 5 work is listed in its report; this first
-> water/plant slice does not complete the environmental causal-chain gate.
+> envelope.
+>
+> **A disturbance leaves something behind.** The rest of Phase 5 is the
+> aquarium answering rather than the fish: see "The chain" below. Three
+> environmental stimuli at most, no new persistent field, one generation deep.
 
 **Nothing dies and interaction cannot punish the child.** No interaction may
 kill, remove, permanently harm or permanently frighten a fish, create chores or
@@ -100,10 +103,10 @@ plausible.
 | Choreography | `src/sim/fish-choreography.js`, `src/sim/choreography-tuning.js` | chase evasion, per-activity motion shaping |
 | Identity | `src/sim/fish-personality.js`, `src/sim/fish-roster.js`, `src/sim/fish-growth.js` | traits and growth derived from seeds |
 | Long horizon | `src/sim/aquarium-history.js` | arrivals, propagation, offline progression |
-| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring; the contact stimulus and its clock; the wake and the water it moves |
+| Interaction events | `src/sim/interaction-events.js` | `stimuli` and `impulses`: transient, capped, coalescing, expiring; the contact stimulus and its clock; the wake and the water it moves; the aquarium's own events and the pressure at a point |
 | Gesture shape | `src/sim/pointer-path.js` | the bounded pointer path, its direction, speed and curvature, and the drag/swipe bands |
 | Attention | `src/sim/attention.js`, `src/sim/interaction-context.js` | response roles, interest scoring, passive response shaping, the hold arc and per-fish patience, how a fish chases a moving contact, what a press landed on |
-| Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts |
+| Environment | `src/sim/environment.js`, `src/sim/bubbles.js`, `src/sim/plants.js`, `src/sim/living-world.js` | surface, bubbles, plants, snails/shrimp/tufts, and what each of them does about water that is moving |
 | Water feedback | `src/render/water-impulses.js` | Bounded opaque raster crests behind inhabitants; local damage |
 | Scene | `src/render/render.js` → `render(state)` | glyph scene: `objects`, `glyphs`, `background` |
 | Damage | `src/render/damage.js` → `calculateDamage(previous, next)` | dirty rectangles between two scenes |
@@ -285,6 +288,88 @@ is due, and the gesture is `press`: 56 of the 66 scenarios in the observation
 sweep reproduce field for field against Phase 3's evidence, and nine of the ten
 that differ are the three gestures with motion in them.
 
+### The chain
+
+Phase 5 is the aquarium answering rather than the fish, and it needs one new
+idea to do it: **a disturbance leaves something behind, and what it leaves is a
+stimulus.** `chainEnvironmentStimuli` derives them from the live impulses once a
+frame, in the tick, after the events have aged:
+
+- a **substrate release** — the sand lifted off the bottom by anything that
+  touched it, and the air that was trapped under it. It lasts
+  `SUBSTRATE_RELEASE_SECONDS`, far longer than the water that freed it, because
+  the cloud settles in a few seconds and the bubbles are still rising. The cloud
+  lifts and falls back into the floor over `SILT_SECONDS`: a rise that only ever
+  increased left every grain at its highest in the frame before the cloud
+  stopped being drawn, which is the opposite of settling.
+- a **surface break** — water still breaking where something went in near the
+  waterline. Drawn as marks on the swell, never as a change to it: the
+  background, the band, the cut along the wave and the meniscus are untouched,
+  so a break repaints its own patch of surface and not the waterline.
+
+They are stimuli because the only thing separating them from a press is where
+they came from. Three rules keep a chain from becoming a storm, and they are
+structural rather than tuned:
+
+- **One generation.** Only an impulse raises one, and an environmental stimulus
+  raises nothing at all. There is no path by which a consequence can have
+  consequences.
+- **Its own slots.** At most `MAX_ENVIRONMENT_STIMULI` of the `MAX_STIMULI`
+  slots hold them, and a chain that cannot find room among its own kind simply
+  does not happen. A press can evict a consequence; a consequence can evict
+  neither a press nor another consequence. Evicting the faintest instead put a
+  visible cloud and a column of half-risen bubbles out of the water 1.1 s into
+  an 18 s life, which is the mid-water vanishing act the whole idea exists to
+  end.
+- **Raised once, then left alone.** A consequence is never removed before it
+  has finished settling, and never stacked on one already there. Identity is the
+  impulse and the place, and admission also coalesces inside
+  `COALESCE_RADIUS_CELLS` of a live consequence of the same kind: a press that
+  repeats within a fingertip's wander is merged into the live impulse but takes
+  the new position's seed, so without that a child drumming on one spot would
+  raise three overlapping clouds. A wake slot reused at the far end of the tank
+  is a different patch and raises a new one there rather than teleporting the
+  old one.
+
+That repairs the dead end the plan names. The touch burst used to be derived
+from the impulse, so it existed only while the water moved — three seconds, at
+the end of which every bubble vanished in mid-water while every fish that might
+have gone to look at it was still recovering from answering the press that made
+it. It now belongs to the release, finishes its rise, and is reached two ways:
+through ordinary activity selection, and through `noticedConsequence`, one look
+around at the end of a response — the one moment a fish is actually standing in
+what the press did. Both are choices, not summonses: the ordinary utilities
+decide, and a fish with no taste for bubbles picks its thread back up.
+
+What there is of a consequence to *see* is one function per kind
+(`substrateSiltAmplitude`, `surfaceBreakAmplitude`), in the simulation, imported
+by both the renderer and activity selection, with `CONSEQUENCE_VISIBLE_AMPLITUDE`
+as the floor below which nothing is drawn and nothing may be acted on. A release
+outlives its own cloud by a long way — the air it freed is still rising — so the
+two readers have to agree by construction rather than by two constants happening
+to match.
+
+The rest of the environment reads the impulses directly and stores nothing.
+`impulsePressureAt` is the companion to `impulseFlowAt` for everything that is
+shaken rather than carried: bubbles are pushed sideways and broken up by it and
+recover when the water settles; a shrimp bolts and comes back; a snail only
+pulls in, and how hard and which way both come from the same impulse — the one
+supplying the most effective pressure, so a nearly spent wake cannot turn a
+shrimp into the press that alarmed it. Tufts and dust are carried sideways only,
+and a bubble is never pushed *under*: everything here is a position offset
+read off the live impulses, so it must return to zero when the impulse expires -
+sideways that is the drift back to the line it was on, and vertically it was
+four frames of a bubble visibly falling. Changing the *rate* of a rise would
+have to be integrated, and that is the per-object memory the boundedness
+invariant refuses. Every one of those is a shape over the disturbance's own
+envelope, which rises and falls, so the animal leaves and returns without
+anything remembering that it went. Tufts and dust read the horizontal half of
+`impulseFlowAt` — ten specks and two tufts that already existed, moved sideways,
+which is the cheapest picture of a current this aquarium can draw.
+
+Reproduce it with `npm run measure:environment`, or watch it with
+`npm run observe:interaction -- --scenario=substrate-release,sand-drag`.
+
 ## Working agreement
 
 **Investigate before modifying.** Read the production code, its tests and the
@@ -342,6 +427,9 @@ npm run observe:interaction               # replay pointer histories; per-fish a
 npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap
 npm run observe:interaction -- --scenario=long-hold --detail=long-hold --seconds=38
 npm run observe:interaction -- --scenario=slow-drag,fast-swipe --detail=slow-drag
+npm run observe:interaction -- --scenario=substrate-release,sand-drag,waterline-tap,resident-tap
+npm run measure:water                     # water crests and plant response
+npm run measure:environment               # the chains, their caps and what they cost
 npm run measure:screen                    # panel legibility
 npm run measure:living                    # long observation summary
 npm run capture:behaviors -- --scenario playful-chase --scale 1 --gif

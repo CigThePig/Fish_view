@@ -19,6 +19,7 @@ import { fishShoals, schoolCountFor } from "./fish-roster.js";
 import { createBubbleWorldRecords, tickFishExhale } from "./bubbles.js";
 import {
   ageInteractionEvents,
+  chainEnvironmentStimuli,
   dominantStimulus,
   holdAttenuation,
   impulseFlowAt,
@@ -591,8 +592,13 @@ export function tick(state, dt) {
   const daylight = daylightFactor(timeOfDayHours);
   const motionScale = 0.43 + daylight * 0.57;
   // Interaction events age on the real-time clock and are dropped the instant
-  // they are spent, so the transient lists never outlive the gesture.
-  const events = ageInteractionEvents(state, realDelta);
+  // they are spent, so the transient lists never outlive the gesture. What the
+  // water that is still moving has left behind it - sand lifted off the bottom,
+  // a patch of surface still breaking - is derived from the same lists
+  // immediately afterwards, so a consequence is exactly one frame behind the
+  // disturbance that caused it and can never outlive its own duration.
+  const aged = ageInteractionEvents(state, realDelta);
+  const events = { ...aged, stimuli: chainEnvironmentStimuli(state, aged) };
   // Long-horizon world state - aquarium age, plant growth, and every discrete
   // historical event - is owned by one shared resolver so live accelerated
   // simulation and offline catch-up cannot drift apart. It runs on the full

@@ -11,6 +11,7 @@ import { scenePalette } from "../src/render/palette.js";
 import { glyphsForObject } from "../src/render/scene.js";
 import { DISPLAY } from "../src/sim/config.js";
 import { substrateSurfaceY } from "../src/sim/environment.js";
+import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
 import { tick } from "../src/sim/tick.js";
 
@@ -136,20 +137,59 @@ test("nearby individual fish shove and lift rising bubbles", () => {
   );
 });
 
+// The burst no longer belongs to the impulse that raised it. It belongs to the
+// substrate release the impulse leaves behind (see `chainEnvironmentStimuli`),
+// which is derived once a frame by the tick - so the burst arrives one frame
+// after the press and, crucially, outlives the water that freed it.
 test("a substrate touch releases a small deterministic bubble burst", () => {
   const base = createAquariumState({ seed: 33, wallClockHours: 12 });
-  const floorTouch = applyTouch(base, base.cols * 0.42, base.rows - 0.2);
+  const floorTouch = tick(applyTouch(base, base.cols * 0.42, base.rows - 0.2), 0.1);
   const floorRecords = createBubbleRenderRecords(floorTouch, scenePalette(floorTouch), metricsFor(floorTouch))
     .filter((record) => record.kind === "touch");
   assert.ok(floorRecords.length >= 1 && floorRecords.length <= 6);
-  assert.ok(floorRecords.every((record) => record.id.startsWith("bubble:touch:")));
-  // Identity is the impulse, not its seed: two disturbances can share a seed.
+  assert.ok(floorRecords.every((record) => record.id.startsWith("bubble:substrate-release:")));
+  // Identity is the release, not its seed: two disturbances can share a seed.
   assert.equal(new Set(floorRecords.map((record) => record.id)).size, floorRecords.length);
 
-  const midTouch = applyTouch(base, base.cols * 0.42, base.rows * 0.45);
+  const midTouch = tick(applyTouch(base, base.cols * 0.42, base.rows * 0.45), 0.1);
   const midRecords = createBubbleRenderRecords(midTouch, scenePalette(midTouch), metricsFor(midTouch))
     .filter((record) => record.kind === "touch");
   assert.equal(midRecords.length, 0);
+});
+
+// The dead end section 11.2 names: before this, the burst existed only while
+// the impulse did, so every bubble vanished in mid-water three seconds after
+// the press - by which time every fish that could have gone to look at it was
+// still recovering from answering the press itself.
+test("a released burst outlives the water that freed it and finishes its rise", () => {
+  const base = createAquariumState({ seed: 33, wallClockHours: 12 });
+  let state = tick(applyTouch(base, base.cols * 0.42, base.rows - 0.2), 0.1);
+  const start = createBubbleWorldRecords(state).filter((record) => record.kind === "touch");
+  assert.ok(start.length >= 1);
+  const lowest = Math.max(...start.map((record) => record.worldY));
+
+  let afterImpulse = [];
+  let highest = lowest;
+  let popped = false;
+  for (let frame = 0; frame < 160; frame += 1) {
+    state = tick(state, 0.1);
+    const live = createBubbleWorldRecords(state).filter((record) => record.kind === "touch");
+    for (const record of live) {
+      highest = Math.min(highest, record.worldY);
+      if (record.phase === "pop") popped = true;
+    }
+    // Four seconds in, the impulse is long spent and the burst has to still
+    // be there. That is the whole repair.
+    if (frame === 40) {
+      assert.equal(state.impulses.length, 0, "the water was still moving");
+      afterImpulse = live;
+    }
+  }
+  assert.ok(afterImpulse.length >= 1, "the burst died with the impulse that raised it");
+  assert.ok(lowest - highest > 1.5, "the burst never got anywhere");
+  assert.ok(popped, "no bubble in the burst ever finished its rise");
+  assert.equal(createBubbleWorldRecords(state).filter((record) => record.kind === "touch").length, 0,
+    "the burst outlived its own release");
 });
 
 test("living bubbles stay inside a small dirty-rectangle friendly budget", () => {

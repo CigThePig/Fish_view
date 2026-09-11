@@ -1114,9 +1114,9 @@ weaker marks. Crests must fade, remain inside the water, and yield visually to
 fish and vegetation. Bounded opaque raster spans are compatible with the current
 damage renderer and the ESP32-S3 target; no shader or second framebuffer is needed.
 
-The first Phase 5 slice implements this appearance and the plant response below.
-It does not close the full Phase 5 gate: the environmental responses and causal
-chains in sections 11.2–11.7 still need implementation/validation before Phase 6.
+The first Phase 5 slice implemented this appearance and the plant response
+below. The second completed sections 11.2–11.7 and closed the gate; see
+[the phase report](docs/stage-2/phase-5-environment-and-chains.md).
 
 ---
 

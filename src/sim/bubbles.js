@@ -1,7 +1,12 @@
 import { scatteredDepth, spreadDepth } from "./depth.js";
 import { SURFACE_Y_ROWS, substrateSurfaceY } from "./environment.js";
 import { fishMouthPosition } from "./fish-motion.js";
-import { impulseFlowAt } from "./interaction-events.js";
+import {
+  SUBSTRATE_RELEASE_INTENSITY,
+  environmentStimuli,
+  impulseFlowAt,
+  impulsePressureAt,
+} from "./interaction-events.js";
 import { environmentalCurrent, initialPlantSeeds } from "./plants.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
@@ -111,9 +116,14 @@ function movingBubbleWorldRecord(state, {
   kind = "stream",
   skipFishIndex = -1,
   distance = scatteredDepth(seed, 90, state.elapsedRealSeconds),
+  // Where this bubble's rise ends. Almost everything in the tank rises until
+  // it reaches the air, but a small pocket of gas shaken out of the gravel is
+  // not a lungful: it goes up a few cells and dissolves, and it belongs to the
+  // one arc the pop already draws rather than to a second kind of ending.
+  topY = bubbleWaterTop(),
 }) {
   if (ageSeconds < 0) return null;
-  const top = bubbleWaterTop();
+  const top = topY;
   const travel = Math.max(0.25, sourceY - top);
   const config = BUBBLE_SIZE_CLASSES[sizeClass];
   const speed = sampleRange(seed, 21, config.speed[0], config.speed[1])
@@ -277,50 +287,54 @@ function fishExhaleRecords(state) {
   return records;
 }
 
-// A press on the sand knocks trapped air loose. It is an impulse effect - the
-// water was disturbed there - so it asks the impulse what it touched rather
-// than re-deriving it from a global reaction's coordinates.
-function touchBubbleRecords(state) {
+// A press on the sand knocks trapped air loose - and the air outlives the
+// press. This used to read the substrate impulse directly, which meant the
+// burst existed for exactly as long as the water was moving: three seconds, at
+// the end of which every bubble vanished in mid-water. It also meant the burst
+// could be *marked* investigable and never be investigated, because every fish
+// that could have gone to look at it was busy answering the press that made it
+// and was still recovering when the last bubble disappeared. That is the dead
+// end the plan names, and this is the repair: the release is an environmental
+// stimulus of its own (see `chainEnvironmentStimuli`), it ages on its own
+// clock, and the bubbles finish their arc long after the finger has gone.
+const SUBSTRATE_RELEASE_SPEED = 1.65;
+// How far a pocket of gas shaken out of the gravel gets. It is not a lungful:
+// it rises a few cells, thins, and goes, which is the pop the renderer already
+// draws.
+const SUBSTRATE_RELEASE_RISE = [4.2, 7.4];
+
+function substrateReleaseRecords(state) {
   const records = [];
-  for (const impulse of state.impulses ?? []) {
-    if (impulse.contact !== "substrate") continue;
+  for (const release of environmentStimuli(state, "substrate-release")) {
     // How hard the water was hit decides how much it lifts. A tap is a full
-    // strength impulse and raises the burst it always did; the gentler ring a
-    // released hold makes is a smaller puff, rather than a second full burst
+    // strength disturbance and raises the burst it always did; the gentler ring
+    // a released hold makes is a smaller puff, rather than a second full burst
     // that would read as another press.
-    const burst = 3 + Math.floor(sample01(impulse.seed, 60) * 4);
-    const count = Math.max(1, Math.round(burst * clamp(impulse.strength ?? 1, 0, 1)));
-    const sourceY = waterBottom(state, impulse.x);
-    const current = environmentalCurrent(state.seed, state.elapsedRealSeconds);
+    const burst = 3 + Math.floor(sample01(release.seed, 60) * 4);
+    const count = Math.max(1, Math.round(burst
+      * clamp((release.intensity ?? 0) / SUBSTRATE_RELEASE_INTENSITY, 0, 1)));
+    const sourceY = waterBottom(state, release.x);
     for (let index = 0; index < count; index += 1) {
-      const seed = mix32(impulse.seed ^ Math.imul(index + 1, 0xc2b2ae35));
-      const ageSeconds = impulse.ageSeconds - index * sampleRange(seed, 61, 0.12, 0.24);
-      if (ageSeconds < 0 || ageSeconds > impulse.durationSeconds) continue;
-      const speed = sampleRange(seed, 62, 0.5, 0.76);
-      records.push({
-        // Identity comes from the impulse, appearance from its seed. Two live
-        // disturbances can share a seed - it is derived from the aquarium and
-        // the place, so a drag that returns to the sand it started on is rung
-        // twice with the same one on purpose - and two scene objects sharing an
-        // id collapse in the damage calculator's maps, which leaves one burst's
-        // old pixels unrepainted.
-        id: `bubble:${impulse.id}:${index}`,
+      // Identity comes from the release, appearance from its seed. Two live
+      // releases can share a seed - it is derived from the aquarium and the
+      // place, so a drag that returns to the sand it started on is rung twice
+      // with the same one on purpose - and two scene objects sharing an id
+      // collapse in the damage calculator's maps, which leaves one burst's old
+      // pixels unrepainted. The release's own id carries the place.
+      const seed = mix32(release.seed ^ Math.imul(index + 1, 0xc2b2ae35));
+      const record = movingBubbleWorldRecord(state, {
+        id: `bubble:${release.id}:${index}`,
         seed,
-        kind: "touch",
-        phase: "rise",
+        sourceX: clamp(release.x + sampleSigned(seed, 63) * 0.65, 0.4, state.cols - 0.4),
+        sourceY,
+        ageSeconds: release.ageSeconds - index * sampleRange(seed, 61, 0.12, 0.24),
         sizeClass: sample01(seed, 65) < 0.74 ? "micro" : "normal",
-        speed,
-        progress: clamp(ageSeconds / impulse.durationSeconds, 0, 1),
+        speedMultiplier: SUBSTRATE_RELEASE_SPEED,
+        kind: "touch",
         distance: 1,
-        worldX: clamp(
-          impulse.x + sampleSigned(seed, 63) * 0.65
-            + current.primary * 0.12
-            + Math.sin(ageSeconds * sampleRange(seed, 64, 1.2, 2.2)) * 0.18,
-          0.4,
-          state.cols - 0.4,
-        ),
-        worldY: sourceY - ageSeconds * speed,
+        topY: sourceY - sampleRange(seed, 66, SUBSTRATE_RELEASE_RISE[0], SUBSTRATE_RELEASE_RISE[1]),
       });
+      if (record) records.push(record);
     }
   }
   return records;
@@ -332,32 +346,72 @@ function touchBubbleRecords(state) {
 // It is a deflection rather than a displacement - the impulse envelope rises and
 // falls, so the bubble drifts across and comes back to the line it was on.
 const BUBBLE_FLOW_CELLS = 1.6;
+// There is deliberately no vertical term here, and the reason is worth keeping.
+// Everything in this function is a *position offset* read off the live impulses
+// and nothing else, which is what makes it free: no bubble remembers having
+// been pushed. An offset must therefore return to zero when the impulse that
+// produced it expires - which sideways is exactly right (the bubble drifts
+// across and comes back to the line it was on) and vertically is a bubble
+// sinking. A 1.1-cell lift came back at over a cell a second against an ascent
+// of half that, so a shove made four frames of a bubble visibly falling.
+//
+// Expressing "the water hurried it" honestly means changing the *rate* of a
+// rise, and a rate change has to be integrated - the bubble would have to
+// remember what has been done to it, which is the per-object memory the
+// boundedness invariant exists to refuse. So a disturbed bubble is carried,
+// shaken and broken up, and it goes on rising at its own speed throughout.
+// A shove that is not going anywhere in particular still shakes. This is the
+// wobble it adds, in cells, on top of the two the bubble already carries.
+const BUBBLE_WOBBLE_CELLS = 0.34;
+// Pressure at which a rising bubble stops holding together. It does not pop -
+// popping is a memory, and no bubble here has one - it *disperses*: it thins,
+// breaks up and comes back when the water settles, which is the same event
+// without a per-bubble record to keep. Below this nothing visible happens, so
+// ordinary drifting water does not make the whole column shimmer.
+export const BUBBLE_DISPERSE_PRESSURE = 0.34;
 
 /**
- * The bubbles, pushed by any water that is moving.
+ * The bubbles, in water that is being disturbed.
  *
  * Applied here rather than in each of the four generators because every bubble
  * floats in the same water, and because a deflection that some kinds of bubble
  * felt and others did not would read as the aquarium having two currents.
+ *
+ * Everything is derived from the impulses as they stand this frame: nothing is
+ * remembered, so the whole response arrives with the disturbance and leaves
+ * with it.
  */
-function deflectedByFlow(state, records) {
-  if (!(state.impulses ?? []).some((impulse) => impulse.dirX || impulse.dirY)) return records;
+function disturbedByWater(state, records) {
+  if (!(state.impulses ?? []).length) return records;
   return records.map((record) => {
     const flow = impulseFlowAt(state, record.worldX, record.worldY);
-    if (!flow.x) return record;
+    const pressure = impulsePressureAt(state, record.worldX, record.worldY);
+    if (!flow.x && !flow.y && pressure <= 0) return record;
+    const shaken = Math.max(0, pressure - BUBBLE_DISPERSE_PRESSURE) / (1 - BUBBLE_DISPERSE_PRESSURE);
+    // Deterministic, and different for every bubble: a burst that wobbled in
+    // step would read as the whole column being tilted rather than shaken.
+    const wobble = shaken > 0
+      ? Math.sin(state.elapsedRealSeconds * 9.5 + sampleRange(record.seed, 67, 0, TAU))
+        * BUBBLE_WOBBLE_CELLS * shaken
+      : 0;
     return {
       ...record,
-      worldX: clamp(record.worldX + flow.x * BUBBLE_FLOW_CELLS, 0.4, state.cols - 0.4),
+      worldX: clamp(record.worldX + flow.x * BUBBLE_FLOW_CELLS + wobble, 0.4, state.cols - 0.4),
+      // How far this bubble is from holding together, 0..1. The renderer draws
+      // it smaller and thinner; nothing in the simulation reads it, so a
+      // dispersing bubble is still a bubble and a fish following one is not
+      // robbed of its target by water it happened to drift through.
+      disturbance: shaken,
     };
   });
 }
 
 export function createBubbleWorldRecords(state) {
-  return deflectedByFlow(state, [
+  return disturbedByWater(state, [
     ...streamBubbleRecords(state),
     ...isolatedBubbleRecords(state),
     ...fishExhaleRecords(state),
-    ...touchBubbleRecords(state),
+    ...substrateReleaseRecords(state),
   ]);
 }
 

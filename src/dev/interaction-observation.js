@@ -57,7 +57,12 @@ import {
   attentionPursuit,
   holdPhase,
 } from "../sim/attention.js";
-import { MAX_HOLD_SECONDS, impulseFlowAt } from "../sim/interaction-events.js";
+import {
+  MAX_ENVIRONMENT_STIMULI,
+  MAX_HOLD_SECONDS,
+  environmentStimuli,
+  impulseFlowAt,
+} from "../sim/interaction-events.js";
 import { GESTURES, PATH_SAMPLES } from "../sim/pointer-path.js";
 import { applyContact, applyRelease, applyTouch, createAquariumState } from "../sim/state.js";
 import { tick } from "../sim/tick.js";
@@ -653,6 +658,15 @@ export function observeInteraction(baseState, {
   const createdBubbles = new Set();
   const disturbedBubbles = new Set();
   const disturbedResidents = new Set();
+  // Phase 5. What the press left in the aquarium, and who went to look at it.
+  // The chain is the thing being measured: a consequence nobody can reach is
+  // the dead end the plan names, and a consequence everybody answers is the
+  // global summons Phase 2 removed, so both ends are counted.
+  const consequencesRaised = new Set();
+  const chainResponders = new Set();
+  let peakEnvironmentStimuli = 0;
+  let residentDisplacement = 0;
+  let driftDisplacement = 0;
 
   /**
    * What the aquarium currently makes of the contact.
@@ -1071,7 +1085,35 @@ export function observeInteraction(baseState, {
       const controlResidents = new Map(livingWorldRecords(control).map((record) => [record.id, record]));
       for (const record of livingWorldRecords(treatment)) {
         const twin = controlResidents.get(record.id);
-        if (!twin || Math.hypot(record.x - twin.x, record.y - twin.y) > 0.02) disturbedResidents.add(record.id);
+        if (!twin) continue;
+        const moved = Math.hypot(record.x - twin.x, record.y - twin.y);
+        if (moved > 0.02) disturbedResidents.add(record.id);
+        // Two different claims, so two different numbers: an animal that got
+        // out of the way, and matter that simply went where the water went.
+        if (record.kind === "tuft") driftDisplacement = Math.max(driftDisplacement, moved);
+        else residentDisplacement = Math.max(residentDisplacement, moved);
+      }
+    }
+
+    // What the water left behind, and who chose to go and look at it.
+    const consequences = environmentStimuli(treatment);
+    peakEnvironmentStimuli = Math.max(peakEnvironmentStimuli, consequences.length);
+    for (const consequence of consequences) consequencesRaised.add(consequence.id);
+    if (consequences.length) {
+      for (const fish of treatment.individuals) {
+        const target = fish.activity?.targetId;
+        if (typeof target === "string"
+          && consequences.some((consequence) => target.includes(consequence.id))) {
+          chainResponders.add(fish.seed);
+          continue;
+        }
+        // A surface trip has no id to carry, so it is attributed by where it is
+        // going: a fish heading for the column a break is in, while one is live.
+        if (fish.activity?.current === "surface-investigate"
+          && consequences.some((consequence) => consequence.source === "surface-break"
+            && Math.abs(consequence.x - (fish.activity.targetX ?? -99)) <= consequence.radius)) {
+          chainResponders.add(fish.seed);
+        }
       }
     }
 
@@ -1157,6 +1199,18 @@ export function observeInteraction(baseState, {
       bubblesCreated: createdBubbles.size,
       bubblesDisturbed: disturbedBubbles.size,
       residentsAffected: disturbedResidents.size,
+      // Phase 5's chain, in four numbers: what the press left behind, how many
+      // of those the aquarium was ever holding at once, how far a resident got
+      // out of the way, and how far the water carried something that has no say
+      // in the matter.
+      consequencesRaised: consequencesRaised.size,
+      peakConsequences: peakEnvironmentStimuli,
+      consequenceCap: MAX_ENVIRONMENT_STIMULI,
+      // The gate item. A consequence nobody can reach is the dead end; a
+      // consequence everybody answers is a summons.
+      chainResponders: chainResponders.size,
+      residentDisplacement: round(residentDisplacement, 3),
+      driftDisplacement: round(driftDisplacement, 3),
     },
     // The hold, or a record that there was not one. `seconds` is what the
     // aquarium actually held for, not what the gesture asked for: a press that
@@ -1710,6 +1764,65 @@ export const INTERACTION_SCENARIOS = Object.freeze([
           : swipe(left, right, { at: 1 + index * 1.2, seconds: 0.3 });
       }),
     ),
+  }),
+  /* ---------------------------------------------------------------- *
+   * Phase 5: what the press does to the aquarium rather than to the fish
+   * ---------------------------------------------------------------- */
+  // The chain scenario. A press on the sand lifts a cloud of silt and the air
+  // trapped under it, the cloud settles in a few seconds, the burst goes on
+  // rising for another quarter of a minute, and that is long enough for a fish
+  // to finish answering the press and go to look at what it did. Watched long
+  // enough for all of that, because the whole claim is about what happens after
+  // the disturbance is over.
+  Object.freeze({
+    id: "substrate-release",
+    label: "Press on the sand, watched out",
+    context: "stocked",
+    observeSeconds: 26,
+    describe: "A tap on the sand and the quarter of a minute of consequences it leaves.",
+    anchor: (state) => ({ x: state.cols * 0.38, y: substrateTapY(state, state.cols * 0.38) }),
+    gesture: (point) => tap(point.x, point.y, { at: 1 }),
+  }),
+  // The surface, which had no local response at all before Phase 5. A press
+  // as high as a viewer can reach breaks the water there and nowhere else.
+  Object.freeze({
+    id: "waterline-tap",
+    label: "Tap at the waterline",
+    context: "stocked",
+    observeSeconds: 14,
+    describe: "A tap just under the surface: the water breaks locally and settles.",
+    anchor: (state) => ({ x: state.cols * 0.55, y: WATERLINE_ROWS }),
+    gesture: (point) => tap(point.x, point.y, { at: 1 }),
+  }),
+  // A finger drawn the length of the sand: the gesture most able to raise
+  // consequences, because every wake it leaves is on the substrate. It is here
+  // to be counted rather than admired - the caps are the claim.
+  Object.freeze({
+    id: "sand-drag",
+    label: "Drag along the sand",
+    context: "stocked",
+    observeSeconds: 24,
+    describe: "A slow drag the length of the substrate, then twenty seconds of settling.",
+    anchor: (state) => ({ x: state.cols * 0.2, y: substrateTapY(state, state.cols * 0.2) }),
+    gesture: (point, state) => drag(
+      [point, { x: state.cols * 0.8, y: substrateTapY(state, state.cols * 0.8) }],
+      { at: 1, seconds: 3 },
+    ),
+  }),
+  // Beside a small resident. A shrimp bolts and comes back; a snail only pulls
+  // in. Neither is promoted into an agent by it, which is the point.
+  Object.freeze({
+    id: "resident-tap",
+    label: "Tap beside a shrimp",
+    context: "stocked",
+    observeSeconds: 22,
+    describe: "A tap in the water a shrimp is sitting in.",
+    anchor: (state) => {
+      const shrimp = livingWorldRecords(state).find((record) => record.kind === "shrimp");
+      const x = clamp(shrimp.x + 1, 2, state.cols - 2);
+      return { x, y: substrateTapY(state, x) };
+    },
+    gesture: (point) => tap(point.x, point.y, { at: 1 }),
   }),
   // Through two fish that are already busy with each other. A chase is the
   // liveliest thing the aquarium does on its own, and the swipe must read

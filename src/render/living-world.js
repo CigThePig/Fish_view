@@ -1,9 +1,14 @@
 import { driftwoodPath, habitatState, livingWorldRecords } from '../sim/living-world.js';
 import { groundY, meadowDepth, woodDepth } from '../sim/habitat-depth.js';
+import { impulseFlowAt } from '../sim/interaction-events.js';
 import { worldLayer, laneForDepth } from './depth.js';
 import { sample01, sampleRange } from '../sim/prng.js';
 import { mixColor } from './palette.js?v=horizontal-20260909';
 import { addGlyphObject, positionedGlyph } from './scene.js?v=horizontal-20260909';
+
+// How far a speck of dust is carried by water that is moving. A little more
+// than a tuft, because a speck is smaller than anything else in the tank.
+const DUST_FLOW_CELLS = 2.6;
 
 export function drawLivingWorld(builder, state, palette, metrics) {
   const habitat = habitatState(state);
@@ -72,16 +77,24 @@ export function drawLivingWorld(builder, state, palette, metrics) {
   const records = livingWorldRecords(state);
   for (const r of records) {
     let glyphs;
+    // How much of this animal is currently put away. A snail pulls its foot
+    // and its eye-stalk in; a shrimp tucks its legs under and stretches out.
+    // Both are read off the record's own alarm, which came off the impulses
+    // and is gone the moment the water is still again.
+    const alarm = r.alarm ?? 0;
     if (r.kind === 'snail') {
       const shell = mixColor('#c39962', '#51402a', palette.night);
       glyphs = [glyph('@', r.x, r.y - 0.14, shell, 0.76, 0.57),
-        glyph('_', r.x + r.facing * 0.30, r.y + 0.10, wood, 0.8, 0.5),
-        glyph('"', r.x + r.facing * 0.63, r.y - 0.07 + r.pulse * 0.02, shell, 0.32)];
+        glyph('_', r.x + r.facing * 0.30 * (1 - alarm * 0.7), r.y + 0.10, wood, 0.8 - alarm * 0.34, 0.5)];
+      // The eye-stalk is the first thing in and the last thing out.
+      if (alarm < 0.55) {
+        glyphs.push(glyph('"', r.x + r.facing * 0.63 * (1 - alarm), r.y - 0.07 + r.pulse * 0.02, shell, 0.32));
+      }
     } else if (r.kind === 'shrimp') {
       const color = mixColor('#c8917b', '#493323', palette.night);
-      glyphs = [glyph(r.facing > 0 ? '>' : '<', r.x, r.y, color, 0.6, 0.45),
-        glyph('=', r.x - r.facing * 0.44, r.y + 0.06, color, 0.55, 0.38),
-        glyph('v', r.x - r.facing * 0.15, r.y + 0.20, wood, 0.37, 0.3),
+      glyphs = [glyph(r.facing > 0 ? '>' : '<', r.x, r.y, color, 0.6 + alarm * 0.16, 0.45 - alarm * 0.1),
+        glyph('=', r.x - r.facing * (0.44 + alarm * 0.16), r.y + 0.06, color, 0.55, 0.38),
+        glyph('v', r.x - r.facing * 0.15, r.y + 0.20 - alarm * 0.12, wood, 0.37 * (1 - alarm * 0.6), 0.3),
         glyph(r.facing > 0 ? '/' : '\\', r.x + r.facing * 0.4, r.y - 0.12, color, 0.46, 0.3)];
     } else {
       const color = mixColor(palette.waterBands[2], palette.plants.growthTip, r.visibility * 0.8);
@@ -95,8 +108,17 @@ export function drawLivingWorld(builder, state, palette, metrics) {
   // Sparse dust catches the light in the water; slow, depth-separated drift.
   for (let i = 0; i < 10; i++) {
     const t = state.elapsedRealSeconds;
-    const x = sampleRange(state.seed, 12300 + i, 1, state.cols - 1) + Math.sin(t * 0.08 + i) * 0.65;
-    const y = 2 + ((sampleRange(state.seed, 12400 + i, 0, state.rows - 5) + t * 0.035) % (state.rows - 5));
+    const driftX = sampleRange(state.seed, 12300 + i, 1, state.cols - 1) + Math.sin(t * 0.08 + i) * 0.65;
+    const driftY = 2 + ((sampleRange(state.seed, 12400 + i, 0, state.rows - 5) + t * 0.035) % (state.rows - 5));
+    // Dust has no weight and no opinion either. Ten specks carried by a drag
+    // are the cheapest picture of a current this aquarium can draw - ten glyphs
+    // that already exist, moved. Sideways only, for the same reason the tufts
+    // and the bubbles are: a stateless vertical offset springs back when the
+    // impulse expires, and a speck rising against the current says the opposite
+    // of what the current did.
+    const flow = impulseFlowAt(state, driftX, driftY);
+    const x = Math.max(0.4, Math.min(state.cols - 0.4, driftX + flow.x * DUST_FLOW_CELLS));
+    const y = driftY;
     addGlyphObject(builder, { id: `dust:${i}`, layer: worldLayer(sampleRange(state.seed, 12500 + i, 0.05, 0.95)),
       glyphs: [glyph('.', x, y, mixColor(palette.waterBands[3], palette.ambient, 0.5), 0.45)] });
   }

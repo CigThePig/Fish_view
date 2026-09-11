@@ -1,4 +1,11 @@
-# Phase 5 progress — water feedback and responsive plants
+# Phase 5, first slice — water feedback and responsive plants
+
+> **Superseded for the phase gate.** This report is the record of the first of
+> Phase 5's two slices and its FAIL below was correct at the time. The rest of
+> the phase — sections 11.2–11.7, the environmental responses and the causal
+> chains — is in
+> [phase 5 — environmental interaction and causal chains](phase-5-environment-and-chains.md),
+> which passes the gate.
 
 **Branch:** `codex/water-touch-and-plant-response` · **Baseline:** `83fa51d` (merged Phase 4) · **Date:** 2026-09-11
 
