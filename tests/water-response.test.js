@@ -4,7 +4,12 @@ import { stockedAquarium } from "./support/aquarium.js";
 import { posePlant } from "../src/sim/plants.js";
 import { createImpulse, MAX_IMPULSES } from "../src/sim/interaction-events.js";
 import { render } from "../src/render/render.js";
-import { MAX_WATER_SPANS_PER_IMPULSE } from "../src/render/water-impulses.js";
+import { mixColor, scenePalette } from "../src/render/palette.js";
+import {
+  MAX_WATER_SPANS_PER_IMPULSE,
+  waterBandIndexAtY,
+  waterImpulseGeometry,
+} from "../src/render/water-impulses.js";
 
 test("local water bends a grown canopy visibly, recoils, and leaves its root fixed", () => {
   const base = stockedAquarium({ seed: 5 });
@@ -57,4 +62,21 @@ test("water crests are bounded raster marks, fade out, and yield to inhabitants"
       .map((entry) => entry.layer)));
   }
   assert.equal(sceneAt(3.2).objects.filter((object) => object.id.startsWith("reaction:ripple:")).length, 0);
+});
+
+test("deep water crests fade toward the same band as the surrounding background", () => {
+  const base = stockedAquarium({ seed: 5 });
+  const impulse = createImpulse({ id: "deep-band", x: 30, y: 15.5, ageSeconds: 0.4 });
+  const palette = scenePalette(base);
+  const shape = waterImpulseGeometry(impulse);
+
+  assert.equal(waterBandIndexAtY(base, shape.y, palette.waterBands.length), 5,
+    "the lower water column belongs to the deepest background band");
+
+  const scene = render({ ...base, impulses: [impulse] });
+  const crest = scene.objects.find((object) => object.id === "reaction:ripple:deep-band");
+  assert.ok(crest?.fill.length > 0);
+  const expected = mixColor(palette.waterBands[5], palette.ambient, shape.visibility);
+  assert.ok(crest.fill.every((span) => span.color === expected),
+    "crest visibility must blend out from the background band under the impulse");
 });
