@@ -52,6 +52,7 @@
  */
 
 import { TOUCH_FLOOR_ROWS } from "./config.js";
+import { substrateSurfaceY, waterSurfaceY } from "./environment.js";
 import { GESTURES, SWIPE_ENTER_SPEED, createPointerPath, visualDistance } from "./pointer-path.js";
 import { mix32 } from "./prng.js";
 
@@ -261,6 +262,13 @@ export function dominantStimulus(state) {
   let best = null;
   let bestSalience = 0;
   for (const stimulus of state.stimuli ?? []) {
+    // The aquarium's own events are not what the aquarium is attending to.
+    // A cloud of silt is something a fish may choose to go and look at; it is
+    // not a disturbance the school drifts at and it is not what a hand-posed
+    // responder with no record of its own falls back to. Leaving them out here
+    // is what keeps a press reading exactly as it did before there were
+    // consequences.
+    if (isEnvironmentStimulus(stimulus)) continue;
     const salience = stimulusSalience(stimulus);
     const wins = salience > bestSalience
       || (best && salience === bestSalience && (stimulus.sequence ?? 0) > (best.sequence ?? 0));
@@ -302,6 +310,11 @@ export function createStimulus({
   pointerY = y,
   // Which press this was, for ordering events that are otherwise equal.
   sequence = 0,
+  // Deterministic variation for the effects an event owns. A press does not
+  // need one - what a fish makes of it comes from the fish - but an
+  // environmental event does: the bubbles a disturbed patch of sand lets go of
+  // have to be the same bubbles every time that patch is disturbed.
+  seed = 0,
   // The hold, in three numbers and two flags. `held` is a finger currently on
   // the glass; `holdSeconds` is how long it has been there, bounded by
   // MAX_HOLD_SECONDS; `staleSeconds` is how long since the gesture last said so,
@@ -345,6 +358,7 @@ export function createStimulus({
     durationSeconds,
     context,
     sequence,
+    seed,
     held,
     holdSeconds: clamp(holdSeconds, 0, MAX_HOLD_SECONDS),
     staleSeconds,
@@ -692,6 +706,190 @@ export function registerWake(state, { x, y, dirX, dirY, strength, contact = "wat
     return Object.freeze((state.impulses ?? []).map((entry, index) => (index === existing ? impulse : entry)));
   }
   return admit(state.impulses ?? [], impulse, MAX_IMPULSES, impulseStrength).list;
+}
+
+/* ------------------------------------------------------------------ *
+ * The chain: what the water does next
+ * ------------------------------------------------------------------ */
+
+/*
+ * An impulse is water being disturbed, and a disturbance in a real tank leaves
+ * something behind it: sand lifted off the bottom and the air that was trapped
+ * under it, or a patch of surface still breaking a second after the finger has
+ * gone. Those are not the finger any more - they are the aquarium - and they
+ * are the first events here that nobody outside the glass made.
+ *
+ * They are **stimuli**, because the only thing that separates them from a press
+ * is where they came from: they have a position, an intensity, a radius and a
+ * life, inhabitants may notice them or not, and nothing is pushed by them. A
+ * fish that comes to nose at the bubbles a press knocked out of the gravel has
+ * answered the aquarium rather than the viewer, which is the whole of what a
+ * causal chain is.
+ *
+ * Three rules keep a chain from becoming a storm, and they are the reason this
+ * is a dozen lines rather than an event system:
+ *
+ * **One generation.** Only an impulse raises one of these, and an environmental
+ * stimulus raises nothing at all. There is no path by which a consequence can
+ * have consequences, so the depth of any chain is exactly one.
+ *
+ * **Its own slots.** At most MAX_ENVIRONMENT_STIMULI of the MAX_STIMULI slots
+ * hold environmental events, and a chain that cannot find room among its own
+ * kind simply does not happen. A press can evict a consequence; a consequence
+ * can never evict a press.
+ *
+ * **Raised once, then left alone.** The identity comes from the impulse that
+ * raised it and the place it happened, so a finger drumming on the same shelf
+ * of sand stirs the cloud that is already there rather than stacking clouds,
+ * and a wake slot reused at the far end of the tank raises a new one there
+ * rather than teleporting the old one. Once raised it ages on its own clock:
+ * the disturbance that made it is over in a second and the sand it lifted is
+ * not.
+ */
+
+export const ENVIRONMENT_SOURCES = Object.freeze(["substrate-release", "surface-break"]);
+
+// The sub-cap. Three leaves half the list for the presses that caused them,
+// which is two more contacts than one viewer has fingers on the primary
+// pointer, and it is what makes "a consequence never costs a press" checkable.
+export const MAX_ENVIRONMENT_STIMULI = 3;
+
+// Sand lifted off the bottom, and the air that was trapped under it. It lives
+// long after the press that freed it, because that is how long the bubbles take
+// to rise and dissolve - and because a burst that vanished with the impulse
+// could be *marked* investigable without ever being investigable, which is the
+// dead end this repairs. Nothing here grows with it: it is one event, with one
+// age, and the burst is reconstructed from its seed every frame.
+export const SUBSTRATE_RELEASE_SECONDS = 18;
+export const SUBSTRATE_RELEASE_RADIUS_CELLS = 11;
+export const SUBSTRATE_RELEASE_INTENSITY = 0.46;
+
+// Water still breaking where something went in. Shorter, because a surface
+// settles quickly, and weaker, because it is a patch of chop rather than a
+// hand on the glass.
+export const SURFACE_BREAK_SECONDS = 4.5;
+export const SURFACE_BREAK_RADIUS_CELLS = 9;
+export const SURFACE_BREAK_INTENSITY = 0.4;
+// How close to the waterline the water has to be disturbed to break it. A press
+// is clamped to WATERLINE_ROWS, which is over a row below the swell, so this is
+// wide enough that the highest press a viewer can make reaches the surface.
+export const SURFACE_BREAK_ROWS = 1.6;
+
+// Below this a disturbance is too faint to leave anything behind. It is read
+// off the impulse's nominal amplitude rather than its envelope, so a chain
+// starts with the disturbance rather than a third of a second into it.
+export const CHAIN_MINIMUM_STRENGTH = 0.2;
+
+/** Whether this stimulus is the aquarium's own doing rather than a viewer's. */
+export function isEnvironmentStimulus(stimulus) {
+  return ENVIRONMENT_SOURCES.includes(stimulus?.source);
+}
+
+/** The live environmental events, all of them or of one kind. */
+export function environmentStimuli(state, source = null) {
+  return (state.stimuli ?? []).filter((entry) => isEnvironmentStimulus(entry)
+    && (source === null || entry.source === source));
+}
+
+// Identity: which disturbance raised it, and where. The place is carried by the
+// impulse's own seed, which comes from the aquarium and the column rather than
+// from the sequence number - so the three wake slots, which are reused every
+// few cells, raise a new cloud when they move and refresh the same one when
+// they do not.
+function chainId(source, impulse) {
+  return `${source}:${impulse.id}:${(impulse.seed ?? 0) >>> 0}`;
+}
+
+function substrateRelease(state, impulse) {
+  return createStimulus({
+    id: chainId("substrate-release", impulse),
+    source: "substrate-release",
+    sequence: impulse.sequence ?? 0,
+    x: impulse.x,
+    // The sand itself, not the height the water was disturbed at: a drag along
+    // the bottom lifts the floor it passed over.
+    y: substrateSurfaceY(state, impulse.x),
+    intensity: SUBSTRATE_RELEASE_INTENSITY * clamp(impulse.strength, 0, 1),
+    radius: SUBSTRATE_RELEASE_RADIUS_CELLS,
+    durationSeconds: SUBSTRATE_RELEASE_SECONDS,
+    context: "substrate",
+    seed: mix32((impulse.seed ?? 0) ^ 0x9e3779b1),
+  });
+}
+
+function surfaceBreak(state, impulse) {
+  return createStimulus({
+    id: chainId("surface-break", impulse),
+    source: "surface-break",
+    sequence: impulse.sequence ?? 0,
+    x: impulse.x,
+    y: waterSurfaceY(state, impulse.x),
+    intensity: SURFACE_BREAK_INTENSITY * clamp(impulse.strength, 0, 1),
+    radius: SURFACE_BREAK_RADIUS_CELLS,
+    durationSeconds: SURFACE_BREAK_SECONDS,
+    context: "surface",
+    seed: mix32((impulse.seed ?? 0) ^ 0x85ebca6b),
+  });
+}
+
+/**
+ * Add one environmental event, without ever spending a press's slot.
+ *
+ * An event already in the list is left exactly as it is - it is ageing, and the
+ * disturbance that raised it saying so again does not make it newer.
+ */
+function admitEnvironment(list, candidate) {
+  if (list.some((entry) => entry.id === candidate.id)) return list;
+  const environment = list.filter(isEnvironmentStimulus);
+  if (environment.length < MAX_ENVIRONMENT_STIMULI && list.length < MAX_STIMULI) {
+    return Object.freeze([...list, candidate]);
+  }
+  if (!environment.length) return list;
+  let faintest = environment[0];
+  for (const entry of environment) {
+    if (stimulusSalience(entry) < stimulusSalience(faintest)) faintest = entry;
+  }
+  return Object.freeze(list.map((entry) => (entry === faintest ? candidate : entry)));
+}
+
+/**
+ * What the water currently being disturbed has left in the aquarium.
+ *
+ * Called once a frame from the tick, against the events as they stand after
+ * ageing, and it is the only thing that creates an environmental stimulus.
+ * Deterministic, idempotent and bounded: the same impulses produce the same
+ * list, running it twice changes nothing, and it can never return more than
+ * MAX_ENVIRONMENT_STIMULI events of its own.
+ */
+export function chainEnvironmentStimuli(state, { stimuli, impulses }) {
+  let list = stimuli ?? Object.freeze([]);
+  for (const impulse of impulses ?? []) {
+    if ((impulse.strength ?? 0) < CHAIN_MINIMUM_STRENGTH) continue;
+    if (impulse.contact === "substrate") list = admitEnvironment(list, substrateRelease(state, impulse));
+    if (impulse.y <= waterSurfaceY(state, impulse.x) + SURFACE_BREAK_ROWS) {
+      list = admitEnvironment(list, surfaceBreak(state, impulse));
+    }
+  }
+  return list;
+}
+
+/**
+ * How hard the water is being pushed at a point, whichever way it is going.
+ *
+ * The companion to `impulseFlowAt` for everything that is shaken rather than
+ * carried: a bubble breaking up in a shove, a shrimp bolting out of one, a
+ * snail pulling in. It is the strongest single disturbance rather than their
+ * sum, so a point inside two impulses is not disturbed twice as hard as
+ * physics allows.
+ */
+export function impulsePressureAt(state, x, y) {
+  let pressure = 0;
+  for (const impulse of state.impulses ?? []) {
+    const distance = visualDistance(x - impulse.x, y - impulse.y);
+    if (distance >= impulse.radius) continue;
+    pressure = Math.max(pressure, (1 - distance / impulse.radius) * impulseStrength(impulse));
+  }
+  return pressure;
 }
 
 /**

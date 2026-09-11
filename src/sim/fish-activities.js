@@ -15,7 +15,12 @@ import {
   holdPhase,
   shapeTargetForAttention,
 } from "./attention.js";
-import { dominantStimulus } from "./interaction-events.js";
+import {
+  dominantStimulus,
+  environmentStimuli,
+  perceivesStimulus,
+  stimulusSalience,
+} from "./interaction-events.js";
 import {
   MAX_FISH_PITCH_DEGREES,
   forageActivity,
@@ -387,6 +392,15 @@ function sizeInterest(sizeClass) {
   return 0.08;
 }
 
+// What a burst of air shaken out of the gravel is worth against the columns
+// that have been rising all day. It is the freshest thing in the tank and the
+// only one that was not there a moment ago, and without an edge of some kind
+// the twenty ordinary bubbles always outvote it and the released burst is
+// investigable in name only - which is the dead end section 11.2 names. It is
+// an edge rather than a summons: the fish still has to be exploring, still has
+// to be within reach, and a fish with no taste for bubbles still ignores it.
+const RELEASED_BUBBLE_INTEREST = 0.62;
+
 function selectBubbleTarget(fish, state, traits, affinities, bubbles) {
   const radius = Math.min(state.cols * 0.38, 18);
   let best = null;
@@ -405,6 +419,7 @@ function selectBubbleTarget(fish, state, traits, affinities, bubbles) {
     const score = sizeInterest(bubble.sizeClass) * 0.48
       + affinities.bubble * 0.24
       + socialProof
+      + (bubble.kind === "touch" ? RELEASED_BUBBLE_INTEREST : 0)
       - distance / radius * 0.46
       - crowding * 0.17;
     if (!best || score > best.score || (score === best.score && bubble.id < best.bubble.id)) {
@@ -412,6 +427,35 @@ function selectBubbleTarget(fish, state, traits, affinities, bubbles) {
     }
   }
   return best;
+}
+
+// What a patch of surface still breaking is worth to a fish that can see it.
+// Enough that a surface-inclined fish goes, not so much that the whole upper
+// half of the cast turns into an audience.
+const SURFACE_BREAK_INTEREST = 0.5;
+
+// How far a grazing fish's patch is pulled onto a fresh cloud of silt, at the
+// moment the water is disturbed and before the cloud settles. Under one, so the
+// route sweeps rather than parks.
+const SILT_FORAGE_PULL = 0.85;
+
+/** The nearest live consequence of the given kind, or null. */
+function nearestConsequence(state, fish, source) {
+  let best = null;
+  for (const stimulus of environmentStimuli(state, source)) {
+    if (!perceivesStimulus(fish, stimulus)) continue;
+    const distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y);
+    if (!best || distance < best.distance) best = { ...stimulus, distance };
+  }
+  return best;
+}
+
+/** How strongly that consequence reaches this fish, 0..1: near, and still new. */
+function consequenceReach(state, fish, source) {
+  const stimulus = nearestConsequence(state, fish, source);
+  if (!stimulus) return 0;
+  return clamp(1 - stimulus.distance / Math.max(1, stimulus.radius), 0, 1)
+    * clamp(stimulusSalience(stimulus) / Math.max(0.01, stimulus.intensity), 0, 1);
 }
 
 export function preferredCompanion(fish, index, state, traits = traitsFromSeed(fish.seed, fish.history)) {
@@ -641,11 +685,23 @@ function activityChoices(fish, index, state, {
       const offset = sampleRange(fish.seed, 2401, 0, period);
       const cycle = positiveModulo(state.elapsedRealSeconds + offset, period) / period;
       const window = 0.06 + traits.curiosity * 0.07 + affinities.surface * 0.06;
-      if (cycle <= window) {
-        const point = waypointFor(fish, index, state, traits, affinities, "surface");
+      // Water still breaking overhead opens the window that otherwise comes
+      // round about once a minute and a half. A fish does not have to be due a
+      // trip to the surface to notice one being disturbed - that is the whole
+      // of the chain - and it still has to want to go.
+      const broken = nearestConsequence(state, fish, "surface-break");
+      const reach = broken ? consequenceReach(state, fish, "surface-break") : 0;
+      // Seeing it is what opens the trip; how far into the patch the fish is
+      // decides only how much it wants to go. A fish exactly on the edge of the
+      // break can still see it.
+      if (cycle <= window || broken) {
+        const point = broken
+          ? { x: broken.x, y: surfaceSafeY(fish, state, broken.x) }
+          : waypointFor(fish, index, state, traits, affinities, "surface");
         choices.push(choice(
           ACTIVITIES.surfaceInvestigate,
           0.24 + affinities.surface * 0.86 + traits.curiosity * 0.18
+            + reach * SURFACE_BREAK_INTEREST
             + continuity(ACTIVITIES.surfaceInvestigate) + jitter(ACTIVITIES.surfaceInvestigate),
           { targetType: "surface", targetX: point.x, targetY: point.y },
         ));
@@ -1158,9 +1214,18 @@ export function resolveActivityTarget(fish, index, state, activity, {
     );
     const searchPhase = (activity.ageRealSeconds ?? 0) * (0.13 + traits.activity * 0.065)
       + sampleRange(fish.seed, 25, 0, TAU);
-    const patchCenter = state.cols * (
+    const sweptCenter = state.cols * (
       0.5 + 0.34 * Math.sin(state.elapsedRealSeconds / 97 + sampleRange(fish.seed, 26, 0, TAU))
     );
+    // A cloud of silt is a promise of something to eat, and a fish already
+    // working the bottom is the one the promise is for. Its patch leans toward
+    // a fresh disturbance and drifts back off it as the cloud settles - a lean
+    // rather than a summons: the route still sweeps, the fish still creeps, and
+    // a disturbance at the far end of the tank is simply somewhere else.
+    const patchCenter = sweptCenter + (nearestConsequence(state, fish, "substrate-release")
+      ? (nearestConsequence(state, fish, "substrate-release").x - sweptCenter)
+        * consequenceReach(state, fish, "substrate-release") * SILT_FORAGE_PULL
+      : 0);
     const routeX = clamp(patchCenter + Math.sin(searchPhase) * searchSpan, halfWidth, state.cols - halfWidth);
     const descentX = clamp(routeX, fish.x - 2.35, fish.x + 2.35);
     const recoveryScoot = forage.recovery * forage.scootDirection
@@ -1269,6 +1334,37 @@ function naturalCompletion(fish, activity, target, dwell) {
   return false;
 }
 
+/**
+ * What the press this fish just answered left in the water, if the fish would
+ * rather look at that than go back to what it was doing.
+ *
+ * The chain the plan asks for, and the only place in the simulation where an
+ * environmental event competes with an activity. Three things keep it from
+ * becoming a second summons:
+ *
+ * - it is asked once, at the end of a response, rather than every frame;
+ * - the fish has to be inside the consequence's own, much smaller radius; and
+ * - the answer comes from `selectActivity`, so the fish's ordinary utilities
+ *   decide it. A fish with no taste for bubbles resumes its thread, which is
+ *   the plan's "do not force a fish to investigate every touch bubble".
+ *
+ * Returns the activity only when the fish chose to go to the consequence, so
+ * the caller can fall through to ordinary recovery otherwise.
+ */
+function noticedConsequence(fish, index, state, context) {
+  const consequences = environmentStimuli(state);
+  if (!consequences.length) return null;
+  if (!consequences.some((stimulus) => perceivesStimulus(fish, stimulus))) return null;
+  const chosen = selectActivity(fish, index, state, context);
+  if (chosen.current === ACTIVITIES.bubbleInvestigate
+    && typeof chosen.targetId === "string"
+    && consequences.some((stimulus) => chosen.targetId.includes(stimulus.id))) return chosen;
+  if (chosen.current === ACTIVITIES.surfaceInvestigate
+    && consequences.some((stimulus) => stimulus.source === "surface-break"
+      && Math.abs(stimulus.x - chosen.targetX) <= stimulus.radius)) return chosen;
+  return null;
+}
+
 export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   const traits = context.traits ?? traitsFromSeed(fish.seed, fish.history);
   const affinities = context.affinities ?? affinitiesFromSeed(fish.seed);
@@ -1317,12 +1413,24 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   // switch being flipped. A fish that has finished looking goes back to what it
   // was doing, if that is still something it could be doing.
   if (previous.current === ACTIVITIES.touchReact) {
-    const resume = previousAttention?.resume ?? null;
-    const resumable = resume
-      && resume.current !== ACTIVITIES.touchReact
-      && activityMatchesBehavior(resume.current, fish.behavior?.current);
-    const resumed = resumable ? { ...resume, ageRealSeconds: 0 } : null;
-    if (resumed && resolve(resumed, null)) activity = resumed;
+    // One look around first. A fish that has just finished answering a press is
+    // standing in whatever the press left behind - the air it knocked out of
+    // the gravel, a patch of surface still breaking - and that is the one
+    // moment in the aquarium where a consequence is plainly in front of
+    // somebody. It is still a choice and not a summons: the ordinary utilities
+    // decide it, so a fish with no taste for bubbles picks its thread back up
+    // and only the fish that would have gone looking goes.
+    const noticed = noticedConsequence(fish, index, state, { ...context, traits, affinities });
+    if (noticed && resolve(noticed, null)) {
+      activity = noticed;
+    } else {
+      const resume = previousAttention?.resume ?? null;
+      const resumable = resume
+        && resume.current !== ACTIVITIES.touchReact
+        && activityMatchesBehavior(resume.current, fish.behavior?.current);
+      const resumed = resumable ? { ...resume, ageRealSeconds: 0 } : null;
+      if (resumed && resolve(resumed, null)) activity = resumed;
+    }
   }
 
   const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);

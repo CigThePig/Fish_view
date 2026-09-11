@@ -41,7 +41,9 @@ import {
   MAX_STIMULI,
   RELEASE_IMPULSE_SECONDS,
   RELEASE_IMPULSE_STRENGTH,
+  SUBSTRATE_RELEASE_SECONDS,
   TOUCH_STIMULUS_RADIUS_CELLS,
+  chainEnvironmentStimuli,
   createImpulse,
   createStimulus,
   heldStimulus,
@@ -672,11 +674,19 @@ test("a finger drawn through the clamped bands is not a stationary hold", () => 
 test("letting go of the sand lifts less than pressing it did", () => {
   const base = settled(5);
   const y = base.rows - 5;
+  // The burst belongs to the substrate release the impulse leaves behind, so
+  // the count is read off the release the chain derives from each impulse and
+  // then aged over the release's own, much longer, life.
   const raised = (impulse) => {
     const ids = new Set();
-    for (let age = 0; age < impulse.durationSeconds; age += 0.05) {
-      const state = { ...base, impulses: Object.freeze([createImpulse({ ...impulse, ageSeconds: age })]) };
-      for (const record of createBubbleWorldRecords(state)) {
+    const chained = chainEnvironmentStimuli(base, {
+      stimuli: [],
+      impulses: [createImpulse(impulse)],
+    }).filter((entry) => entry.source === "substrate-release");
+    assert.equal(chained.length, 1, "the sand was not disturbed at all");
+    for (let age = 0; age < SUBSTRATE_RELEASE_SECONDS; age += 0.05) {
+      const stimuli = chained.map((entry) => Object.freeze({ ...entry, ageSeconds: age }));
+      for (const record of createBubbleWorldRecords({ ...base, stimuli })) {
         if (record.kind === "touch") ids.add(record.id);
       }
     }
