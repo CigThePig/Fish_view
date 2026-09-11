@@ -27,7 +27,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 2 | Attention, response roles, contextual tap | Done | [phase 2](phase-2-attention-and-roles.md) |
 | 3 | Hold and persistent presence | Done | [phase 3](phase-3-hold-presence.md) |
 | 4 | Drag, swipe and local water impulse | Done | [phase 4](phase-4-drag-swipe.md) |
-| 5 | Environmental interaction and causal chains | Not started | — |
+| 5 | Environmental interaction and causal chains | In progress — water/plant slice complete | [phase 5 progress](phase-5-water-and-plants.md) |
 | 6 | Persistent fish–viewer relationship | Not started | — |
 | 7A | Flagship chase redesign | Not started | — |
 | 7B | Remaining behaviour readability pass | Not started | — |
@@ -35,6 +35,13 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+Phase 5 has started with the water and plant response. Tap/drag/swipe marks are
+now subdued raster crests rather than bright glyph rings. Local stems visibly
+bend with the pressure, recoil, and settle; a high touch no longer bends every
+plant beneath its horizontal position. Sections 11.2–11.7 of the plan still need
+work and validation before the complete Phase 5 gate can pass. See the
+[progress report](phase-5-water-and-plants.md) for the comparison and open work.
 
 Phase 4 gave the **motion in a gesture** meaning, and gave it by moving points
 rather than by moving fish. A finger drawn slowly is a point of interest that is
