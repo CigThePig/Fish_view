@@ -14,11 +14,12 @@ it. The cloud settles in a few seconds; the bubbles go on rising for another
 quarter of a minute, and that is long enough for a fish to finish answering the
 press and go and look at what the press did. A press near the waterline breaks
 the surface there and nowhere else. A shrimp sitting in disturbed water bolts
-and comes back; a snail pulls its foot in and sits down. Bubbles are hurried,
-pushed sideways and broken up by moving water and re-form when it settles. The
-tufts and specks of dust that drift through the tank are carried by a drag,
-which is the cheapest picture of a current this aquarium can draw. A grazing
-fish leans its patch onto a fresh cloud of silt.
+and comes back; a snail pulls its foot in and sits down. Bubbles are pushed
+sideways and broken up by moving water and re-form when it settles — never
+pushed under, for a reason worth reading. The tufts and specks of dust that
+drift through the tank are carried by a drag, which is the cheapest picture of
+a current this aquarium can draw. A grazing fish's graze line leans onto a
+fresh cloud of silt.
 
 None of it is remembered. Every response is a shape over the disturbance's own
 envelope, so the animal leaves and comes back without anything recording that it
@@ -187,7 +188,7 @@ and neither has a glow, a ring or a colour that is not already in the tank.
 | It is not a summons | The same runs: at most three of fifteen fish | same |
 | A chain is one generation deep, and idempotent | `chainEnvironmentStimuli` against its own output | `tests/environment-chains.test.js` |
 | A consequence never costs the viewer a press | A minute of dragging the sand; caps and the held stimulus | `tests/environment-chains.test.js` |
-| Bubbles are carried, hurried and broken up, and recover | Impulse applied and removed, records compared | `tests/environment-chains.test.js` |
+| Bubbles are carried and broken up, recover, and are never pushed under | Impulse applied and removed, records compared; the whole envelope walked frame by frame | `tests/environment-chains.test.js` |
 | A shrimp bolts and returns; a snail only pulls in | `livingWorldRecords` with and without an impulse | `tests/environment-chains.test.js` |
 | Drifting matter shows the current | Tuft displacement and dust object signatures | `tests/environment-chains.test.js` |
 | A grazing fish's graze line leans onto a fresh cloud | The production target resolver, same pose and frame, with and without the consequences | `tests/environment-chains.test.js`; `measure:environment` counterfactual |
