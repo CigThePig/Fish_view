@@ -341,20 +341,31 @@ around at the end of a response — the one moment a fish is actually standing i
 what the press did. Both are choices, not summonses: the ordinary utilities
 decide, and a fish with no taste for bubbles picks its thread back up.
 
+What there is of a consequence to *see* is one function per kind
+(`substrateSiltAmplitude`, `surfaceBreakAmplitude`), in the simulation, imported
+by both the renderer and activity selection, with `CONSEQUENCE_VISIBLE_AMPLITUDE`
+as the floor below which nothing is drawn and nothing may be acted on. A release
+outlives its own cloud by a long way — the air it freed is still rising — so the
+two readers have to agree by construction rather than by two constants happening
+to match.
+
 The rest of the environment reads the impulses directly and stores nothing.
 `impulsePressureAt` is the companion to `impulseFlowAt` for everything that is
 shaken rather than carried: bubbles are pushed sideways and broken up by it and
 recover when the water settles; a shrimp bolts and comes back; a snail only
-pulls in. A bubble is never pushed *under*: everything here is a position offset
+pulls in, and how hard and which way both come from the same impulse — the one
+supplying the most effective pressure, so a nearly spent wake cannot turn a
+shrimp into the press that alarmed it. Tufts and dust are carried sideways only,
+and a bubble is never pushed *under*: everything here is a position offset
 read off the live impulses, so it must return to zero when the impulse expires -
 sideways that is the drift back to the line it was on, and vertically it was
 four frames of a bubble visibly falling. Changing the *rate* of a rise would
 have to be integrated, and that is the per-object memory the boundedness
 invariant refuses. Every one of those is a shape over the disturbance's own
 envelope, which rises and falls, so the animal leaves and returns without
-anything remembering that it went. Tufts and dust are carried by `impulseFlowAt`
-— ten specks and two tufts that already existed, moved, which is the cheapest
-picture of a current this aquarium can draw.
+anything remembering that it went. Tufts and dust read the horizontal half of
+`impulseFlowAt` — ten specks and two tufts that already existed, moved sideways,
+which is the cheapest picture of a current this aquarium can draw.
 
 Reproduce it with `npm run measure:environment`, or watch it with
 `npm run observe:interaction -- --scenario=substrate-release,sand-drag`.

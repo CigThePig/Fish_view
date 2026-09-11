@@ -17,8 +17,8 @@ the surface there and nowhere else. A shrimp sitting in disturbed water bolts
 and comes back; a snail pulls its foot in and sits down. Bubbles are pushed
 sideways and broken up by moving water and re-form when it settles — never
 pushed under, for a reason worth reading. The tufts and specks of dust that
-drift through the tank are carried by a drag, which is the cheapest picture of
-a current this aquarium can draw. A grazing fish's graze line leans onto a
+drift through the tank are carried sideways by a drag, which is the cheapest
+picture of a current this aquarium can draw. A grazing fish's graze line leans onto a
 fresh cloud of silt.
 
 None of it is remembered. Every response is a shape over the disturbance's own
@@ -49,7 +49,11 @@ Production:
   "What a bubble may not do" below.
 - `src/sim/living-world.js`: shrimp escape hop, snail retraction, and tufts
   carried by `impulseFlowAt`. All three read the live impulses and store
-  nothing.
+  nothing. `alarmingImpulse` supplies both how hard and which way, from the same
+  disturbance — taking the magnitude from the strongest and the direction from
+  the geometrically nearest let a nearly spent wake hop a shrimp into the press
+  that had alarmed it. Tufts are carried sideways only, for the same reason the
+  bubbles are.
 - `src/sim/fish-activities.js`: the released burst carries
   `RELEASED_BUBBLE_INTEREST` in bubble selection; `noticedConsequence` gives a
   fish one look around at the end of a response; a grazing fish's **graze line**
@@ -59,8 +63,9 @@ Production:
 - `src/render/render.js`: `drawSubstrateSilt` and `drawSurfaceBreak`, one scene
   object each, drawn with the same grains and colours the feeding puff already
   uses and as marks on the swell rather than as a change to it.
-- `src/render/living-world.js`: the dust is carried too, and a startled resident
-  is drawn startled — a snail's eye-stalk goes in first and comes out last.
+- `src/render/living-world.js`: the dust is carried sideways too, and a startled
+  resident is drawn startled — a snail's eye-stalk goes in first and comes out
+  last.
 - `src/render/bubbles.js` draws a dispersing bubble smaller, thinner and with a
   fleck broken off it.
 
@@ -99,7 +104,8 @@ nothing is pushed by one.
 | Surface break life | `SURFACE_BREAK_SECONDS` = 6 s | `ageStimuli` |
 | Bubbles per release | 3–6, scaled by impulse strength | `substrateReleaseRecords` |
 | Silt grains per cloud | 9 | `drawSubstrateSilt` |
-| Silt cloud, lift to settled | `SILT_SECONDS` = 3.4 s | `drawSubstrateSilt` |
+| Silt cloud, lift to settled | `SUBSTRATE_SILT_SECONDS` = 3.4 s | `substrateSiltAmplitude` |
+| Below which nothing is drawn or acted on | `CONSEQUENCE_VISIBLE_AMPLITUDE` = 0.04 | both sides |
 | Surface marks per break | 9 | `drawSurfaceBreak` |
 
 Three structural rules, rather than tuned ones, are what make a chain explosion
@@ -132,6 +138,22 @@ Everything else the environment does — the bubbles, the shrimp, the snail, the
 tufts, the dust — is a pure function of the live impulses and the aquarium's own
 clock. No new array, no history, no per-object record, and nothing to reconcile
 after a reload.
+
+### One envelope, two readers
+
+A consequence has two lives and they are not the same length. A substrate
+release lasts eighteen seconds because the air it freed is still rising; the
+sand it lifted is back down in three and a half. So "how much of this is there
+to see" is a question the renderer asks (to stop drawing) and the simulation
+asks (so nothing steers at what is not there) — and the two must not be allowed
+to answer it differently.
+
+`substrateSiltAmplitude` and `surfaceBreakAmplitude` live in the simulation and
+both sides import them, with `CONSEQUENCE_VISIBLE_AMPLITUDE` as the floor below
+which the renderer stops and no inhabitant may act. Keeping them apart is how a
+grazing fish came to creep toward a cloud that had settled fourteen seconds
+earlier, and how an exploring fish could set out on a long trip toward a patch
+of surface whose marks the renderer had already suppressed.
 
 ### What a bubble may not do
 
@@ -219,23 +241,37 @@ chain for a fish that was working that patch of sand anyway.
 | Scenario | Consequences raised | Live at once (cap 3) | Fish that went to the burst | Fish whose graze line was pulled | Frames the burst was investigable |
 | --- | --- | --- | ---: | ---: | ---: |
 | Tap on the sand | 1/1/1/1 | 1/1/1/1 | 3/0/2/0 | 0/0/0/0 | 125/124/101/138 of 261 |
-| Drag along the sand | 3/3/3/3 | 3/3/3/3 | 3/0/1/1 | 0/2/1/0 | 133/119/107/121 of 241 |
-| Tap beside a shrimp | 1/1/1/1 | 1/1/1/1 | 0/0/1/1 | 0/2/1/0 | 110/96/100/127 of 221 |
+| Drag along the sand | 3/3/3/3 | 3/3/3/3 | 3/0/1/1 | 0/0/0/0 | 133/119/107/121 of 241 |
+| Tap beside a shrimp | 1/1/1/1 | 1/1/1/1 | 0/0/1/1 | 0/0/0/0 | 110/96/100/127 of 221 |
 | Tap at the waterline | 1/1/1/1 | 1/1/1/1 | — | — | — |
 | Drag through plants | 0/0/0/0 | 0/0/0/0 | 0 | 0 | 0 |
 | Tap in open water | 0/0/0/0 | 0/0/0/0 | 0 | 0 | 0 |
 
-Read it as written. The burst chain fires on three of the four seeds for a tap
-on the sand and on three of four for a drag, and never carries more than three
-of fifteen fish. The grazing chain fires on the two seeds that had a fish
-working the bottom near the cloud at all, pulling its graze line 0.15 – 0.42
-cells toward the disturbance; on the other two seeds nobody was foraging there,
-so there was nothing to pull. The surface trip is the rarest — one fish on one
-of the four seeds inside the observed window — and that is an honest limitation
-rather than a rounding: the fish has to be exploring, in reach, and choosing a
-new activity inside the six seconds the break lasts. The regression proves the
+Read it as written, including the column of zeroes.
+
+The **burst chain** fires on three of the four seeds for a tap on the sand and
+on three of four for a drag, and never carries more than three of fifteen fish.
+That is the chain this phase is built around and it is solidly evidenced.
+
+The **surface trip** is rare — one fish on one of the four seeds inside the
+observed window. The fish has to be exploring, in reach, and choosing a new
+activity inside the six seconds the break lasts. The regression proves the
 option is offered to every fish that can see a break and to none that cannot;
 the sweep says how often a fish then takes it.
+
+The **grazing lean fires in none of the 24 runs**, and the reason is worth
+stating exactly rather than rounding away. The lean is bounded by
+`routeLeadColumns` — the distance a creeping fish can actually cover this frame
+— so it can only change where a grazer is going when the sweep would otherwise
+have carried it somewhere else. Across the sweep there were 80 frames in which a
+grazing fish stood beside a *visible* cloud, and in every one of them its route
+was already pinned at the near edge of that window, heading for the cloud
+anyway. The counterfactual therefore correctly reports no redirection: nothing
+was redirected. The mechanism is real and measured — the regression drives the
+production target resolver and sees the line move 0.2 cells — but its evidence
+is a unit test rather than the unforced sweep, and it is the weakest of the
+three chains. An earlier draft of this report claimed it fired on every seed;
+that claim came from a metric that counted grazers standing near a cloud.
 
 A drag along the sand now raises **three** consequences where it used to report
 ten. The difference is not a smaller effect, it is the eviction defect: the
@@ -338,6 +374,15 @@ adds nothing to it and does not claim to have fixed it.
   optional chain ("only if visually useful"); making it one would be a second
   generation, and one generation is the rule that makes a storm structurally
   impossible. It was left out on purpose.
+- **The grazing lean is unit-tested, not observed.** See the chain table above:
+  it can only redirect a grazer whose sweep was carrying it elsewhere, and in
+  the sweep every grazer beside a visible cloud was already heading for it.
+  Widening it would mean letting the lean exceed the distance a creeping fish
+  can cover in a frame, which would turn a creep into a dart — the wrong trade.
+- **The silt's pull ends with the silt, at 3.4 s, not with the release at 18 s.**
+  A grazer is drawn to sand it can see has been disturbed. Once the cloud has
+  settled there is nothing to see, and a fish steering at an invisible point is
+  indistinguishable from a steering bug in a product with no UI.
 - **The three consequence slots are shared between the two kinds.** Three live
   surface breaks will refuse a substrate release until one of them expires, and
   the other way round. It is bounded and short — a break lasts six seconds — and
@@ -358,7 +403,7 @@ adds nothing to it and does not claim to have fixed it.
 | Interaction visibly affects more than fish | **Met** — sand, surface, bubbles, shrimp, snail, tufts, dust, and the plants from the first slice |
 | Effects remain local and bounded | **Met** — 3 environmental stimuli, silt ≤ 61 px, break ≤ 119 px, no new persistent state |
 | Environment settles naturally | **Met** — every consequence expires on its own clock, and the living-world records return identical once the water is still |
-| At least several production-reachable causal chains exist | **Met** — the released burst investigated, the cloud grazed, the surface trip opened, the drifting tuft carried into the existing inspection path; three of the four fire in the unforced sweep |
+| At least several production-reachable causal chains exist | **Met, but read the chain table** — the released burst investigated (3 of 4 seeds), the surface trip opened (1 of 4), the drifting tuft carried into the existing inspection path. The grazing lean is unit-tested but fires in none of the 24 unforced runs, for the reason given above. Two chains observed unforced, one more demonstrated on the production resolver |
 | Chains do not create recursive event storms | **Met** — one generation, structurally; the chain is idempotent and a consequence can never raise another |
 | Transient global repaint has not become normal | **Met** — zero full redraws in 87 sweep runs and 24 measured runs; mean damage +0.04 pp; background byte-identical |
 | Interaction captures make physical cause and effect obvious without UI | **Met** — see the close-up sheet; the sand lifts where the finger was and settles back into the floor |

@@ -112,10 +112,13 @@ export function drawLivingWorld(builder, state, palette, metrics) {
     const driftY = 2 + ((sampleRange(state.seed, 12400 + i, 0, state.rows - 5) + t * 0.035) % (state.rows - 5));
     // Dust has no weight and no opinion either. Ten specks carried by a drag
     // are the cheapest picture of a current this aquarium can draw - ten glyphs
-    // that already exist, moved.
+    // that already exist, moved. Sideways only, for the same reason the tufts
+    // and the bubbles are: a stateless vertical offset springs back when the
+    // impulse expires, and a speck rising against the current says the opposite
+    // of what the current did.
     const flow = impulseFlowAt(state, driftX, driftY);
     const x = Math.max(0.4, Math.min(state.cols - 0.4, driftX + flow.x * DUST_FLOW_CELLS));
-    const y = Math.max(1, Math.min(state.rows - 1, driftY + flow.y * DUST_FLOW_CELLS));
+    const y = driftY;
     addGlyphObject(builder, { id: `dust:${i}`, layer: worldLayer(sampleRange(state.seed, 12500 + i, 0.05, 0.95)),
       glyphs: [glyph('.', x, y, mixColor(palette.waterBands[3], palette.ambient, 0.5), 0.45)] });
   }

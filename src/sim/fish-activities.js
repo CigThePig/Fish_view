@@ -16,10 +16,13 @@ import {
   shapeTargetForAttention,
 } from "./attention.js";
 import {
+  CONSEQUENCE_VISIBLE_AMPLITUDE,
   dominantStimulus,
   environmentStimuli,
   perceivesStimulus,
   stimulusSalience,
+  substrateSiltAmplitude,
+  surfaceBreakAmplitude,
 } from "./interaction-events.js";
 import {
   MAX_FISH_PITCH_DEGREES,
@@ -450,12 +453,35 @@ function nearestConsequence(state, fish, source) {
   return best;
 }
 
-/** How strongly that consequence reaches this fish, 0..1: near, and still new. */
+/**
+ * How strongly that consequence reaches this fish, 0..1: near, and still there
+ * to be seen.
+ *
+ * "Still there" is the consequence's own visible envelope rather than its
+ * stimulus life, and the difference is the whole point. A substrate release
+ * lasts eighteen seconds because the air it freed is still rising; the sand it
+ * lifted is down again in three and a half. Scoring the lean on the release
+ * left a grazing fish creeping toward a cloud that had settled fourteen seconds
+ * earlier - steering at nothing, which is exactly what an aquarium with no UI
+ * cannot afford to have anything doing.
+ */
 function consequenceReach(state, fish, source) {
   const stimulus = nearestConsequence(state, fish, source);
   if (!stimulus) return 0;
   return clamp(1 - stimulus.distance / Math.max(1, stimulus.radius), 0, 1)
-    * clamp(stimulusSalience(stimulus) / Math.max(0.01, stimulus.intensity), 0, 1);
+    * consequenceAmplitude(stimulus);
+}
+
+/** What there is to see of this consequence, on the same envelope it is drawn on. */
+function consequenceAmplitude(stimulus) {
+  if (stimulus.source === "substrate-release") return substrateSiltAmplitude(stimulus);
+  if (stimulus.source === "surface-break") return surfaceBreakAmplitude(stimulus);
+  return clamp(stimulusSalience(stimulus) / Math.max(0.01, stimulus.intensity), 0, 1);
+}
+
+/** Whether a viewer could still see it, and therefore whether a fish may act on it. */
+function consequenceIsVisible(stimulus) {
+  return Boolean(stimulus) && consequenceAmplitude(stimulus) >= CONSEQUENCE_VISIBLE_AMPLITUDE;
 }
 
 export function preferredCompanion(fish, index, state, traits = traitsFromSeed(fish.seed, fish.history)) {
@@ -689,11 +715,14 @@ function activityChoices(fish, index, state, {
       // round about once a minute and a half. A fish does not have to be due a
       // trip to the surface to notice one being disturbed - that is the whole
       // of the chain - and it still has to want to go.
-      const broken = nearestConsequence(state, fish, "surface-break");
-      const reach = broken ? consequenceReach(state, fish, "surface-break") : 0;
+      const nearestBreak = nearestConsequence(state, fish, "surface-break");
       // Seeing it is what opens the trip; how far into the patch the fish is
       // decides only how much it wants to go. A fish exactly on the edge of the
-      // break can still see it.
+      // break can still see it - but a break the renderer has stopped drawing
+      // is not something anybody can see, and a fish setting out on a long trip
+      // toward water that is no longer broken is a fish answering nothing.
+      const broken = consequenceIsVisible(nearestBreak) ? nearestBreak : null;
+      const reach = broken ? consequenceReach(state, fish, "surface-break") : 0;
       if (cycle <= window || broken) {
         const point = broken
           ? { x: broken.x, y: surfaceSafeY(fish, state, broken.x) }
@@ -1249,7 +1278,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
       fish.x + tuning.routeLeadColumns,
     );
     const cloud = nearestConsequence(state, fish, "substrate-release");
-    const lean = cloud
+    const lean = consequenceIsVisible(cloud)
       ? Math.sign(cloud.x - fish.x) * consequenceReach(state, fish, "substrate-release")
         * SILT_FORAGE_PULL * tuning.routeLeadColumns
       : 0;

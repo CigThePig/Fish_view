@@ -763,6 +763,11 @@ export const MAX_ENVIRONMENT_STIMULI = 3;
 export const SUBSTRATE_RELEASE_SECONDS = 18;
 export const SUBSTRATE_RELEASE_RADIUS_CELLS = 11;
 export const SUBSTRATE_RELEASE_INTENSITY = 0.46;
+// How long the sand itself is up. The release outlives this by a long way -
+// the air it freed is still rising - but the *cloud* is a few seconds, and the
+// two have to be separable because they are different things to look at: the
+// bubbles are what a fish investigates, the silt is what a grazer is drawn to.
+export const SUBSTRATE_SILT_SECONDS = 3.4;
 
 // Water still breaking where something went in. Shorter, because a surface
 // settles quickly, and weaker, because it is a patch of chop rather than a
@@ -783,6 +788,40 @@ export const SURFACE_BREAK_ROWS = 1.6;
 // off the impulse's nominal amplitude rather than its envelope, so a chain
 // starts with the disturbance rather than a third of a second into it.
 export const CHAIN_MINIMUM_STRENGTH = 0.2;
+
+/*
+ * How much of a consequence there is to see, right now, 0..1.
+ *
+ * These live here rather than in the renderer because two different readers ask
+ * the question and they must not be allowed to disagree: the renderer asks so
+ * it can stop drawing, and the simulation asks so an inhabitant is not steering
+ * at something a viewer cannot see. Splitting them is how a fish came to spend
+ * fourteen seconds creeping toward a cloud that settled in three, and how a
+ * surface trip could open on a break whose marks the renderer had already
+ * suppressed. One function each, both sides import it.
+ */
+
+/** The silt, which lifts quickly and falls back into the floor. */
+export function substrateSiltAmplitude(release) {
+  const progress = clamp((release?.ageSeconds ?? 0) / SUBSTRATE_SILT_SECONDS, 0, 1);
+  if (progress >= 1) return 0;
+  return Math.sin(Math.PI * progress ** SILT_SETTLE_SKEW)
+    * clamp((release?.intensity ?? 0) / SUBSTRATE_RELEASE_INTENSITY, 0, 1);
+}
+
+/** The broken surface, loudest where it was struck and calming from there. */
+export function surfaceBreakAmplitude(broken) {
+  const progress = clamp((broken?.ageSeconds ?? 0) / Math.max(0.001, broken?.durationSeconds ?? 1), 0, 1);
+  return (1 - progress) ** 1.3 * clamp((broken?.intensity ?? 0) / SURFACE_BREAK_INTENSITY, 0, 1);
+}
+
+// Below this there is nothing on the panel. The renderer stops drawing, and
+// nothing in the aquarium may act on what is no longer there.
+export const CONSEQUENCE_VISIBLE_AMPLITUDE = 0.04;
+
+// Under one, so the silt's sine peaks early: the sand is thrown up quickly and
+// takes the rest of the cloud's life to come down.
+const SILT_SETTLE_SKEW = 0.62;
 
 /** Whether this stimulus is the aquarium's own doing rather than a viewer's. */
 export function isEnvironmentStimulus(stimulus) {

@@ -25,17 +25,25 @@ import { substrateSurfaceY, waterSurfaceY } from "../src/sim/environment.js";
 import { ACTIVITIES, activityUtilities, tickFishActivity } from "../src/sim/fish-activities.js";
 import {
   COALESCE_RADIUS_CELLS,
+  CONSEQUENCE_VISIBLE_AMPLITUDE,
   MAX_ENVIRONMENT_STIMULI,
   MAX_STIMULI,
+  SUBSTRATE_RELEASE_INTENSITY,
   SUBSTRATE_RELEASE_SECONDS,
+  SUBSTRATE_SILT_SECONDS,
+  SURFACE_BREAK_INTENSITY,
+  SURFACE_BREAK_SECONDS,
   chainEnvironmentStimuli,
   createImpulse,
+  createStimulus,
   dominantStimulus,
   environmentStimuli,
   heldStimulus,
   impulsePressureAt,
   isEnvironmentStimulus,
   perceivesStimulus,
+  substrateSiltAmplitude,
+  surfaceBreakAmplitude,
 } from "../src/sim/interaction-events.js";
 import { livingWorldRecords } from "../src/sim/living-world.js";
 import {
@@ -516,6 +524,139 @@ test("drifting matter is what makes an invisible current visible", () => {
       return before && before.signature !== object.signature;
     });
   assert.ok(dustMoved.length >= 1, "no speck of dust noticed the current");
+});
+
+/* ------------------------------------------------------------------ *
+ * Nothing acts on what cannot be seen
+ * ------------------------------------------------------------------ */
+
+// A consequence has two lives and they are not the same length: a substrate
+// release lasts eighteen seconds because the air it freed is still rising,
+// while the sand it lifted is back down in three and a half. Anything an
+// inhabitant does about one has to follow the half a viewer can actually see,
+// or the aquarium has fish steering at nothing - which in a product with no UI
+// is indistinguishable from a bug in the steering.
+test("a fish acts on a consequence only while there is something there to see", () => {
+  const base = settled(5);
+  const aged = (source, ageSeconds, over) => Object.freeze(createStimulus({
+    id: `${source}:probe`,
+    source,
+    x: 30,
+    y: source === "substrate-release" ? substrateSurfaceY(base, 30) : waterSurfaceY(base, 30),
+    intensity: over,
+    radius: source === "substrate-release" ? 11 : 14,
+    durationSeconds: source === "substrate-release" ? SUBSTRATE_RELEASE_SECONDS : SURFACE_BREAK_SECONDS,
+    ageSeconds,
+  }));
+
+  // The silt is up for SUBSTRATE_SILT_SECONDS of the release's eighteen.
+  assert.ok(substrateSiltAmplitude(aged("substrate-release", 0.4, SUBSTRATE_RELEASE_INTENSITY)) > 0.5);
+  assert.equal(substrateSiltAmplitude(aged("substrate-release", SUBSTRATE_SILT_SECONDS, SUBSTRATE_RELEASE_INTENSITY)), 0);
+  assert.equal(substrateSiltAmplitude(aged("substrate-release", 12, SUBSTRATE_RELEASE_INTENSITY)), 0,
+    "the cloud was still pulling a grazer nine seconds after it settled");
+
+  // A break almost spent is below what the renderer draws, so it opens nothing.
+  const spent = aged("surface-break", SURFACE_BREAK_SECONDS - 0.01, SURFACE_BREAK_INTENSITY);
+  assert.ok(surfaceBreakAmplitude(spent) < CONSEQUENCE_VISIBLE_AMPLITUDE);
+  assert.ok(surfaceBreakAmplitude(aged("surface-break", 0.2, SURFACE_BREAK_INTENSITY)) > CONSEQUENCE_VISIBLE_AMPLITUDE);
+
+  // And the fish agrees with the renderer, because both read the same function.
+  const explorer = { ...base.individuals[6], behavior: { ...base.individuals[6].behavior, current: "explore" }, x: 30, y: 6 };
+  const posed = { ...base, individuals: base.individuals.map((one, at) => (at === 6 ? explorer : one)) };
+  const withSpent = { ...posed, stimuli: Object.freeze([spent]) };
+  const withFresh = { ...posed, stimuli: Object.freeze([aged("surface-break", 0.2, SURFACE_BREAK_INTENSITY)]) };
+  assert.ok(perceivesStimulus(explorer, spent), "the probe was not even in reach, so this proves nothing");
+  assert.equal(activityUtilities(explorer, 6, withSpent)[ACTIVITIES.surfaceInvestigate], undefined,
+    "a fish set out for a patch of surface the renderer had stopped drawing");
+  assert.notEqual(activityUtilities(explorer, 6, withFresh)[ACTIVITIES.surfaceInvestigate], undefined);
+  assert.equal(render(withSpent).objects.filter((object) => object.id.startsWith("surface-break:")).length, 0);
+});
+
+// How hard and which way have to come from the same disturbance. They did not:
+// the magnitude was the strongest effective pressure and the direction was the
+// geometrically nearest impulse, so a nearly spent wake could turn a shrimp
+// around and hop it into the press that alarmed it.
+test("a startled resident flees the disturbance that actually startled it", () => {
+  const base = settled(5);
+  const shrimp = livingWorldRecords(base).find((record) => record.kind === "shrimp");
+  // A press to the shrimp's right, which is what raises the alarm...
+  const press = createImpulse({
+    id: "touch:1", x: shrimp.x + 1.5, y: shrimp.y, strength: 1,
+    ageSeconds: 1.6, durationSeconds: 3.2, contact: "substrate",
+  });
+  // ...and a nearly spent wake just to its left, pointing right, contributing
+  // a thirtieth of the pressure.
+  const spentWake = createImpulse({
+    id: "wake:0", source: "wake", x: shrimp.x - 0.5, y: shrimp.y, strength: 0.9,
+    ageSeconds: 0.93, durationSeconds: 0.95, dirX: 1,
+  });
+  assert.ok(impulsePressureAt({ impulses: [spentWake] }, shrimp.x, shrimp.y, { flat: true })
+    < impulsePressureAt({ impulses: [press] }, shrimp.x, shrimp.y, { flat: true }) / 10,
+    "the wake is not spent enough for this to test what it claims to");
+
+  const alone = livingWorldRecords({ ...base, impulses: Object.freeze([press]) })
+    .find((record) => record.id === shrimp.id);
+  const together = livingWorldRecords({ ...base, impulses: Object.freeze([spentWake, press]) })
+    .find((record) => record.id === shrimp.id);
+  assert.ok(alone.x < shrimp.x, "the shrimp did not flee the press at all");
+  assert.equal(Math.sign(together.x - shrimp.x), Math.sign(alone.x - shrimp.x),
+    "a spent wake turned the shrimp around and hopped it toward what alarmed it");
+});
+
+// The same rule the bubbles are held to, applied to everything else that
+// floats: a stateless position offset must return to zero, and vertically that
+// is a spring back against the drift.
+test("drifting matter is carried sideways and never springs back against its drift", () => {
+  const base = settled(5);
+  const tuft = livingWorldRecords(base).find((record) => record.kind === "tuft");
+  const wake = (ageSeconds, dirY) => createImpulse({
+    id: "wake:0", source: "wake", x: tuft.x, y: tuft.y, strength: 0.9,
+    ageSeconds, durationSeconds: 0.95, dirX: 0.3, dirY,
+  });
+
+  for (const dirY of [1, -1]) {
+    let previous = null;
+    for (let age = 0.05; age <= 0.95; age += 0.05) {
+      const moment = { ...base, impulses: Object.freeze([wake(age, dirY)]) };
+      const live = livingWorldRecords(moment).find((record) => record.id === tuft.id);
+      assert.equal(live.y, tuft.y,
+        `water going ${dirY > 0 ? "down" : "up"} displaced a tuft vertically at ${age.toFixed(2)} s`);
+      previous = live.y;
+    }
+    assert.equal(previous, tuft.y);
+  }
+
+  // Carried sideways, which is the whole point of having them.
+  const carried = livingWorldRecords({ ...base, impulses: Object.freeze([wake(0.45, 0)]) })
+    .find((record) => record.id === tuft.id);
+  assert.ok(Math.abs(carried.x - tuft.x) > 0.2, "a tuft sat still in water that was moving");
+});
+
+// The terrain has relief and a grain drifts a couple of columns from where the
+// cloud was raised, so a shared landing plane buried one end of the cloud and
+// floated the other.
+test("every grain of silt settles onto the sand under itself", () => {
+  const base = settled(5);
+  // The most sloped stretch of floor the seed produced, so this is measured
+  // where it actually matters rather than on a flat patch.
+  let worst = { x: base.cols / 2, relief: 0 };
+  for (let x = 4; x < base.cols - 4; x += 0.25) {
+    const relief = Math.abs(substrateSurfaceY(base, x - 2) - substrateSurfaceY(base, x + 2));
+    if (relief > worst.relief) worst = { x, relief };
+  }
+  assert.ok(worst.relief > 0.15, "the terrain is too flat for this test to mean anything");
+
+  const pressed = tick(applyTouch(base, worst.x, sandY(base, worst.x)), STEP);
+  const scene = render(pressed);
+  const cloud = scene.objects.find((object) => object.id.startsWith("substrate-release:"));
+  assert.ok(cloud);
+  const metrics = { cellWidth: scene.width / base.cols, cellHeight: scene.height / base.rows };
+  for (const glyph of scene.glyphs.filter((entry) => entry.object === cloud.id)) {
+    const grainX = glyph.x / metrics.cellWidth;
+    const floor = substrateSurfaceY(base, grainX) * metrics.cellHeight;
+    assert.ok(glyph.y <= floor + 0.001 * metrics.cellHeight,
+      `a grain settled ${((glyph.y - floor) / metrics.cellHeight).toFixed(3)} rows into the sand`);
+  }
 });
 
 /* ------------------------------------------------------------------ *

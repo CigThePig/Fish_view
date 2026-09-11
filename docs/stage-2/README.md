@@ -54,8 +54,8 @@ it is repaired.
 Everything else the environment does reads the live impulses and stores nothing:
 bubbles are pushed sideways and broken up and re-form when the water settles,
 and are never pushed under; a shrimp bolts a cell or two and drifts back; a
-snail pulls its foot in; tufts and dust are carried, which is the cheapest
-picture of a current the aquarium can draw. Three rules make a storm
+snail pulls its foot in; tufts and dust are carried sideways, which is the
+cheapest picture of a current the aquarium can draw. Three rules make a storm
 structurally impossible rather than merely unlikely — one generation deep, its
 own three slots out of six, raised once and then left alone.
 

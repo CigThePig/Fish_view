@@ -1,6 +1,6 @@
 import { clamp } from './entities.js';
 import { groundY, woodDepth } from './habitat-depth.js';
-import { impulseFlowAt, impulsePressureAt } from './interaction-events.js';
+import { impulseFlowAt, impulseStrength } from './interaction-events.js';
 import { sample01, sampleRange } from './prng.js';
 
 const TAU = Math.PI * 2;
@@ -62,24 +62,44 @@ export function driftwoodPath(state, index = 0) {
   });
 }
 
+/**
+ * The disturbance that is actually happening to whatever is standing here: the
+ * one supplying the most effective pressure, envelope included.
+ *
+ * How hard and which way have to come from the *same* impulse. Taking the
+ * magnitude from the strongest and the direction from the geometrically nearest
+ * let a nearly spent wake - three hundredths of the pressure - turn a shrimp
+ * around and hop it straight into the press that had alarmed it.
+ *
+ * Distance is measured flat here, as `impulsePressureAt` does for the readers
+ * that live on the bottom: a viewer cannot reach below the lowest touchable
+ * row, so a press aimed at a shrimp is always a couple of rows above it.
+ */
+function alarmingImpulse(state, x, y) {
+  let best = null;
+  for (const impulse of state.impulses ?? []) {
+    const distance = Math.hypot(x - impulse.x, y - impulse.y);
+    if (distance >= impulse.radius) continue;
+    const pressure = (1 - distance / impulse.radius) * impulseStrength(impulse);
+    if (!best || pressure > best.pressure) best = { impulse, pressure };
+  }
+  return best;
+}
+
 /** How alarming the water is here, 0..1, above the threshold worth answering. */
 function alarmAt(state, x, y) {
-  const pressure = impulsePressureAt(state, x, y, { flat: true });
+  const pressure = alarmingImpulse(state, x, y)?.pressure ?? 0;
   if (pressure <= RESIDENT_ALARM_PRESSURE) return 0;
   return clamp((pressure - RESIDENT_ALARM_PRESSURE) / (1 - RESIDENT_ALARM_PRESSURE), 0, 1);
 }
 
 /**
- * Which way is away. Directed water carries; a shock from a point is fled from,
- * and `fallback` is which way to go when the disturbance is exactly on top.
+ * Which way is away, read off the impulse that did the alarming. Directed water
+ * carries; a shock from a point is fled from, and `fallback` is which way to go
+ * when the disturbance is exactly on top.
  */
 function escapeDirection(state, x, y, fallback) {
-  let best = null;
-  for (const impulse of state.impulses ?? []) {
-    const distance = Math.hypot(x - impulse.x, y - impulse.y);
-    if (distance >= impulse.radius) continue;
-    if (!best || distance < best.distance) best = { impulse, distance };
-  }
+  const best = alarmingImpulse(state, x, y);
   if (!best) return 0;
   if (best.impulse.dirX) return Math.sign(best.impulse.dirX);
   const dx = x - best.impulse.x;
@@ -138,11 +158,17 @@ export function livingWorldRecords(state) {
     // Lightweight matter is the cheapest thing in the aquarium to see an
     // invisible current through: a tuft carried sideways by a drag says what
     // the water did far more plainly than the water itself can.
+    //
+    // Sideways only, for the reason the bubbles carry no vertical term either:
+    // this is a stateless position offset, so it must return to zero when the
+    // impulse expires, and vertically that is a tuft jumping back up against
+    // its own drift - measured at a fifth of a row per frame under an ordinary
+    // wake. A drag says what it did in the horizontal alone.
     const flow = impulseFlowAt(state, driftX, driftY);
     records.push({ id: `tuft:${i}:${cycle}`, kind: 'tuft', seed,
       x: clamp(driftX + flow.x * DRIFT_FLOW_CELLS, 0.4, state.cols - 0.4),
       depth: sampleRange(seed, 19, 0.15, 0.85),
-      y: clamp(driftY + flow.y * DRIFT_FLOW_CELLS, 1, state.rows - 1), facing: 1,
+      y: driftY, facing: 1,
       pulse: Math.sin(time * 0.9 + i),
       visibility: smooth(u / 0.08) * smooth((1 - u) / 0.12) });
   }

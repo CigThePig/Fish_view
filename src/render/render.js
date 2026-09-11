@@ -20,10 +20,13 @@ import {
 } from "../sim/environment.js";
 import { spriteForFish } from "../sim/fish-growth.js";
 import {
+  CONSEQUENCE_VISIBLE_AMPLITUDE,
   SUBSTRATE_RELEASE_INTENSITY,
-  SURFACE_BREAK_INTENSITY,
+  SUBSTRATE_SILT_SECONDS,
   createImpulse,
   environmentStimuli,
+  substrateSiltAmplitude,
+  surfaceBreakAmplitude,
 } from "../sim/interaction-events.js";
 import { drawWaterImpulses } from "./water-impulses.js";
 import { fishSubstrateY, individualVisualDepth, fishMouthPosition, forageActivity, turnPose } from "../sim/fish-motion.js";
@@ -196,15 +199,10 @@ const SURFACE_RIPPLE_DROP = 0.5;
 // MAX_ENVIRONMENT_STIMULI - three clouds and three broken patches is the most
 // the aquarium can ever be showing at once, whatever a viewer does to it.
 //
-// The silt: how long the cloud is up before it has settled back into the floor
-// it came from, and how many grains it is. The release itself outlives this by
-// a long way, because the air it freed is still rising.
-const SILT_SECONDS = 3.4;
+// The silt: how many grains the cloud is. How long it is up, and the shape of
+// its lift and fall, belong to the simulation - see `substrateSiltAmplitude`.
 const SILT_GRAINS = 9;
 const SILT_RISE_ROWS = 1.5;
-// Under one, so the sine peaks early: the sand is thrown up quickly and takes
-// the rest of the cloud's life to come down.
-const SILT_SETTLE_SKEW = 0.62;
 const SILT_SPREAD_COLUMNS = 2.1;
 // The surface: how far a break spreads across the swell and how many marks it
 // breaks into. Deliberately drawn as marks on the existing surface rather than
@@ -879,33 +877,35 @@ function drawForageDebris(builder, state, palette, metrics) {
  */
 function drawSubstrateSilt(builder, state, palette, metrics) {
   for (const release of environmentStimuli(state, "substrate-release")) {
-    const progress = clamp(release.ageSeconds / SILT_SECONDS, 0, 1);
+    const progress = clamp(release.ageSeconds / SUBSTRATE_SILT_SECONDS, 0, 1);
+    // Silt lifts, hangs, and falls back into the floor it came from. The
+    // envelope is shared with the simulation - see `substrateSiltAmplitude` -
+    // so what a grazing fish is drawn to and what a viewer can see are the same
+    // thing by construction rather than by two constants agreeing.
+    const lift = substrateSiltAmplitude(release);
     if (progress >= 1) continue;
     const strength = clamp((release.intensity ?? 0) / SUBSTRATE_RELEASE_INTENSITY, 0, 1);
     const silt = mixColor(palette.substrateFg, palette.ripple, 0.62);
     const settled = mixColor(palette.substrateFg, palette.ripple, 0.3);
-    const floorY = substrateSurfaceY(state, release.x);
     const count = Math.max(2, Math.round(SILT_GRAINS * strength));
     const glyphs = [];
-    // Silt lifts, hangs, and falls back into the floor it came from. A rise
-    // that only ever increased left every grain at its highest in the frame
-    // before the cloud stopped being drawn - a cloud vanishing in mid-water
-    // rather than sand going back to being sand, which is the opposite of
-    // settling. The lift is quicker than the fall, because that is what a
-    // disturbed bottom does, and it reaches zero exactly where the cloud ends.
-    const lift = Math.sin(Math.PI * progress ** SILT_SETTLE_SKEW);
     for (let grain = 0; grain < count; grain += 1) {
       const salt = 5200 + grain * 7;
       const rise = lift * sampleRange(release.seed, salt, 0.45, 1.35) * SILT_RISE_ROWS;
       // Spreading does not reverse: grains that have drifted apart settle where
       // they got to rather than gathering back up.
       const spread = sampleSigned(release.seed, salt + 1) * (0.25 + progress * 0.9) * SILT_SPREAD_COLUMNS;
+      const worldX = clamp(release.x + spread, 0.4, state.cols - 0.4);
       const choice = sample01(release.seed, salt + 2);
       const char = choice < 0.42 ? "." : choice < 0.72 ? "," : choice < 0.88 ? "'" : ":";
       glyphs.push(positionedGlyph(metrics, {
         char,
-        worldX: clamp(release.x + spread, 0.4, state.cols - 0.4),
-        worldY: floorY - 0.1 - rise,
+        worldX,
+        // The floor under *this* grain, not under the middle of the cloud. The
+        // terrain has relief and a grain drifts a couple of columns, so a
+        // shared landing plane left it settling a third of a row into the sand
+        // at one end of the cloud and hanging above it at the other.
+        worldY: substrateSurfaceY(state, worldX) - 0.1 - rise,
         fg: mixColor(silt, settled, progress),
         scaleX: sampleRange(release.seed, salt + 3, 0.58, 0.86) * (1 - progress * 0.3) * (0.7 + strength * 0.3),
         scaleY: sampleRange(release.seed, salt + 4, 0.58, 0.86) * (1 - progress * 0.3) * (0.7 + strength * 0.3),
@@ -937,13 +937,13 @@ function drawSubstrateSilt(builder, state, palette, metrics) {
 function drawSurfaceBreak(builder, state, palette, metrics) {
   for (const broken of environmentStimuli(state, "surface-break")) {
     const progress = clamp(broken.ageSeconds / broken.durationSeconds, 0, 1);
-    const strength = clamp((broken.intensity ?? 0) / SURFACE_BREAK_INTENSITY, 0, 1);
     // Loudest where it was struck and calming from there. Unlike the water's
     // own envelope this does not ramp in: a surface that took half a second to
     // notice it had been hit would be the one part of the aquarium that
-    // answered a press late.
-    const amplitude = strength * (1 - progress) ** 1.3;
-    if (amplitude < 0.04) continue;
+    // answered a press late. Shared with the simulation, so a fish can never
+    // set out toward a patch of surface this has stopped drawing.
+    const amplitude = surfaceBreakAmplitude(broken);
+    if (amplitude < CONSEQUENCE_VISIBLE_AMPLITUDE) continue;
     const glyphs = [];
     for (let mark = 0; mark < SURFACE_BREAK_MARKS; mark += 1) {
       const salt = 5400 + mark * 5;
@@ -955,7 +955,7 @@ function drawSurfaceBreak(builder, state, palette, metrics) {
       if (worldX < 0.4 || worldX > state.cols - 0.4) continue;
       const reach = clamp(1 - Math.abs(offset) / Math.max(1, broken.radius * SURFACE_BREAK_SPREAD), 0, 1);
       const lit = amplitude * reach;
-      if (lit < 0.04) continue;
+      if (lit < CONSEQUENCE_VISIBLE_AMPLITUDE) continue;
       const shape = sample01(broken.seed, salt + 1);
       const char = shape < 0.4 ? "~" : shape < 0.72 ? "^" : shape < 0.88 ? "-" : "'";
       glyphs.push(positionedGlyph(metrics, {
