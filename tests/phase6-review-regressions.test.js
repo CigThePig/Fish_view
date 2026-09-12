@@ -9,10 +9,12 @@ import {
 import { DRIVE_MAXIMUM, WATERLINE_ROWS } from "../src/sim/config.js";
 import { ACTIVITIES } from "../src/sim/fish-activities.js";
 import {
+  GLASS_VISIT_OPPORTUNITY_MIN_SECONDS,
   prepareVoluntaryGlassVisits,
   tickVoluntaryGlassVisit,
+  trackViewerRegions,
 } from "../src/sim/glass-visits.js";
-import { speciesCanBottomFeed } from "../src/sim/fish-growth.js";
+import { fishSpriteWidth, speciesCanBottomFeed } from "../src/sim/fish-growth.js";
 import { substrateSafeY } from "../src/sim/fish-motion.js";
 import {
   applyTouch,
@@ -305,6 +307,57 @@ test("protected voluntary-visit targets use the same depth ceiling as locomotion
     `visit target ${frame.target.y} was below production ceiling ${productionCeiling}`);
 });
 
+test("active voluntary visits clamp a touched edge before arrival logic uses it", () => {
+  const state = createAquariumState({ seed: 0x6f00100c, wallClockHours: 12 });
+  const base = state.individuals[0];
+  const mature = { ...base, ageDays: 180 };
+  const halfWidth = fishSpriteWidth(mature) / 2;
+  const stimulus = {
+    id: "touch:edge-review",
+    source: "touch",
+    x: 0,
+    y: WATERLINE_ROWS,
+  };
+  const visiting = {
+    ...withGlassFamiliarity(mature, 0.9),
+    x: halfWidth,
+    behavior: { ...mature.behavior, current: "cruise" },
+    activity: { ...mature.activity, current: ACTIVITIES.cruise },
+    attention: { ...attention("watch", halfWidth), stimulusId: stimulus.id },
+    viewerRelationship: {
+      glassVisit: {
+        epoch: 3,
+        startedAt: 1,
+        ageSeconds: 4,
+        durationSeconds: 30,
+        anchorX: halfWidth,
+        anchorY: mature.y,
+        recentRegion: false,
+      },
+    },
+  };
+  const tracked = trackViewerRegions({
+    ...state,
+    individuals: [visiting],
+    stimuli: [stimulus],
+  });
+  const anchor = tracked.individuals[0].viewerRelationship.glassVisit;
+
+  assert.ok(anchor.anchorX >= halfWidth,
+    `active visit retained unreachable edge anchor ${anchor.anchorX} for half-width ${halfWidth}`);
+
+  const ready = { ...tracked.individuals[0], x: anchor.anchorX, y: anchor.anchorY, attention: null };
+  const frame = tickVoluntaryGlassVisit(
+    ready,
+    0,
+    { ...tracked, individuals: [ready] },
+    { x: ready.x, y: ready.y, speed: 0.2, postureBias: 0, choreography: {} },
+    0.1,
+  );
+  assert.equal(frame.target.glassVisitPhase, "linger",
+    "reachable edge anchor was still treated as an endless approach");
+});
+
 test("a same-frame biological priority removes an invitation that never became visible", () => {
   const state = createAquariumState({ seed: 0x6f001007, wallClockHours: 12 });
   const base = state.individuals[0];
@@ -403,8 +456,8 @@ test("calm social locomotion can yield to a familiar viewer relationship", () =>
   assert.ok(invitation, "calm social behavior permanently suppressed the learned viewer relationship");
 });
 
-test("restoring a familiar aquarium cannot reopen a pre-session invitation window", () => {
-  const original = createAquariumState({ seed: 8, wallClockHours: 12 });
+test("restored sessions wait a full opportunity interval before voluntary visits", () => {
+  const original = createAquariumState({ seed: 2662, wallClockHours: 12 });
   const familiar = {
     ...withGlassFamiliarity(original.individuals[0], 1),
     drives: { ...original.individuals[0].drives, energy: 0.8 },
@@ -413,16 +466,23 @@ test("restoring a familiar aquarium cannot reopen a pre-session invitation windo
   };
   const savedState = { ...original, individuals: [familiar] };
   const restored = restorePersistentState(
-    createAquariumState({ seed: 8, wallClockHours: 12 }),
+    createAquariumState({ seed: 2662, wallClockHours: 12 }),
     serializePersistentState(savedState),
   );
-  const immediate = prepareVoluntaryGlassVisits(restored);
 
-  assert.equal(immediate.individuals[0].viewerRelationship?.glassVisit, undefined,
-    "reload immediately reopened a seed-offset invitation window");
+  for (let seconds = 0; seconds < GLASS_VISIT_OPPORTUNITY_MIN_SECONDS; seconds += 0.5) {
+    const tooSoon = prepareVoluntaryGlassVisits({
+      ...restored,
+      elapsedRealSeconds: seconds,
+      stimuli: [],
+      impulses: [],
+    });
+    assert.equal(tooSoon.individuals[0].viewerRelationship?.glassVisit, undefined,
+      `reload manufactured a voluntary visit at ${seconds}s before a full interval elapsed`);
+  }
 
   let invitation = null;
-  for (let seconds = 1; seconds <= 1200 && !invitation; seconds += 1) {
+  for (let seconds = GLASS_VISIT_OPPORTUNITY_MIN_SECONDS; seconds <= 1600 && !invitation; seconds += 1) {
     const prepared = prepareVoluntaryGlassVisits({
       ...restored,
       elapsedRealSeconds: seconds,
@@ -431,5 +491,5 @@ test("restoring a familiar aquarium cannot reopen a pre-session invitation windo
     });
     invitation = prepared.individuals[0].viewerRelationship?.glassVisit ?? null;
   }
-  assert.ok(invitation, "closing the reload epoch accidentally disabled future invitations");
+  assert.ok(invitation, "full-session guard accidentally disabled future invitations");
 });
