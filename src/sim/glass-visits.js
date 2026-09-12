@@ -30,8 +30,15 @@ export const GLASS_VISIT_OPPORTUNITY_MIN_SECONDS = 220;
 export const GLASS_VISIT_OPPORTUNITY_MAX_SECONDS = 340;
 export const GLASS_VISIT_OPPORTUNITY_WINDOW_SECONDS = 12;
 
-const ELIGIBLE_BEHAVIORS = new Set(["cruise", "explore"]);
-const LOW_COMMITMENT_ACTIVITIES = new Set(["cruise", "open-water-wander"]);
+// A visit is another quiet social excursion, not an emergency behavior. Free
+// cruise/wander can yield to it, and so can calm company-seeking locomotion.
+// Feeding, sleep/shelter, playful chase, arrivals, plant/bubble investigation,
+// and other committed acts remain authoritative and cancel/defer the visit.
+const VISIT_COMPATIBLE_ACTIVITIES = Object.freeze({
+  cruise: new Set(["cruise"]),
+  explore: new Set(["open-water-wander"]),
+  social: new Set(["school-follow", "individual-follow", "companion-cruise"]),
+});
 const VISIT_MIN_SECONDS = 26;
 const VISIT_MAX_SECONDS = 38;
 const VISIT_EXTRA_FAMILIAR_SECONDS = 7;
@@ -126,8 +133,8 @@ function hasVisitField(fish) {
 }
 
 function biologicallyAvailable(fish) {
-  if (!ELIGIBLE_BEHAVIORS.has(fish.behavior?.current)) return false;
-  return LOW_COMMITMENT_ACTIVITIES.has(fish.activity?.current);
+  const activities = VISIT_COMPATIBLE_ACTIVITIES[fish.behavior?.current];
+  return Boolean(activities?.has(fish.activity?.current));
 }
 
 function directViewerStimulusActive(state) {
@@ -142,11 +149,12 @@ function invitationScore(fish, epoch, nowSeconds) {
   if ((fish.drives?.energy ?? 0.5) < 0.3) return null;
 
   // Hunger is deliberately not a second hard gate here. The behavior scheduler
-  // already decides whether appetite wins this fish's current bout, and any
-  // actual forage/rest/social activity makes biologicallyAvailable() false.
-  // Some open-water species cannot bottom-feed at all, so vetoing invitations
-  // directly from the raw hunger scalar would eventually lock those fish out of
-  // glass visits forever even while their normal scheduler chose a free cruise.
+  // already decides whether appetite wins this fish's current bout, and actual
+  // feeding/rest/chase/shelter or other committed activities make
+  // biologicallyAvailable() false. Some open-water species cannot bottom-feed
+  // at all, so vetoing invitations directly from the raw hunger scalar would
+  // eventually lock those fish out of glass visits forever even while their
+  // normal scheduler chose calm locomotion.
 
   // Bold, attentive, glass-oriented fish volunteer more readily, but high
   // familiarity can still carry a cautious fish over the line. The roll is per
@@ -227,9 +235,10 @@ function visitAnchor(fish, index, state, epoch) {
 /**
  * Start one bounded visit when the global opportunity and fish personality agree.
  *
- * Expired or biologically-invalid visits are removed first. This is also the
- * guard that makes feeding/rest/social bouts outrank an invitation: the moment
- * the broad behavior leaves cruise/explore, the transient visit disappears.
+ * Expired or biologically-invalid visits are removed first. Calm cruise,
+ * wandering, and social-follow locomotion may yield to the relationship;
+ * feeding, rest/shelter, chase, arrival, and focused investigation remain
+ * authoritative and cancel/defer an invitation.
  */
 export function prepareVoluntaryGlassVisits(state) {
   const source = state.individuals ?? [];
