@@ -21,6 +21,11 @@
  * saturation still wins over familiarity when the viewer repeats too quickly.
  */
 
+import {
+  MAX_DELAYED,
+  MAX_INVESTIGATORS,
+  MAX_SECONDARY,
+} from "./attention.js";
 import { traitsFromSeed } from "./entities.js";
 import { activityCommitment } from "./fish-activities.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
@@ -286,6 +291,17 @@ function familiarityStrength(profile, record, previousAttention = null) {
   return strength;
 }
 
+function passiveRoleAfterFamiliarity(fish, record) {
+  if (!record) return null;
+  const profile = relationshipResponseProfile(fish);
+  let role = ACTIVE_ROLES.has(record.role) ? "watch" : record.role;
+  if (profile.familiarity <= 0) return role;
+  const strength = familiarityStrength(profile, record, fish.attention ?? null);
+  if (role === "wary" && strength >= FAMILIAR_WATCH_THRESHOLD) role = "watch";
+  if (role === "acknowledge" && strength >= FAMILIAR_WATCH_THRESHOLD * 2) role = "watch";
+  return role;
+}
+
 function roleAfterFamiliarity(fish, record) {
   if (!record) return null;
   const profile = relationshipResponseProfile(fish);
@@ -331,6 +347,47 @@ function roleAfterFamiliarity(fish, record) {
   };
 }
 
+function responseBudgetPriority(assignments, fish, finalRole, index) {
+  const baseRole = assignments[index]?.role;
+  if (baseRole === finalRole) return 0;
+  if (ACTIVE_ROLES.has(baseRole)) return 1;
+  return 2;
+}
+
+function enforceResponseBudgets(fish, assignments, shaped) {
+  const next = shaped.map((record) => (record ? { ...record } : null));
+  const budgets = [
+    ["investigate", MAX_INVESTIGATORS],
+    ["approach", MAX_SECONDARY],
+    ["delayed", MAX_DELAYED],
+  ];
+
+  for (const [role, maximum] of budgets) {
+    const matching = next
+      .map((record, index) => (record?.role === role ? index : -1))
+      .filter((index) => index >= 0)
+      .sort((left, right) =>
+        responseBudgetPriority(assignments, fish, role, left)
+          - responseBudgetPriority(assignments, fish, role, right)
+        || relationshipResponseProfile(fish[right]).trust - relationshipResponseProfile(fish[left]).trust
+        || (assignments[left]?.distance ?? Number.POSITIVE_INFINITY)
+          - (assignments[right]?.distance ?? Number.POSITIVE_INFINITY)
+        || fish[left].seed - fish[right].seed);
+
+    for (const index of matching.slice(maximum)) {
+      const baseRole = assignments[index]?.role;
+      let fallbackRole;
+      if (role === "investigate" && baseRole === "approach") fallbackRole = "approach";
+      else if (role === "investigate" && baseRole === "delayed") fallbackRole = "delayed";
+      else if (role === "approach" && baseRole === "delayed") fallbackRole = "delayed";
+      else fallbackRole = passiveRoleAfterFamiliarity(fish[index], assignments[index]);
+      next[index] = { ...next[index], role: fallbackRole };
+    }
+  }
+
+  return next;
+}
+
 /**
  * Shape the ordinary attention answer through the two Phase 6 clocks.
  *
@@ -338,51 +395,52 @@ function roleAfterFamiliarity(fish, record) {
  * shorten a real hesitation, and lengthen the bounded aftermath while keeping
  * bold/cautious personality distinctions intact. Short-term saturation acts
  * second, so drumming the glass can still soften or rotate even a highly
- * familiar fish. The assignment engine remains the source of truth for who
- * noticed the event and what they were doing when it happened.
+ * familiar fish. The Phase 2 responder budgets are re-applied after both
+ * modifiers, so familiarity can change *which* fish comes close without turning
+ * a learned relationship into a synchronized summons.
  */
 export function shapeAttentionForSaturation(fish, assignments, { guarantee = true } = {}) {
   const relationshipShaped = assignments.map((record, index) =>
     roleAfterFamiliarity(fish[index], record));
-  const shaped = relationshipShaped.map((record, index) => {
+  let shaped = relationshipShaped.map((record, index) => {
     if (!record) return null;
     return { ...record, role: roleAfterSaturation(record.role, viewerSaturationFor(fish[index])) };
   });
 
-  if (!guarantee) return shaped;
-  const originalInvestigators = relationshipShaped
-    .map((record, index) => (record?.role === "investigate" ? index : -1))
-    .filter((index) => index >= 0);
-  if (!originalInvestigators.length) return shaped;
+  if (guarantee) {
+    const originalInvestigators = relationshipShaped
+      .map((record, index) => (record?.role === "investigate" ? index : -1))
+      .filter((index) => index >= 0);
 
-  const anchor = originalInvestigators.reduce((best, index) =>
-    viewerSaturationFor(fish[index]) < viewerSaturationFor(fish[best]) ? index : best,
-  originalInvestigators[0]);
-  const anchorSaturation = viewerSaturationFor(fish[anchor]);
+    if (originalInvestigators.length) {
+      const anchor = originalInvestigators.reduce((best, index) =>
+        viewerSaturationFor(fish[index]) < viewerSaturationFor(fish[best]) ? index : best,
+      originalInvestigators[0]);
+      const anchorSaturation = viewerSaturationFor(fish[anchor]);
 
-  if (anchorSaturation >= SATURATION_ROTATE_THRESHOLD) {
-    const alternatives = relationshipShaped
-      .map((record, index) => ({ record, index, saturation: viewerSaturationFor(fish[index]) }))
-      .filter(({ record, index, saturation }) => index !== anchor
-        && record
-        && relationshipMayApproach(fish[index])
-        && ROTATABLE_ROLES.has(record.role)
-        && Number.isFinite(record.distance)
-        && record.distance <= 30
-        && saturation + SATURATION_ROTATE_ADVANTAGE < anchorSaturation)
-      .sort((left, right) => left.saturation - right.saturation
-        || left.record.distance - right.record.distance
-        || fish[left.index].seed - fish[right.index].seed);
-    if (alternatives.length) {
-      // Demoting the saturated primary to a passive glance keeps the original
-      // active-response caps intact when the fresher fish takes its place.
-      shaped[anchor] = { ...shaped[anchor], role: "watch" };
-      const replacement = alternatives[0].index;
-      shaped[replacement] = { ...relationshipShaped[replacement], role: "investigate" };
+      if (anchorSaturation >= SATURATION_ROTATE_THRESHOLD) {
+        const alternatives = relationshipShaped
+          .map((record, index) => ({ record, index, saturation: viewerSaturationFor(fish[index]) }))
+          .filter(({ record, index, saturation }) => index !== anchor
+            && record
+            && relationshipMayApproach(fish[index])
+            && ROTATABLE_ROLES.has(record.role)
+            && Number.isFinite(record.distance)
+            && record.distance <= 30
+            && saturation + SATURATION_ROTATE_ADVANTAGE < anchorSaturation)
+          .sort((left, right) => left.saturation - right.saturation
+            || left.record.distance - right.record.distance
+            || fish[left.index].seed - fish[right.index].seed);
+        if (alternatives.length) {
+          shaped[anchor] = { ...shaped[anchor], role: "watch" };
+          const replacement = alternatives[0].index;
+          shaped[replacement] = { ...relationshipShaped[replacement], role: "investigate" };
+        }
+      }
     }
   }
 
-  return shaped;
+  return enforceResponseBudgets(fish, assignments, shaped);
 }
 
 /**
@@ -463,7 +521,9 @@ export function creditViewerEngagement(fish, stimulus, nowSeconds) {
     const previousAt = sameEngagement ? transient.engagementAt : nowSeconds;
     const elapsed = clamp(nowSeconds - previousAt, 0, MAX_CREDIT_SECONDS);
     const moving = stimulus.held && stimulus.gesture !== "press" && (stimulus.speed ?? 0) > 0.5;
-    const movingSeconds = moving ? elapsed : 0;
+    const delayedActive = response.role !== "delayed"
+      || Math.max(0, response.ageSeconds ?? 0) >= Math.max(0, response.delaySeconds ?? 0);
+    const movingSeconds = moving && delayedActive ? elapsed : 0;
     const rawGain = nearDelta * NEAR_FAMILIARITY_PER_SECOND
       + movingSeconds * MOVING_FAMILIARITY_PER_SECOND;
 
