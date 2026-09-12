@@ -15,8 +15,10 @@ function round(value, places = 3) {
 }
 
 /**
- * Compact relationship row for reports and future accelerated capture tooling.
- * Nothing here is user-facing and nothing mutates the simulation.
+ * Compact relationship row for reports and accelerated capture tooling.
+ * Nothing here is user-facing and nothing mutates the simulation. The response
+ * profile fields deliberately sit beside the seeded personality fields so a
+ * capture can distinguish "this fish is bold" from "this fish knows the viewer".
  */
 export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
   const traits = traitsFromSeed(fish.seed, fish.history);
