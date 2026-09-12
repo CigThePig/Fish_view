@@ -393,14 +393,17 @@ function visitTarget(fish, index, visit, state) {
  * Advance/steer an already-started invitation for one simulation frame.
  *
  * Direct attention pauses the clock and leaves the base touch target untouched.
- * Biological priorities or a high-commitment activity suppress the overlay; the
- * next `prepareVoluntaryGlassVisits()` call removes it cleanly.
+ * Biological priorities cancel an invitation immediately when they win the
+ * same frame, so an internal visit marker can never count as a viewer-visible
+ * invitation unless glass steering actually survived that frame.
  */
 export function tickVoluntaryGlassVisit(fish, index, state, baseTarget, realDelta) {
   const visit = activeVisit(fish);
   if (!visit) return { fish, target: baseTarget };
   if (fish.attention) return { fish, target: baseTarget };
-  if (!biologicallyAvailable(fish)) return { fish, target: baseTarget };
+  if (!biologicallyAvailable(fish)) {
+    return { fish: relationshipWithoutVisit(fish), target: baseTarget };
+  }
 
   const ageSeconds = Math.min(
     visit.durationSeconds,
