@@ -352,7 +352,7 @@ test("familiarity shortens a real hesitation and leaves a longer bounded afterma
   const cold = shapeAttentionForSaturation([unfamiliar], [assignment])[0];
   const warm = shapeAttentionForSaturation([familiar], [assignment])[0];
 
-  assert.equal(cold.role, "delayed");
+  assert.deepEqual(cold, assignment);
   assert.equal(warm.role, "delayed", "familiarity erased an occupied fish's hesitation style");
   assert.ok(warm.delaySeconds > 0 && warm.delaySeconds < cold.delaySeconds);
   assert.ok(warm.durationSeconds > cold.durationSeconds);
