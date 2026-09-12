@@ -304,6 +304,10 @@ test("developer relationship snapshots expose long and short clocks beside fixed
   assert.ok(snapshot.relationshipTrust > 0 && snapshot.relationshipTrust <= 1);
   assert.ok(snapshot.responseConfidence >= 0 && snapshot.responseConfidence <= 1);
   assert.ok(snapshot.responseAttentiveness >= 0 && snapshot.responseAttentiveness <= 1);
+  assert.equal(snapshot.attentionRole, touched.individuals[0].attention?.role ?? null);
+  assert.equal(typeof snapshot.attentionDistance, "number");
+  assert.equal(typeof snapshot.attentionDelaySeconds, "number");
+  assert.equal(typeof snapshot.attentionDurationSeconds, "number");
   assert.equal(roster.length, touched.individuals.length);
   assert.equal(roster[0].attentionSaturation, snapshot.attentionSaturation);
 });
