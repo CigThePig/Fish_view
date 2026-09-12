@@ -53,7 +53,12 @@ test("touch response is immediate, reproducible, and not probabilistic", () => {
   );
   assert.equal(first.impulses[0].source, "touch");
   assert.notDeepEqual(first.school[0], state.school[0]);
-  assert.equal(first.individuals.reduce((sum, fish) => sum + fish.history.touches, 0), 1);
+  assert.ok(first.individuals.some((fish) => fish.history.glassFamiliarity > 0));
+  first.individuals.forEach((fish, index) => {
+    assert.equal(fish.history.touches, state.individuals[index].history.touches);
+    assert.equal(fish.history.boldnessDrift, state.individuals[index].history.boldnessDrift);
+    assert.equal(fish.history.sociabilityDrift, state.individuals[index].history.sociabilityDrift);
+  });
 });
 
 test("individual facing uses hysteresis and a deterministic turn pose", () => {
@@ -116,20 +121,31 @@ test("persistence stores individuals and plants but not the identity-free school
   const saved = serializePersistentState(evolved);
   assert.equal("school" in saved, false);
   assert.ok(saved.individuals.every((fish) => !("activity" in fish)));
+  assert.ok(saved.individuals.every((fish) => !("viewerRelationship" in fish)));
   const restored = restorePersistentState(base, saved);
   for (let index = 0; index < restored.individuals.length; index += 1) {
-    const { activity: restoredActivity, attention: restoredAttention, ...restoredPersistent }
-      = restored.individuals[index];
-    const { activity: evolvedActivity, attention: evolvedAttention, ...evolvedPersistent }
-      = evolved.individuals[index];
+    const {
+      activity: restoredActivity,
+      attention: restoredAttention,
+      viewerRelationship: restoredViewerRelationship,
+      ...restoredPersistent
+    } = restored.individuals[index];
+    const {
+      activity: evolvedActivity,
+      attention: evolvedAttention,
+      viewerRelationship: evolvedViewerRelationship,
+      ...evolvedPersistent
+    } = evolved.individuals[index];
     assert.deepEqual(restoredPersistent, evolvedPersistent);
     assert.equal(restoredActivity.current, evolvedPersistent.behavior.current);
     assert.equal(restoredActivity.targetType, null);
     assert.equal(evolvedActivity.current, "touch-react");
-    // A response role is a thing the fish is doing right now, not something it
-    // is: a reload starts the fish quiet.
+    // A response role and its short-term saturation are things the fish is
+    // doing/feeling now, not durable biology. Reload starts both quiet.
     assert.equal(restoredAttention ?? null, null);
+    assert.equal(restoredViewerRelationship ?? null, null);
     assert.equal(evolvedAttention.role, "investigate");
+    assert.ok(evolvedViewerRelationship);
   }
   assert.deepEqual(restored.plants, evolved.plants);
   assert.deepEqual(restored.school, base.school);
