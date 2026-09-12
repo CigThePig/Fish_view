@@ -22,7 +22,9 @@
  */
 
 import { traitsFromSeed } from "./entities.js";
+import { activityCommitment } from "./fish-activities.js";
 import { affinitiesFromSeed } from "./fish-personality.js";
+import { MAX_HOLD_SECONDS, RELEASE_SECONDS } from "./interaction-events.js";
 
 export const GLASS_FAMILIARITY_MINIMUM = 0;
 export const GLASS_FAMILIARITY_MAXIMUM = 1;
@@ -54,7 +56,11 @@ const FAMILIARITY_ROLE_GAIN = Object.freeze({
 });
 
 const ACTIVE_ROLES = new Set(["investigate", "approach", "delayed"]);
-const ROTATABLE_ROLES = new Set(["approach", "delayed", "watch"]);
+// Delayed means the base attention engine deliberately decided a fish is too
+// committed to leave immediately. It may soften under saturation, but it must
+// never be promoted into the replacement investigator merely because another
+// fish is saturated.
+const ROTATABLE_ROLES = new Set(["approach", "watch"]);
 const SATURATION_STYLE_THRESHOLD = 0.55;
 const SATURATION_STRONG_THRESHOLD = 0.82;
 const SATURATION_ROTATE_THRESHOLD = 0.68;
@@ -72,6 +78,15 @@ const MAX_CREDIT_SECONDS = 1.2;
 const NEAR_FAMILIARITY_PER_SECOND = 0.00042;
 const MOVING_FAMILIARITY_PER_SECOND = 0.00024;
 const MAX_LEGACY_TOUCHES = 1_000_000_000;
+// This mirrors the attention engine's COMMITMENT_HESITATES boundary. Above it,
+// the ordinary assignment deliberately returns delayed/passive attention rather
+// than an immediate approach, and Phase 6 must not promote past that decision.
+const RELATIONSHIP_APPROACH_COMMITMENT_LIMIT = 0.55;
+// Interaction sequence numbers deliberately wrap at 65,536. A matching number
+// only identifies the same contact while it is temporally possible for that
+// contact to still exist. After the maximum hold plus release aftermath it is a
+// new interaction that happened to reuse the same bounded sequence number.
+const VIEWER_SEQUENCE_LIVE_SECONDS = MAX_HOLD_SECONDS + RELEASE_SECONDS + 1;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -230,6 +245,17 @@ function isActiveRole(role) {
   return ACTIVE_ROLES.has(role);
 }
 
+function relationshipMayApproach(fish) {
+  return activityCommitment(fish?.activity?.current) < RELATIONSHIP_APPROACH_COMMITMENT_LIMIT;
+}
+
+function sameLiveSequence(transient, field, sequence, nowSeconds) {
+  if (sequence === null || transient?.[field] !== sequence) return false;
+  if (!Number.isFinite(nowSeconds) || !Number.isFinite(transient?.engagementAt)) return false;
+  const elapsed = nowSeconds - transient.engagementAt;
+  return elapsed >= 0 && elapsed <= VIEWER_SEQUENCE_LIVE_SECONDS;
+}
+
 function roleAfterSaturation(role, saturation) {
   if (saturation < SATURATION_STYLE_THRESHOLD) return role;
   if (role === "investigate") return saturation >= SATURATION_STRONG_THRESHOLD ? "watch" : "approach";
@@ -268,18 +294,21 @@ function roleAfterFamiliarity(fish, record) {
   // means an old save receives no accidental timing or object-shape changes.
   if (profile.familiarity <= 0) return record;
   const strength = familiarityStrength(profile, record, fish.attention ?? null);
+  const mayApproach = relationshipMayApproach(fish);
   let role = record.role;
 
   // Low familiarity first changes *tone*: a cautious/wary answer becomes a
-  // watch. More trust turns passive attention into a real approach. Only a fish
-  // that was already meaningfully bold can turn that approach into the close
-  // investigator style, which is the guardrail that keeps a familiar cautious
-  // fish cautious.
+  // watch. More trust can turn passive attention into a real approach only when
+  // the base attention engine considered this fish free to leave its activity.
+  // This keeps an arrival, grazer, resting fish, or other committed animal from
+  // being smuggled past the commitment rules by familiarity after assignment.
   if (role === "wary" && strength >= FAMILIAR_WATCH_THRESHOLD) role = "watch";
   if (role === "acknowledge" && strength >= FAMILIAR_WATCH_THRESHOLD * 2) role = "watch";
-  if ((role === "watch" || role === "wary" || role === "acknowledge")
+  if (mayApproach
+    && (role === "watch" || role === "wary" || role === "acknowledge")
     && strength >= FAMILIAR_APPROACH_THRESHOLD) role = "approach";
-  if (role === "approach"
+  if (mayApproach
+    && role === "approach"
     && strength >= FAMILIAR_CLOSE_THRESHOLD
     && profile.boldness >= FAMILIAR_CLOSE_BOLDNESS
     && profile.confidence >= 0.55) role = "investigate";
@@ -336,6 +365,7 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
       .map((record, index) => ({ record, index, saturation: viewerSaturationFor(fish[index]) }))
       .filter(({ record, index, saturation }) => index !== anchor
         && record
+        && relationshipMayApproach(fish[index])
         && ROTATABLE_ROLES.has(record.role)
         && Number.isFinite(record.distance)
         && record.distance <= 30
@@ -378,8 +408,8 @@ export function registerViewerResponses(fish, stimulus, nowSeconds) {
   return fish.map((one, index) => {
     const response = one.attention;
     if (!response || response.stimulusId !== stimulus.id) return one;
-    const previousSequence = one.viewerRelationship?.responseSequence;
-    if (sequence !== null && previousSequence === sequence) return one;
+    const transient = one.viewerRelationship ?? {};
+    if (sameLiveSequence(transient, "responseSequence", sequence, nowSeconds)) return one;
 
     const saturation = viewerSaturationFor(one, nowSeconds);
     const proximity = Number.isFinite(response.distance)
@@ -426,13 +456,11 @@ export function creditViewerEngagement(fish, stimulus, nowSeconds) {
     if (!response || response.stimulusId !== stimulus.id || !isActiveRole(response.role)) return one;
 
     const transient = one.viewerRelationship ?? {};
-    const sameEngagement = sequence !== null && transient.engagementSequence === sequence;
+    const sameEngagement = sameLiveSequence(transient, "engagementSequence", sequence, nowSeconds);
     const creditedNear = sameEngagement ? Math.max(0, transient.creditedNearSeconds ?? 0) : 0;
     const nearSeconds = Math.max(0, response.nearSeconds ?? 0);
     const nearDelta = Math.max(0, nearSeconds - creditedNear);
-    const previousAt = sameEngagement && Number.isFinite(transient.engagementAt)
-      ? transient.engagementAt
-      : nowSeconds;
+    const previousAt = sameEngagement ? transient.engagementAt : nowSeconds;
     const elapsed = clamp(nowSeconds - previousAt, 0, MAX_CREDIT_SECONDS);
     const moving = stimulus.held && stimulus.gesture !== "press" && (stimulus.speed ?? 0) > 0.5;
     const movingSeconds = moving ? elapsed : 0;
