@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { WATERLINE_ROWS } from "../src/sim/config.js";
+import { DRIVE_MAXIMUM, WATERLINE_ROWS } from "../src/sim/config.js";
 import { ACTIVITIES } from "../src/sim/fish-activities.js";
-import { tickVoluntaryGlassVisit } from "../src/sim/glass-visits.js";
+import {
+  prepareVoluntaryGlassVisits,
+  tickVoluntaryGlassVisit,
+} from "../src/sim/glass-visits.js";
+import { speciesCanBottomFeed } from "../src/sim/fish-growth.js";
 import { substrateSafeY } from "../src/sim/fish-motion.js";
 import { applyTouch, createAquariumState } from "../src/sim/state.js";
 import {
@@ -142,4 +146,35 @@ test("protected voluntary-visit targets use the same depth ceiling as locomotion
   assert.equal(frame.target.glassVisit, true);
   assert.ok(frame.target.y <= productionCeiling + 1e-9,
     `visit target ${frame.target.y} was below production ceiling ${productionCeiling}`);
+});
+
+test("a hungry open-water species is not permanently locked out of voluntary visits", () => {
+  const original = createAquariumState({ seed: 0x6f001005, wallClockHours: 12 });
+  let openWaterSeed = 1;
+  while (speciesCanBottomFeed(openWaterSeed)) openWaterSeed += 1;
+
+  const template = original.individuals[0];
+  const fish = {
+    ...withGlassFamiliarity({ ...template, seed: openWaterSeed }, 0.9),
+    drives: { ...template.drives, hunger: DRIVE_MAXIMUM, energy: 0.8 },
+    behavior: { ...template.behavior, current: "cruise", previous: "cruise", blend: 1 },
+    activity: { ...template.activity, current: ACTIVITIES.cruise, previous: ACTIVITIES.cruise },
+    attention: null,
+    viewerRelationship: undefined,
+  };
+  assert.equal(speciesCanBottomFeed(fish.seed), false);
+
+  let invitation = null;
+  for (let seconds = 0; seconds <= 3600 && !invitation; seconds += 4) {
+    const prepared = prepareVoluntaryGlassVisits({
+      ...original,
+      elapsedRealSeconds: seconds,
+      individuals: [fish],
+      stimuli: [],
+      impulses: [],
+    });
+    invitation = prepared.individuals[0].viewerRelationship?.glassVisit ?? null;
+  }
+
+  assert.ok(invitation, "max hunger became a permanent invitation veto for an open-water species");
 });
