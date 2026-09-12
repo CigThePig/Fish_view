@@ -323,6 +323,13 @@ test("relationship round trips retain familiarity but discard short-term saturat
   assert.equal(viewerSaturationFor(restored.individuals[0]), 0);
 });
 
+test("zero familiarity leaves the ordinary attention record unchanged", () => {
+  const fish = withGlassFamiliarity(base().individuals[0], 0);
+  const assignment = attentionRecord("delayed", { durationSeconds: 1.4, delaySeconds: 1.6 });
+  const shaped = shapeAttentionForSaturation([fish], [assignment], { guarantee: false })[0];
+  assert.deepEqual(shaped, assignment);
+});
+
 test("high familiarity preserves bold and cautious personalities instead of flattening them", () => {
   const cautious = relationshipFish(1, (profile) => profile.boldness < 0.3 && profile.trust > 0.4);
   const bold = relationshipFish(1, (profile) =>
