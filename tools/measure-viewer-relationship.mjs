@@ -32,6 +32,11 @@ const PRODUCTION_MILESTONES = new Set([1, 7, 30, 60, 90, 120, 180]);
 const RAPID_INTERACTIONS = 40;
 const NATURAL_VISIT_SECONDS = 2 * 60 * 60;
 const NATURAL_VISIT_STEP_SECONDS = 0.25;
+const MATURATION_STEP_SECONDS = 0.25;
+const MATURATION_FAST_DAYS = 175;
+const MATURATION_SETTLE_DAYS = 5;
+const MATURATION_FAST_SCALE = 604800;
+const MATURATION_SETTLE_SCALE = 3600;
 
 function round(value, places = 4) {
   const scale = 10 ** places;
@@ -126,6 +131,48 @@ function archetypeEvidence(state) {
   }));
 }
 
+function runForRealSeconds(state, realSeconds, step = MATURATION_STEP_SECONDS) {
+  let next = state;
+  const fullSteps = Math.floor(realSeconds / step);
+  for (let index = 0; index < fullSteps; index += 1) next = tick(next, step);
+  const remainder = realSeconds - fullSteps * step;
+  return remainder > 1e-9 ? tick(next, remainder) : next;
+}
+
+// Build the six-month evidence cast through the same live tick path the panel
+// uses. The first 175 days use the project's supported maximum acceleration to
+// materialize the long-horizon world quickly. The last five simulated days run
+// at one simulated hour per real second, giving every arrival more than two
+// minutes of actual activity/drive time before we observe it. This is very
+// different from pretending the panel was powered off for six months: no viewer
+// interaction is injected, but fish still get to eat, rest, socialize and
+// finish their entry swims while the mature world is built.
+function continuouslyMatureAquarium() {
+  let state = createAquariumState({
+    seed: 0x6e5a11,
+    wallClockHours: 12,
+    settings: { timeScale: MATURATION_FAST_SCALE },
+  });
+  state = runForRealSeconds(
+    state,
+    MATURATION_FAST_DAYS * 86400 / MATURATION_FAST_SCALE,
+  );
+  state = {
+    ...state,
+    settings: { ...state.settings, timeScale: MATURATION_SETTLE_SCALE },
+  };
+  state = runForRealSeconds(
+    state,
+    MATURATION_SETTLE_DAYS * 86400 / MATURATION_SETTLE_SCALE,
+  );
+  return {
+    ...state,
+    settings: { ...state.settings, timeScale: 1 },
+    stimuli: [],
+    impulses: [],
+  };
+}
+
 function meaningfulSession(state, seed) {
   const fish = state.individuals.find((one) => one.seed === seed);
   if (!fish) return state;
@@ -210,11 +257,11 @@ function visitEvidence(archetypes, mature) {
 }
 
 // Product-level scan. Unlike visitEvidence(), this changes only familiarity.
-// Behavior, activity, drives, position and the rest of the mature aquarium are
-// left exactly as production produced them, then normal tick() advances two
-// hours of viewer-free aquarium life. This proves the invitation can actually
-// emerge through the autonomous scheduler instead of existing only in a posed
-// low-commitment fixture.
+// Behavior, activity, drives, position and the rest of the continuously matured
+// aquarium are left exactly as live simulation produced them, then normal tick()
+// advances two hours of viewer-free aquarium life. This proves an invitation can
+// actually emerge through autonomous scheduling instead of existing only in a
+// posed low-commitment fixture.
 function naturalVisitEvidence(archetypes, mature) {
   const results = [];
   const steps = Math.ceil(NATURAL_VISIT_SECONDS / NATURAL_VISIT_STEP_SECONDS);
@@ -312,7 +359,9 @@ function validate(report) {
   assert.ok(saved.individuals.every((fish) => !("viewerRelationship" in fish)), "transient relationship data reached persistence");
 }
 
-const mature = advanceOffline(createAquariumState({ seed: 0x6e5a11, wallClockHours: 12 }), 180 * 86400);
+const mature = continuouslyMatureAquarium();
+assert.ok(Math.abs(mature.totalDays - 180) < 1e-6,
+  `continuous maturation ended at ${mature.totalDays} days instead of 180`);
 const archetypes = archetypeEvidence(mature);
 const productionGrowth = productionGrowthEvidence();
 const rapidSpam = rapidSpamEvidence();
