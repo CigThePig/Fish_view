@@ -263,6 +263,9 @@ function familiarityStrength(profile, record, previousAttention = null) {
 function roleAfterFamiliarity(fish, record) {
   if (!record) return null;
   const profile = relationshipResponseProfile(fish);
+  // Phase 6C must be invisible at the old default. Apart from making regression
+  // expectations easier to read, preserving the exact record at familiarity 0
+  // means an old save receives no accidental timing or object-shape changes.
   if (profile.familiarity <= 0) return record;
   const strength = familiarityStrength(profile, record, fish.attention ?? null);
   let role = record.role;
