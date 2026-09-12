@@ -243,3 +243,36 @@ test("a hungry open-water species is not permanently locked out of voluntary vis
 
   assert.ok(invitation, "max hunger became a permanent invitation veto for an open-water species");
 });
+
+test("calm social locomotion can yield to a familiar viewer relationship", () => {
+  const original = createAquariumState({ seed: 0x6f001008, wallClockHours: 12 });
+  const template = original.individuals[0];
+  const fish = {
+    ...withGlassFamiliarity(template, 0.9),
+    drives: { ...template.drives, energy: 0.8 },
+    behavior: { ...template.behavior, current: "social", previous: "social", blend: 1 },
+    activity: {
+      ...template.activity,
+      current: ACTIVITIES.schoolFollow,
+      previous: ACTIVITIES.schoolFollow,
+      ageRealSeconds: 12,
+      targetType: "school",
+    },
+    attention: null,
+    viewerRelationship: undefined,
+  };
+
+  let invitation = null;
+  for (let seconds = 0; seconds <= 3600 && !invitation; seconds += 4) {
+    const prepared = prepareVoluntaryGlassVisits({
+      ...original,
+      elapsedRealSeconds: seconds,
+      individuals: [fish],
+      stimuli: [],
+      impulses: [],
+    });
+    invitation = prepared.individuals[0].viewerRelationship?.glassVisit ?? null;
+  }
+
+  assert.ok(invitation, "calm social behavior permanently suppressed the learned viewer relationship");
+});
