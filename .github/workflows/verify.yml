@@ -35,9 +35,14 @@ jobs:
       - name: Commit verified Phase 6 visual evidence
         if: github.event_name == 'pull_request' && github.head_ref == 'phase-6-viewer-relationship'
         run: |
+          mkdir -p /tmp/phase6-evidence
+          cp .audit-output/relationship-captures/phase6-relationship-contact-sheet.png /tmp/phase6-evidence/
+          cp .audit-output/relationship-captures/phase6-relationship-capture-manifest.json /tmp/phase6-evidence/
+          git fetch origin "${{ github.head_ref }}"
+          git checkout -B "${{ github.head_ref }}" "origin/${{ github.head_ref }}"
           mkdir -p docs/assets/stage-2/phase-6
-          cp .audit-output/relationship-captures/phase6-relationship-contact-sheet.png docs/assets/stage-2/phase-6/
-          cp .audit-output/relationship-captures/phase6-relationship-capture-manifest.json docs/assets/stage-2/phase-6/
+          cp /tmp/phase6-evidence/phase6-relationship-contact-sheet.png docs/assets/stage-2/phase-6/
+          cp /tmp/phase6-evidence/phase6-relationship-capture-manifest.json docs/assets/stage-2/phase-6/
           git add docs/assets/stage-2/phase-6
           if git diff --cached --quiet; then
             exit 0
