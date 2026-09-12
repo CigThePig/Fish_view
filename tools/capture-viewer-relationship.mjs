@@ -37,10 +37,14 @@ function parseOptions(args) {
   if (!Number.isFinite(scale) || scale < 0.2 || scale > 1) {
     throw new Error("--scale must be between 0.2 and 1");
   }
+  const seed = Number(optionValue(args, "--seed", 0x6e5a11));
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    throw new Error("--seed must be a uint32 seed");
+  }
   return {
     scale,
     output: path.resolve(optionValue(args, "--output", ".behavior-captures/relationship")),
-    seed: Number(optionValue(args, "--seed", 0x6e5a11)) >>> 0,
+    seed,
   };
 }
 
@@ -96,8 +100,11 @@ function captureAnchor(base, selectedSeed) {
       return { x: candidate.x, y: candidate.y, baselineRole: response.role, anchorSeed: candidate.seed };
     }
   }
-  const fallback = candidates[0] ?? selected;
-  return { x: fallback.x, y: fallback.y, baselineRole: null, anchorSeed: fallback.seed };
+  // This is acceptance evidence, not a best-effort screenshot utility. Falling
+  // back to an arbitrary point would still create a pretty PNG while silently
+  // losing the controlled unfamiliar-versus-familiar comparison the sheet is
+  // supposed to prove.
+  throw new Error(`no passive unfamiliar capture anchor for fish ${selectedSeed.toString(16)}`);
 }
 
 function runScenario(base, selectedSeed, familiarity, anchor) {
@@ -172,7 +179,7 @@ for (const [rowIndex, [name, selectedSeed]] of archetypes.entries()) {
     sheetContext,
     `${name}  seed=${selectedSeed.toString(16)}  bold=${profile.boldness.toFixed(2)}`
       + `  confidence=${profile.confidence.toFixed(2)}  attentive=${profile.attentiveness.toFixed(2)}`
-      + `  baseline=${anchor.baselineRole ?? "fallback"}`,
+      + `  baseline=${anchor.baselineRole}`,
     0,
     rowY,
     sheet.width,
