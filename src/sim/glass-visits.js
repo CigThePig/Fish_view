@@ -18,7 +18,6 @@ import { fishSpriteWidth } from "./fish-growth.js";
 import { substrateSafeY, surfaceSafeY } from "./fish-motion.js";
 import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 import {
-  glassFamiliarityFor,
   relationshipResponseProfile,
   viewerSaturationFor,
 } from "./viewer-relationship.js";
@@ -73,9 +72,7 @@ function safeVerticalRange(fish, index, state, x) {
   const top = surfaceSafeY(fish, state, x);
   const floor = substrateSafeY(fish, state, x);
   const protectedFloor = index < 3
-    ? state.rows > 0
-      ? top + Math.max(0, floor - top) * 0.68
-      : floor
+    ? top + Math.max(0, floor - top) * 0.68
     : floor;
   return { top, bottom: Math.max(top, Math.min(floor, protectedFloor)) };
 }
@@ -217,17 +214,38 @@ function visitAnchor(fish, index, state, epoch) {
  * the broad behavior leaves cruise/explore, the transient visit disappears.
  */
 export function prepareVoluntaryGlassVisits(state) {
+  let cleanupChanged = false;
   let individuals = (state.individuals ?? []).map((fish) => {
     const visit = activeVisit(fish);
-    if (!visit) return relationshipWithoutVisit(fish);
-    if (!biologicallyAvailable(fish) && !fish.attention) return relationshipWithoutVisit(fish);
+    if (!visit) {
+      const cleaned = relationshipWithoutVisit(fish);
+      cleanupChanged ||= cleaned !== fish;
+      return cleaned;
+    }
+    if (!biologicallyAvailable(fish) && !fish.attention) {
+      cleanupChanged = true;
+      return relationshipWithoutVisit(fish);
+    }
     return fish;
   });
-  let next = individuals === state.individuals ? state : { ...state, individuals };
 
-  // A response pauses an existing invitation rather than cancelling it. That
-  // gives the viewer exactly one interaction language: touch the fish and the
-  // ordinary Phase 2–4 mechanics take over, then the voluntary visit can finish.
+  // Defensive arbitration: production starts only one visit, but a malformed
+  // dev fixture or future migration must not be able to create a glass crowd.
+  const active = individuals
+    .map((fish, index) => ({ fish, index, visit: activeVisit(fish) }))
+    .filter(({ visit }) => visit)
+    .sort((left, right) => (left.visit.startedAt ?? 0) - (right.visit.startedAt ?? 0)
+      || left.fish.seed - right.fish.seed);
+  if (active.length > 1) {
+    const keep = active[0].index;
+    individuals = individuals.map((fish, index) => {
+      if (index === keep || !activeVisit(fish)) return fish;
+      cleanupChanged = true;
+      return relationshipWithoutVisit(fish);
+    });
+  }
+
+  let next = cleanupChanged ? { ...state, individuals } : state;
   if (individuals.some((fish) => activeVisit(fish))) return next;
   if (directViewerStimulusActive(next)) return next;
 
@@ -302,7 +320,7 @@ export function trackViewerRegions(state) {
   return changed ? { ...state, individuals } : state;
 }
 
-function visitTarget(fish, visit, state) {
+function visitTarget(fish, index, visit, state) {
   const profile = relationshipResponseProfile(fish);
   const distance = Math.hypot(visit.anchorX - fish.x, visit.anchorY - fish.y);
   const arrived = distance <= APPROACH_RADIUS;
@@ -317,7 +335,7 @@ function visitTarget(fish, visit, state) {
   const hoverY = arrived ? Math.sin(phase * 0.73) * (0.12 + profile.attentiveness * 0.12) : 0;
   const point = clampVisitPoint(
     fish,
-    99,
+    index,
     state,
     visit.anchorX + hoverX,
     visit.anchorY + hoverY,
@@ -377,6 +395,6 @@ export function tickVoluntaryGlassVisit(fish, index, state, baseTarget, realDelt
         glassVisit: nextVisit,
       },
     },
-    target: visitTarget(fish, nextVisit, state, index),
+    target: visitTarget(fish, index, nextVisit, state),
   };
 }
