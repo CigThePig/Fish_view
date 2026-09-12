@@ -175,12 +175,32 @@ export function applyTouch(state, x, y) {
   // answer; saturation only changes the style/rotation of those answers.
   const responseIndividuals = state.individuals.map((fish) =>
     decayViewerSaturation(fish, state.elapsedRealSeconds));
+  // A responder already committed to a *different* press is not free for this
+  // assignment. Treating touch-react as ordinary zero commitment made it the
+  // easiest fish to recruit again, and a second tap could silently retarget its
+  // motion while its attention record still named the first tap. A coalesced
+  // repeat of the same stimulus is deliberately not protected by this guard.
+  const answeringEarlierStimulus = (fish) => Boolean(
+    fish.attention
+    && fish.attention.stimulusId !== stimulus.id,
+  );
   const assignedAttention = assignAttention(
     { ...state, individuals: responseIndividuals, stimuli: events.stimuli },
     stimulus,
-    { commitmentFor: (fish) => activityCommitment(fish.activity?.current) },
+    {
+      commitmentFor: (fish) => answeringEarlierStimulus(fish)
+        ? 1
+        : activityCommitment(fish.activity?.current),
+    },
   );
-  const attention = shapeAttentionForSaturation(responseIndividuals, assignedAttention, { guarantee: true });
+  // The generic assignment still gives an unavailable fish a passive record so
+  // it can visibly notice an event. Here that would overwrite an answer already
+  // under way, so mask those records before familiarity/saturation shaping too.
+  // This also prevents a saturated responder from handing prominence to a fish
+  // that cannot actually accept the new stimulus.
+  const availableAttention = assignedAttention.map((assigned, index) =>
+    (answeringEarlierStimulus(responseIndividuals[index]) ? null : assigned));
+  const attention = shapeAttentionForSaturation(responseIndividuals, availableAttention, { guarantee: true });
 
   // The school drifts toward a disturbance it is near and ignores one across
   // the tank. It used to swing at every tap wherever it fell, which is most of
@@ -205,12 +225,15 @@ export function applyTouch(state, x, y) {
     // or a glance, and it must not overwrite the activity a responder put down
     // with the `touch-react` it is currently in - recovery would have nothing
     // to resume, and a second tap would quietly cost the fish its thread.
+    const answeringEarlier = answeringEarlierStimulus(fish);
     const answering = fish.activity?.current === ACTIVITIES.touchReact;
     const carried = fish.attention?.resume ?? null;
-    const assigned = attention[index];
-    const role = assigned
-      ? (carried ? { ...assigned, resume: carried } : assigned)
-      : fish.attention ?? null;
+    const assigned = answeringEarlier ? null : attention[index];
+    const role = answeringEarlier
+      ? fish.attention
+      : assigned
+        ? (carried ? { ...assigned, resume: carried } : assigned)
+        : fish.attention ?? null;
     const base = {
       ...fish,
       drives: { ...fish.drives },
@@ -222,10 +245,10 @@ export function applyTouch(state, x, y) {
       visual: { ...fish.visual },
       attention: role,
     };
-    // Only the fish that are going anywhere are turned toward the disturbance.
-    // Everything else keeps the activity and the heading it had; its response
-    // is shaped into that motion by src/sim/attention.js on the next frame.
-    if (!attentionInvestigates(role)) return base;
+    // A distinct press may not retarget a response already in progress. The
+    // attention record, motion and activity continue toward their original
+    // stimulus until that seeded response finishes.
+    if (answeringEarlier || !attentionInvestigates(role)) return base;
     const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     const glassAffinity = affinitiesFromSeed(fish.seed).glass;
     // What it was doing when it turned, carried by the response so it has
