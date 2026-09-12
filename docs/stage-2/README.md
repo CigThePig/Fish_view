@@ -28,13 +28,22 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 3 | Hold and persistent presence | Done | [phase 3](phase-3-hold-presence.md) |
 | 4 | Drag, swipe and local water impulse | Done | [phase 4](phase-4-drag-swipe.md) |
 | 5 | Environmental interaction and causal chains | Done | [phase 5](phase-5-environment-and-chains.md) · [first slice](phase-5-water-and-plants.md) |
-| 6 | Persistent fish–viewer relationship | Not started | — |
+| 6 | Persistent fish–viewer relationship | Done | [phase 6](phase-6-viewer-relationship-evidence.md) |
 | 7A | Flagship chase redesign | Not started | — |
 | 7B | Remaining behaviour readability pass | Not started | — |
 | 8 | Scene salience and anti-synchronisation | Not started | — |
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+Phase 6 gives each persistent fish one compact, bounded familiarity with the
+viewer while keeping seeded personality and short-term saturation separate.
+Meaningful interaction builds that familiarity over weeks and months; rapid
+repetition has sharply diminishing returns; familiar fish can respond sooner,
+stay interested longer, and occasionally initiate a quiet visit to the glass.
+The final evidence includes controlled personality comparisons, a genuine
+production growth path, continuously matured viewer-free visit measurements,
+and renderer captures. See the [phase report](phase-6-viewer-relationship-evidence.md).
 
 Phase 5 made the aquarium itself answer. It ran in two slices. The first
 replaced the bright placeholder rings with subdued water crests and gave rooted
