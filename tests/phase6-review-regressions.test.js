@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  MAX_DELAYED,
+  MAX_INVESTIGATORS,
+  MAX_SECONDARY,
+} from "../src/sim/attention.js";
 import { DRIVE_MAXIMUM, WATERLINE_ROWS } from "../src/sim/config.js";
 import { ACTIVITIES } from "../src/sim/fish-activities.js";
 import {
@@ -9,8 +14,14 @@ import {
 } from "../src/sim/glass-visits.js";
 import { speciesCanBottomFeed } from "../src/sim/fish-growth.js";
 import { substrateSafeY } from "../src/sim/fish-motion.js";
-import { applyTouch, createAquariumState } from "../src/sim/state.js";
 import {
+  applyTouch,
+  createAquariumState,
+  restorePersistentState,
+  serializePersistentState,
+} from "../src/sim/state.js";
+import {
+  creditViewerEngagement,
   glassFamiliarityFor,
   shapeAttentionForSaturation,
   withGlassFamiliarity,
@@ -84,6 +95,39 @@ test("saturation rotation cannot recruit a committed fish as replacement investi
   assert.ok(passive(shaped[1]?.role), `committed replacement became ${shaped[1]?.role}`);
 });
 
+test("relationship shaping cannot exceed the Phase 2 responder budgets", () => {
+  const state = stockedAquarium({ seed: 0x6f001009, wallClockHours: 12 });
+  assert.ok(state.individuals.length >= 8, "review fixture needs a mature cast");
+  const fish = state.individuals.slice(0, 8).map((one) => ({
+    ...withGlassFamiliarity(one, 1),
+    activity: { ...one.activity, current: ACTIVITIES.cruise },
+    attention: null,
+    viewerRelationship: undefined,
+  }));
+  const assignments = [
+    attention("investigate", 2),
+    attention("investigate", 3),
+    attention("approach", 4),
+    attention("approach", 5),
+    attention("delayed", 6),
+    attention("watch", 7),
+    attention("wary", 8),
+    attention("acknowledge", 9),
+  ];
+  const shaped = shapeAttentionForSaturation(fish, assignments, { guarantee: true });
+  const count = (role) => shaped.filter((record) => record?.role === role).length;
+
+  assert.ok(count("investigate") <= MAX_INVESTIGATORS,
+    `familiarity expanded primary investigators to ${count("investigate")}`);
+  assert.ok(count("approach") <= MAX_SECONDARY,
+    `familiarity expanded secondary approaches to ${count("approach")}`);
+  assert.ok(count("delayed") <= MAX_DELAYED,
+    `familiarity expanded delayed responders to ${count("delayed")}`);
+  assert.ok(shaped.filter((record) => ["investigate", "approach", "delayed"].includes(record?.role)).length
+    <= MAX_INVESTIGATORS + MAX_SECONDARY + MAX_DELAYED,
+  "relationship shaping expanded the total interrupted cast");
+});
+
 test("a wrapped interaction sequence is new once the old contact is temporally impossible", () => {
   const original = createAquariumState({ seed: 0x6f001003, wallClockHours: 12 });
   const founder = withGlassFamiliarity(original.individuals[0], 0.1);
@@ -114,35 +158,103 @@ test("a wrapped interaction sequence is new once the old contact is temporally i
   assert.equal(after.history.touches, 6, "wrapped sequence suppressed fresh-touch telemetry");
 });
 
-test("a distinct second press cannot retarget a response already under way", () => {
-  const state = createAquariumState({ seed: 0x6f001006, wallClockHours: 12 });
-  const founder = state.individuals[0];
-  const first = applyTouch(state, founder.x, founder.y);
-  const responding = first.individuals[0];
-  assert.equal(responding.activity.current, ACTIVITIES.touchReact);
-  assert.ok(responding.attention);
-
+test("a distant second press preserves an old responder when another fish can answer", () => {
+  const state = stockedAquarium({ seed: 0x6f001006, wallClockHours: 12 });
+  const first = applyTouch(state, state.cols / 2, 9.5);
+  const index = first.individuals.findIndex((fish) => fish.attention?.role === "investigate");
+  assert.ok(index >= 0);
+  const responding = first.individuals[index];
   const before = {
     stimulusId: responding.attention.stimulusId,
     targetId: responding.activity.targetId,
     targetX: responding.activity.targetX,
     targetY: responding.activity.targetY,
-    vx: responding.vx,
-    vy: responding.vy,
   };
-  const farX = responding.x < state.cols / 2 ? state.cols - 2 : 2;
-  const farY = Math.min(state.rows - 4, responding.y + 4);
+  const farX = responding.x < state.cols / 2 ? state.cols - 1 : 0;
+  const farY = responding.y < state.rows / 2 ? state.rows - 4 : 2;
   const second = applyTouch(first, farX, farY);
-  const after = second.individuals[0];
+  const after = second.individuals[index];
+  const newStimulus = second.stimuli.find((stimulus) =>
+    stimulus.source === "touch" && stimulus.id !== before.stimulusId);
 
-  assert.notEqual(second.interactionSequence, first.interactionSequence,
-    "far press coalesced instead of creating a distinct stimulus");
+  assert.ok(newStimulus, "far press did not create a distinct stimulus");
+  assert.ok(Math.hypot(newStimulus.x - responding.x, newStimulus.y - responding.y) > newStimulus.radius,
+    "review fixture did not put the second press outside the old responder's perception");
   assert.equal(after.attention?.stimulusId, before.stimulusId);
   assert.equal(after.activity.targetId, before.targetId);
   assert.equal(after.activity.targetX, before.targetX);
   assert.equal(after.activity.targetY, before.targetY);
-  assert.equal(after.vx, before.vx);
-  assert.equal(after.vy, before.vy);
+  assert.ok(second.individuals.some((fish, otherIndex) =>
+    otherIndex !== index && fish.attention?.stimulusId === newStimulus.id && fish.attention.role === "investigate"),
+  "protecting the old responder swallowed the fresh tap instead of handing it to another fish");
+});
+
+test("a lone fish answers a distant second press without losing its original recovery thread", () => {
+  const state = createAquariumState({ seed: 0x6f00100a, wallClockHours: 12 });
+  const founder = state.individuals[0];
+  const originalActivity = founder.activity.current;
+  const first = applyTouch(state, founder.x, founder.y);
+  const firstFish = first.individuals[0];
+  const firstStimulusId = firstFish.attention?.stimulusId;
+  assert.equal(firstFish.attention?.resume?.current, originalActivity);
+
+  const farX = firstFish.x < state.cols / 2 ? state.cols - 1 : 0;
+  const farY = firstFish.y < state.rows / 2 ? state.rows - 4 : 2;
+  const second = applyTouch(first, farX, farY);
+  const after = second.individuals[0];
+  const newStimulus = second.stimuli.find((stimulus) =>
+    stimulus.source === "touch" && stimulus.id !== firstStimulusId);
+
+  assert.ok(newStimulus, "far press did not create a distinct stimulus");
+  assert.equal(after.attention?.stimulusId, newStimulus.id,
+    "the one-fish aquarium failed to answer the new press");
+  assert.equal(after.attention?.role, "investigate");
+  assert.equal(after.activity.targetId, newStimulus.id);
+  assert.equal(after.attention?.resume?.current, originalActivity,
+    "accepting the fresh tap replaced the activity the fish promised to resume");
+});
+
+test("moving engagement credit waits for a delayed responder to actually start following", () => {
+  const original = createAquariumState({ seed: 0x6f00100b, wallClockHours: 12 });
+  const fish = withGlassFamiliarity(original.individuals[0], 0.2);
+  const stimulus = {
+    id: "touch:delayed-review",
+    source: "touch",
+    sequence: 41,
+    held: true,
+    gesture: "drag",
+    speed: 2,
+    radius: 30,
+  };
+  const waiting = {
+    ...fish,
+    attention: {
+      ...attention("delayed", 5),
+      stimulusId: stimulus.id,
+      ageSeconds: 0.5,
+      delaySeconds: 1.2,
+      nearSeconds: 0,
+    },
+    viewerRelationship: {
+      saturation: 0,
+      saturationAt: 0,
+      engagementSequence: stimulus.sequence,
+      creditedNearSeconds: 0,
+      engagementAt: 0,
+    },
+  };
+  const before = glassFamiliarityFor(waiting);
+  const early = creditViewerEngagement([waiting], stimulus, 1)[0];
+  assert.equal(glassFamiliarityFor(early), before,
+    "a delayed fish learned from following before it had started moving");
+
+  const active = {
+    ...early,
+    attention: { ...early.attention, ageSeconds: 1.3 },
+  };
+  const later = creditViewerEngagement([active], stimulus, 2)[0];
+  assert.ok(glassFamiliarityFor(later) > before,
+    "the same delayed fish earned no moving credit after its delay elapsed");
 });
 
 test("protected voluntary-visit targets use the same depth ceiling as locomotion", () => {
@@ -275,4 +387,35 @@ test("calm social locomotion can yield to a familiar viewer relationship", () =>
   }
 
   assert.ok(invitation, "calm social behavior permanently suppressed the learned viewer relationship");
+});
+
+test("restoring a familiar aquarium cannot reopen a pre-session invitation window", () => {
+  const original = createAquariumState({ seed: 8, wallClockHours: 12 });
+  const familiar = {
+    ...withGlassFamiliarity(original.individuals[0], 1),
+    drives: { ...original.individuals[0].drives, energy: 0.8 },
+    behavior: { ...original.individuals[0].behavior, current: "cruise", previous: "cruise", blend: 1 },
+    activity: { ...original.individuals[0].activity, current: ACTIVITIES.cruise },
+  };
+  const savedState = { ...original, individuals: [familiar] };
+  const restored = restorePersistentState(
+    createAquariumState({ seed: 8, wallClockHours: 12 }),
+    serializePersistentState(savedState),
+  );
+  const immediate = prepareVoluntaryGlassVisits(restored);
+
+  assert.equal(immediate.individuals[0].viewerRelationship?.glassVisit, undefined,
+    "reload immediately reopened a seed-offset invitation window");
+
+  let invitation = null;
+  for (let seconds = 1; seconds <= 1200 && !invitation; seconds += 1) {
+    const prepared = prepareVoluntaryGlassVisits({
+      ...restored,
+      elapsedRealSeconds: seconds,
+      stimuli: [],
+      impulses: [],
+    });
+    invitation = prepared.individuals[0].viewerRelationship?.glassVisit ?? null;
+  }
+  assert.ok(invitation, "closing the reload epoch accidentally disabled future invitations");
 });
