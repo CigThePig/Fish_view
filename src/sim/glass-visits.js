@@ -13,6 +13,7 @@
  * grows with aquarium age.
  */
 
+import { WATERLINE_ROWS } from "./config.js";
 import { clamp } from "./entities.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import { substrateSafeY, surfaceSafeY } from "./fish-motion.js";
@@ -71,8 +72,14 @@ function relationshipWithoutVisit(fish) {
 function safeVerticalRange(fish, index, state, x) {
   const top = surfaceSafeY(fish, state, x);
   const floor = substrateSafeY(fish, state, x);
+  // Keep this exactly in step with tickIndividual's protected mid-water cast.
+  // Using `top` as the 68% origin looks reasonable but top includes moving
+  // surface/body clearance, while locomotion intentionally measures the
+  // protected ceiling from the canonical waterline. A target below the real
+  // locomotion ceiling is unreachable and leaves a visitor forever chasing a
+  // point the movement clamp will not allow it to occupy.
   const protectedFloor = index < 3
-    ? top + Math.max(0, floor - top) * 0.68
+    ? WATERLINE_ROWS + Math.max(0, floor - WATERLINE_ROWS) * 0.68
     : floor;
   return { top, bottom: Math.max(top, Math.min(floor, protectedFloor)) };
 }
