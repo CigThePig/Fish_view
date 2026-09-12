@@ -23,6 +23,11 @@ function round(value, places = 3) {
 export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
   const traits = traitsFromSeed(fish.seed, fish.history);
   const response = relationshipResponseProfile(fish);
+  const visit = fish.viewerRelationship?.glassVisit ?? null;
+  const lastViewerAt = fish.viewerRelationship?.lastViewerAt;
+  const sinceViewer = Number.isFinite(elapsedRealSeconds) && Number.isFinite(lastViewerAt)
+    ? Math.max(0, elapsedRealSeconds - lastViewerAt)
+    : null;
   return Object.freeze({
     seed: fish.seed,
     glassFamiliarity: round(glassFamiliarityFor(fish), 4),
@@ -40,6 +45,11 @@ export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
     attentionDurationSeconds: Number.isFinite(fish.attention?.durationSeconds)
       ? round(fish.attention.durationSeconds, 3)
       : null,
+    glassVisitActive: Boolean(visit),
+    glassVisitAgeSeconds: Number.isFinite(visit?.ageSeconds) ? round(visit.ageSeconds, 3) : null,
+    glassVisitDurationSeconds: Number.isFinite(visit?.durationSeconds) ? round(visit.durationSeconds, 3) : null,
+    glassVisitRecentRegion: visit ? Boolean(visit.recentRegion) : null,
+    secondsSinceViewerRegion: sinceViewer === null ? null : round(sinceViewer, 3),
   });
 }
 
