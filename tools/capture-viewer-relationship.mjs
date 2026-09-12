@@ -23,6 +23,7 @@ const LEVELS = Object.freeze([
 ]);
 const NATIVE = Object.freeze({ width: 800, height: 480 });
 const PASSIVE_ROLES = new Set(["watch", "wary", "acknowledge"]);
+const ACTIVE_ROLES = new Set(["approach", "investigate"]);
 
 function optionValue(args, name, fallback) {
   const prefix = `${name}=`;
@@ -70,10 +71,25 @@ function chooseArchetypes(state) {
 function poseFamiliarity(state, selectedSeed, familiarity) {
   return {
     ...state,
-    individuals: state.individuals.map((fish) => withGlassFamiliarity(
-      fish,
-      fish.seed === selectedSeed ? familiarity : 0,
-    )),
+    individuals: state.individuals.map((fish) => {
+      const familiar = withGlassFamiliarity(
+        fish,
+        fish.seed === selectedSeed ? familiarity : 0,
+      );
+      if (fish.seed !== selectedSeed) return familiar;
+      // The sheet compares relationship levels, not the random activity the
+      // archetype happened to occupy at the 180-day snapshot. Keep the selected
+      // fish free to answer in every column so familiarity is the only changing
+      // behavioral input. Personality, position, drives and the rest of the
+      // mature aquarium remain unchanged.
+      return {
+        ...familiar,
+        behavior: { ...familiar.behavior, current: "cruise", previous: "cruise", blend: 1 },
+        activity: { ...familiar.activity, current: "cruise", previous: "cruise" },
+        attention: null,
+        viewerRelationship: undefined,
+      };
+    }),
   };
 }
 
@@ -236,6 +252,15 @@ for (const [rowIndex, [name, selectedSeed]] of archetypes.entries()) {
       finalRole: scenario.finalRole,
       distanceFromViewerRegion: scenario.distance === null ? null : round(scenario.distance),
     });
+  }
+
+  const unfamiliar = rowManifest.levels.find((level) => level.label === "unfamiliar");
+  const high = rowManifest.levels.find((level) => level.label === "high");
+  if (!PASSIVE_ROLES.has(unfamiliar?.initialRole) || !ACTIVE_ROLES.has(high?.initialRole)) {
+    throw new Error(
+      `${name} relationship capture lost its controlled progression: `
+      + `${unfamiliar?.initialRole ?? "none"} -> ${high?.initialRole ?? "none"}`,
+    );
   }
   manifest.archetypes.push(rowManifest);
 }
