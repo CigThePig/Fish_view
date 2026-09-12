@@ -25,3 +25,4 @@ jobs:
       - run: npm run audit:render
       - run: npm run measure:feeding
       - run: npm run measure:relationship
+      - run: npm run capture:relationship -- --scale=0.25 --output=.audit-output/relationship-captures
