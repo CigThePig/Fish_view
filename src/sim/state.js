@@ -60,7 +60,14 @@ import {
   plantVariationFromSeed,
 } from "./plants.js";
 import { hashSeed, mix32 } from "./prng.js";
-import { sanitizeGlassFamiliarity } from "./viewer-relationship.js";
+import {
+  clearViewerRelationshipTransient,
+  creditViewerEngagement,
+  decayViewerSaturation,
+  registerViewerResponses,
+  sanitizeGlassFamiliarity,
+  shapeAttentionForSaturation,
+} from "./viewer-relationship.js";
 
 export const PERSISTENCE_VERSION = 2;
 
@@ -156,16 +163,24 @@ export function applyTouch(state, x, y) {
   const { pointerX, pointerY, pressX, pressY, safeX, safeY } = pressPoint(state, x, y);
 
   // A press is three things: water that moves, something the inhabitants can
-  // notice, and - now - a role for each of them. All of it happens in the frame
-  // the press arrives, because a viewer must never wait a tick to be
-  // acknowledged, and because a response chosen a frame later would be a
-  // response to an aquarium that had already moved.
+  // notice, and a role for each of them. All of it happens in the frame the
+  // press arrives, because a viewer must never wait a tick to be acknowledged.
   const context = classifyStimulusContext(state, pressX, pressY);
   const events = registerTouch(state, safeX, safeY, context, { pointerX, pointerY });
   const stimulus = events.stimulus;
-  const attention = assignAttention({ ...state, stimuli: events.stimuli }, stimulus, {
-    commitmentFor: (fish) => activityCommitment(fish.activity?.current),
-  });
+
+  // Short-term repetition is deliberately transient. Its decay is materialised
+  // only when the viewer interacts, so an untouched aquarium pays no per-frame
+  // relationship cost. The ordinary attention engine still decides who would
+  // answer; saturation only changes the style/rotation of those answers.
+  const responseIndividuals = state.individuals.map((fish) =>
+    decayViewerSaturation(fish, state.elapsedRealSeconds));
+  const assignedAttention = assignAttention(
+    { ...state, individuals: responseIndividuals, stimuli: events.stimuli },
+    stimulus,
+    { commitmentFor: (fish) => activityCommitment(fish.activity?.current) },
+  );
+  const attention = shapeAttentionForSaturation(responseIndividuals, assignedAttention, { guarantee: true });
 
   // The school drifts toward a disturbance it is near and ignores one across
   // the tank. It used to swing at every tap wherever it fell, which is most of
@@ -183,14 +198,7 @@ export function applyTouch(state, x, y) {
     };
   });
 
-  let nearestIndex = 0;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  const individuals = state.individuals.map((fish, index) => {
-    const distance = Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestIndex = index;
-    }
+  const individuals = responseIndividuals.map((fish, index) => {
     // A fish that is already answering an earlier press keeps that answer,
     // whatever this press does to it. A response has its own seeded life and
     // ends when it is spent: a press somewhere else must not cut short a lean
@@ -216,14 +224,12 @@ export function applyTouch(state, x, y) {
     };
     // Only the fish that are going anywhere are turned toward the disturbance.
     // Everything else keeps the activity and the heading it had; its response
-    // is shaped into that motion by src/sim/attention.js on the next frame,
-    // which is what a fish noticing something actually looks like.
+    // is shaped into that motion by src/sim/attention.js on the next frame.
     if (!attentionInvestigates(role)) return base;
     const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     const glassAffinity = affinitiesFromSeed(fish.seed).glass;
     // What it was doing when it turned, carried by the response so it has
-    // somewhere to go back to when the response is over - the thread it was
-    // already holding if this is not the first press it has answered.
+    // somewhere to go back to when the response is over.
     const resume = carried
       ?? (answering ? null : fish.activity)
       ?? createActivityState(defaultActivityForBehavior(fish.behavior.current));
@@ -242,24 +248,16 @@ export function applyTouch(state, x, y) {
     };
   });
 
-  // The fish nearest the glass when it was tapped is the one that remembers it.
-  // Phase 6 turns this drift into a relationship; today it is the same two
-  // hundredths of boldness it has always been.
-  const chosen = individuals[nearestIndex];
-  individuals[nearestIndex] = {
-    ...chosen,
-    history: {
-      ...chosen.history,
-      touches: chosen.history.touches + 1,
-      boldnessDrift: clamp(chosen.history.boldnessDrift + 0.0025, 0, 0.18),
-      sociabilityDrift: clamp(chosen.history.sociabilityDrift + 0.001, 0, 0.12),
-    },
-  };
+  // Phase 6B learns from the response the fish actually accepted, not from the
+  // coordinate the viewer happened to touch. The legacy touch tally and
+  // personality drifts remain readable for old saves, but new presses no longer
+  // rewrite personality merely because a fish was nearest to the glass event.
+  const relatedIndividuals = registerViewerResponses(individuals, stimulus, state.elapsedRealSeconds);
 
   return {
     ...state,
     school,
-    individuals,
+    individuals: relatedIndividuals,
     stimuli: events.stimuli,
     impulses: events.impulses,
     interactionSequence: events.interactionSequence,
@@ -396,7 +394,7 @@ export function applyContact(state, x, y, seconds) {
       stimuli,
       // A gesture that has just changed what it is gets an answer this frame
       // rather than on the next beat. A swipe is over in a third of a second,
-      // and an aquarium that noticed one half a second later did not notice it.
+      // and an aquarium that noticed one half second later did not notice it.
       becoming: !existing.held || gesture !== existing.gesture,
       impulses: wakeFor(state, { x: safeX, y: safeY, gesture, motion }),
     },
@@ -451,10 +449,9 @@ function wakeFor(state, { x, y, gesture, motion }) {
  * Re-read a contact that is still down, on the beat.
  *
  * The same Phase 2 assignment, against a disturbance that has not gone away and
- * interest that has habituated since. Only the records change: a fish that has
- * just been given an investigating role turns on the next tick, through the
- * same path a delayed investigator converts through - there is no press
- * arriving this frame that has to be answered before the aquarium moves again.
+ * interest that has habituated since. Phase 6B also pays only the engagement
+ * that actually happened since the last review, then lets saturation shape the
+ * next cast without forcing a response from a fish that has habituated.
  */
 function reviewContact(state, existing, elapsed, { stimuli, impulses, becoming }) {
   const stimulus = stimuli.find((entry) => entry.id === existing.id);
@@ -465,36 +462,47 @@ function reviewContact(state, existing, elapsed, { stimuli, impulses, becoming }
   const due = becoming || beat !== Math.floor(existing.holdSeconds / HOLD_REVIEW_SECONDS);
   if (!due) return { ...state, stimuli, impulses };
 
-  const attention = assignAttention({ ...state, stimuli }, stimulus, {
+  const prepared = state.individuals.map((fish) =>
+    decayViewerSaturation(fish, state.elapsedRealSeconds));
+  const credited = creditViewerEngagement(prepared, stimulus, state.elapsedRealSeconds);
+  const assignedAttention = assignAttention({ ...state, individuals: credited, stimuli }, stimulus, {
     commitmentFor: (fish) => activityCommitment(fish.activity?.current),
     // Nothing is compelled to answer a finger it has already got used to. The
     // press that started this contact was answered; whether the aquarium is
     // still answering a minute later is the aquarium's business.
     guarantee: false,
   });
-  const individuals = state.individuals.map((fish, index) => {
+  const attention = shapeAttentionForSaturation(credited, assignedAttention, { guarantee: false });
+  const individuals = credited.map((fish, index) => {
     const merged = mergeHoldAttention(fish.attention ?? null, attention[index], stimulus);
     return merged === (fish.attention ?? null) ? fish : { ...fish, attention: merged };
   });
+  const relatedIndividuals = registerViewerResponses(individuals, stimulus, state.elapsedRealSeconds);
 
-  return { ...state, stimuli, impulses, individuals };
+  return { ...state, stimuli, impulses, individuals: relatedIndividuals };
 }
 
 /**
  * The finger has gone.
  *
  * The stimulus stops being held and starts fading, and the water rings once
- * more where the contact was. Nothing is done to the fish here: each one finds
- * out on its next tick that what it was answering is no longer there, and each
- * one takes its own seeded while to let go of it. That is the aftermath - a
- * responder finishing its approach to a place something just was, hanging at it
- * a moment, and drifting back off the glass.
+ * more where the contact was. Before it does, Phase 6B credits the last bounded
+ * slice of actual engagement since the most recent hold review. The release is
+ * not a new rewardable interaction of its own.
  */
 export function applyRelease(state) {
   const held = heldStimulus(state);
   if (!held) return state;
+  const prepared = state.individuals.map((fish) =>
+    decayViewerSaturation(fish, state.elapsedRealSeconds));
+  const individuals = creditViewerEngagement(prepared, held, state.elapsedRealSeconds);
   const released = releaseStimulus(state, held);
-  return { ...state, stimuli: released.stimuli, impulses: released.impulses };
+  return {
+    ...state,
+    individuals,
+    stimuli: released.stimuli,
+    impulses: released.impulses,
+  };
 }
 
 export function withSettings(state, patch) {
@@ -834,30 +842,36 @@ export function advanceOffline(state, realSeconds) {
     // stay unique across a resume.
     stimuli: Object.freeze([]),
     impulses: Object.freeze([]),
-    individuals: advanced.individuals.map(({ exhale, ...fish }) => ({
-      ...fish,
-      forageDip: 0,
-      drives: {
-        hunger: clamp(fish.drives.hunger + days * 0.03, DRIVE_MINIMUM, DRIVE_MAXIMUM),
-        energy: clamp(fish.drives.energy * 0.7 + circadianEnergy * 0.3, DRIVE_MINIMUM, DRIVE_MAXIMUM),
-        social: clamp(fish.drives.social + days * 0.015, DRIVE_MINIMUM, DRIVE_MAXIMUM),
-      },
-      history: {
-        ...fish.history,
-        socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, fish.seed)
-          .map((entry) => ({ ...entry })),
-      },
-      behavior: { ...fish.behavior },
-      // A response to a press from before the device was off is not a response
-      // to anything.
-      attention: null,
-      // Transient intentions are rebuilt rather than resumed, with one
-      // exception: a fish that arrived during the gap keeps its entry swim, so
-      // the next viewer sees it joining instead of finding it already parked.
-      activity: fish.activity?.current === ACTIVITIES.arrivalEnter
-        ? { ...fish.activity }
-        : createActivityState(defaultActivityForBehavior(fish.behavior.current)),
-      visual: { ...fish.visual },
-    })),
+    individuals: advanced.individuals.map(({ exhale, ...source }) => {
+      // Saturation is about a burst of attention now, not a durable opinion of
+      // the viewer. An offline gap therefore clears the transient clock while
+      // the long-term familiarity value remains untouched.
+      const fish = clearViewerRelationshipTransient(source);
+      return {
+        ...fish,
+        forageDip: 0,
+        drives: {
+          hunger: clamp(fish.drives.hunger + days * 0.03, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+          energy: clamp(fish.drives.energy * 0.7 + circadianEnergy * 0.3, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+          social: clamp(fish.drives.social + days * 0.015, DRIVE_MINIMUM, DRIVE_MAXIMUM),
+        },
+        history: {
+          ...fish.history,
+          socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, fish.seed)
+            .map((entry) => ({ ...entry })),
+        },
+        behavior: { ...fish.behavior },
+        // A response to a press from before the device was off is not a response
+        // to anything.
+        attention: null,
+        // Transient intentions are rebuilt rather than resumed, with one
+        // exception: a fish that arrived during the gap keeps its entry swim, so
+        // the next viewer sees it joining instead of finding it already parked.
+        activity: fish.activity?.current === ACTIVITIES.arrivalEnter
+          ? { ...fish.activity }
+          : createActivityState(defaultActivityForBehavior(fish.behavior.current)),
+        visual: { ...fish.visual },
+      };
+    }),
   };
 }
