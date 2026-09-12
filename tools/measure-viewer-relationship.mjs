@@ -30,6 +30,8 @@ const EVIDENCE_LEVELS = Object.freeze([
 const PRODUCTION_DAYS = 180;
 const PRODUCTION_MILESTONES = new Set([1, 7, 30, 60, 90, 120, 180]);
 const RAPID_INTERACTIONS = 40;
+const NATURAL_VISIT_SECONDS = 2 * 60 * 60;
+const NATURAL_VISIT_STEP_SECONDS = 0.25;
 
 function round(value, places = 4) {
   const scale = 10 ** places;
@@ -180,6 +182,9 @@ function rapidSpamEvidence() {
   return { seed, milestones };
 }
 
+// Mechanism-level scan. This deliberately places each archetype in a safe,
+// low-commitment state so a failed result means the invitation scheduler itself
+// cannot produce an invitation for that personality.
 function visitEvidence(archetypes, mature) {
   const results = [];
   for (const archetype of archetypes) {
@@ -200,6 +205,59 @@ function visitEvidence(archetypes, mature) {
       if (visitor) found = { seconds, seed: visitor.seed, durationSeconds: round(visitor.viewerRelationship.glassVisit.durationSeconds) };
     }
     results.push({ archetype: archetype.name, selectedSeed: selected.seed, firstInvitation: found });
+  }
+  return results;
+}
+
+// Product-level scan. Unlike visitEvidence(), this changes only familiarity.
+// Behavior, activity, drives, position and the rest of the mature aquarium are
+// left exactly as production produced them, then normal tick() advances two
+// hours of viewer-free aquarium life. This proves the invitation can actually
+// emerge through the autonomous scheduler instead of existing only in a posed
+// low-commitment fixture.
+function naturalVisitEvidence(archetypes, mature) {
+  const results = [];
+  const steps = Math.ceil(NATURAL_VISIT_SECONDS / NATURAL_VISIT_STEP_SECONDS);
+
+  for (const archetype of archetypes) {
+    const selectedSeed = archetype.personality.seed;
+    let state = {
+      ...mature,
+      stimuli: [],
+      impulses: [],
+      individuals: mature.individuals.map((fish) => withGlassFamiliarity(
+        fish,
+        fish.seed === selectedSeed ? 0.9 : 0,
+      )),
+    };
+    let wasVisiting = false;
+    let starts = 0;
+    let activeSeconds = 0;
+    let firstInvitationSeconds = null;
+
+    for (let step = 1; step <= steps; step += 1) {
+      state = tick(state, NATURAL_VISIT_STEP_SECONDS);
+      const selected = state.individuals.find((fish) => fish.seed === selectedSeed);
+      const visiting = Boolean(selected?.viewerRelationship?.glassVisit);
+      if (visiting) activeSeconds += NATURAL_VISIT_STEP_SECONDS;
+      if (visiting && !wasVisiting) {
+        starts += 1;
+        if (firstInvitationSeconds === null) {
+          firstInvitationSeconds = round(step * NATURAL_VISIT_STEP_SECONDS, 2);
+        }
+      }
+      wasVisiting = visiting;
+    }
+
+    results.push({
+      archetype: archetype.name,
+      selectedSeed,
+      observedSeconds: NATURAL_VISIT_SECONDS,
+      starts,
+      firstInvitationSeconds,
+      activeSeconds: round(activeSeconds, 2),
+      activeFraction: round(activeSeconds / NATURAL_VISIT_SECONDS, 4),
+    });
   }
   return results;
 }
@@ -240,7 +298,16 @@ function validate(report) {
 
   const missingVisits = report.visits.filter((row) => !row.firstInvitation).map((row) => row.archetype);
   assert.deepEqual(missingVisits, [],
-    `high-familiarity archetypes missing voluntary invitations: ${missingVisits.join(", ")}`);
+    `high-familiarity archetypes missing controlled voluntary invitations: ${missingVisits.join(", ")}`);
+
+  const missingNaturalVisits = report.naturalVisits.filter((row) => row.starts < 1).map((row) => row.archetype);
+  assert.deepEqual(missingNaturalVisits, [],
+    `high-familiarity archetypes never initiated during natural production behavior: ${missingNaturalVisits.join(", ")}`);
+  for (const row of report.naturalVisits) {
+    assert.ok(row.activeFraction < 0.12,
+      `${row.archetype} voluntary visits occupied ${(row.activeFraction * 100).toFixed(1)}% of natural time`);
+  }
+
   const saved = serializePersistentState(report.productionGrowth.finalState);
   assert.ok(saved.individuals.every((fish) => !("viewerRelationship" in fish)), "transient relationship data reached persistence");
 }
@@ -250,7 +317,8 @@ const archetypes = archetypeEvidence(mature);
 const productionGrowth = productionGrowthEvidence();
 const rapidSpam = rapidSpamEvidence();
 const visits = visitEvidence(archetypes, mature);
-const report = { archetypes, productionGrowth, rapidSpam, visits };
+const naturalVisits = naturalVisitEvidence(archetypes, mature);
+const report = { archetypes, productionGrowth, rapidSpam, visits, naturalVisits };
 validate(report);
 
 await mkdir(path.resolve(OUTPUT), { recursive: true });
@@ -263,6 +331,7 @@ const keepable = {
   },
   rapidSpam,
   visits,
+  naturalVisits,
 };
 await writeFile(path.resolve(OUTPUT, "viewer-relationship.json"), `${JSON.stringify(keepable, null, 2)}\n`, "utf8");
 
@@ -280,6 +349,10 @@ console.log("\nProduction relationship growth, one meaningful session per day");
 for (const row of productionGrowth.milestones) console.log(`  day ${String(row.day).padStart(3)}  familiarity ${row.familiarity.toFixed(6)}`);
 console.log("\nRapid repetition comparison");
 for (const row of rapidSpam.milestones) console.log(`  ${String(row.interactions).padStart(2)} interactions  familiarity ${row.familiarity.toFixed(6)}`);
-console.log("\nVoluntary invitation scan");
+console.log("\nControlled voluntary invitation scan");
 for (const row of visits) console.log(`  ${row.archetype.padEnd(9)} ${row.firstInvitation ? `first at ${row.firstInvitation.seconds}s by ${row.firstInvitation.seed.toString(16)}` : "none in 3600s"}`);
+console.log("\nNatural production voluntary visits");
+for (const row of naturalVisits) {
+  console.log(`  ${row.archetype.padEnd(9)} starts=${row.starts} first=${row.firstInvitationSeconds ?? "none"}s active=${(row.activeFraction * 100).toFixed(2)}%`);
+}
 console.log(`\nWrote ${path.join(OUTPUT, "viewer-relationship.json")}`);
