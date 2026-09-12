@@ -54,8 +54,10 @@ test("touch response is immediate, reproducible, and not probabilistic", () => {
   assert.equal(first.impulses[0].source, "touch");
   assert.notDeepEqual(first.school[0], state.school[0]);
   assert.ok(first.individuals.some((fish) => fish.history.glassFamiliarity > 0));
+  const beforeTouches = state.individuals.reduce((sum, fish) => sum + fish.history.touches, 0);
+  const afterTouches = first.individuals.reduce((sum, fish) => sum + fish.history.touches, 0);
+  assert.equal(afterTouches, beforeTouches + 1);
   first.individuals.forEach((fish, index) => {
-    assert.equal(fish.history.touches, state.individuals[index].history.touches);
     assert.equal(fish.history.boldnessDrift, state.individuals[index].history.boldnessDrift);
     assert.equal(fish.history.sociabilityDrift, state.individuals[index].history.sociabilityDrift);
   });
