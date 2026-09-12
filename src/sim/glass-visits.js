@@ -112,14 +112,13 @@ function opportunity(state) {
   const elapsed = Math.max(0, state.elapsedRealSeconds ?? 0);
   const clock = elapsed + offset;
   const phase = positiveModulo(clock, period);
-  // elapsedRealSeconds is a session clock and resets on restore. Do not let a
-  // seed whose offset happens to land inside the twelve-second open window
-  // volunteer immediately every time the device reloads. The first epoch that
-  // began before this session is deliberately closed; invitations become
-  // eligible only after the session crosses a fresh period boundary.
-  const firstOpportunityAt = period - positiveModulo(offset, period);
+  // elapsedRealSeconds is a session clock and resets on restore. The seeded
+  // offset is useful for spreading invitations across installations, but it
+  // must not turn a reload into a shortcut to the next boundary. Hold the gate
+  // closed for one complete opportunity period after every session starts;
+  // after that, the ordinary seeded phase decides the next open window.
   return {
-    open: elapsed >= firstOpportunityAt && phase < GLASS_VISIT_OPPORTUNITY_WINDOW_SECONDS,
+    open: elapsed >= period && phase < GLASS_VISIT_OPPORTUNITY_WINDOW_SECONDS,
     epoch: Math.floor(clock / period),
     phase,
     period,
@@ -346,13 +345,21 @@ export function trackViewerRegions(state) {
   if (!touchById) return state;
 
   let changed = false;
-  const individuals = (state.individuals ?? []).map((fish) => {
+  const individuals = (state.individuals ?? []).map((fish, index) => {
     const stimulus = touchById.get(fish.attention?.stimulusId);
     if (!stimulus) return fish;
     const previous = fish.viewerRelationship ?? {};
     const visit = activeVisit(fish);
+    // Recent viewer coordinates remember the actual touched region, even when
+    // it lies on a boundary. An already-active visit is different: its anchor is
+    // a locomotion target, so keep it reachable before arrival/linger logic sees
+    // it. Otherwise a fish can spend the rest of a visit approaching x=0 even
+    // though its centre can never enter its own half-width margin.
+    const activeAnchor = visit
+      ? clampVisitPoint(fish, index, state, stimulus.x, stimulus.y)
+      : null;
     const glassVisit = visit
-      ? { ...visit, anchorX: stimulus.x, anchorY: stimulus.y, recentRegion: true }
+      ? { ...visit, anchorX: activeAnchor.x, anchorY: activeAnchor.y, recentRegion: true }
       : previous.glassVisit;
     changed = true;
     return {
