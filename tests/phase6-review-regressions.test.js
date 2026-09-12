@@ -179,6 +179,40 @@ test("protected voluntary-visit targets use the same depth ceiling as locomotion
     `visit target ${frame.target.y} was below production ceiling ${productionCeiling}`);
 });
 
+test("a same-frame biological priority removes an invitation that never became visible", () => {
+  const state = createAquariumState({ seed: 0x6f001007, wallClockHours: 12 });
+  const base = state.individuals[0];
+  const visiting = {
+    ...withGlassFamiliarity(base, 0.9),
+    behavior: { ...base.behavior, current: "rest" },
+    activity: { ...base.activity, current: ACTIVITIES.openWaterRest },
+    attention: null,
+    viewerRelationship: {
+      glassVisit: {
+        epoch: 2,
+        startedAt: 10,
+        ageSeconds: 0,
+        durationSeconds: 30,
+        anchorX: base.x,
+        anchorY: base.y,
+        recentRegion: false,
+      },
+    },
+  };
+
+  const frame = tickVoluntaryGlassVisit(
+    visiting,
+    0,
+    state,
+    { x: base.x + 1, y: base.y, speed: 0.2, postureBias: 0, choreography: {} },
+    0.1,
+  );
+
+  assert.equal(frame.target.glassVisit, undefined);
+  assert.equal(frame.fish.viewerRelationship?.glassVisit, undefined,
+    "an invisible biologically-cancelled invitation survived as an active marker");
+});
+
 test("a hungry open-water species is not permanently locked out of voluntary visits", () => {
   const original = createAquariumState({ seed: 0x6f001005, wallClockHours: 12 });
   let openWaterSeed = 1;
