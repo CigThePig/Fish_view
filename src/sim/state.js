@@ -60,6 +60,7 @@ import {
   plantVariationFromSeed,
 } from "./plants.js";
 import { hashSeed, mix32 } from "./prng.js";
+import { sanitizeGlassFamiliarity } from "./viewer-relationship.js";
 
 export const PERSISTENCE_VERSION = 2;
 
@@ -527,6 +528,7 @@ export function serializePersistentState(state) {
         touches: fish.history.touches,
         boldnessDrift: fish.history.boldnessDrift,
         sociabilityDrift: fish.history.sociabilityDrift,
+        glassFamiliarity: sanitizeGlassFamiliarity(fish.history?.glassFamiliarity),
         socialMemory: sanitizeSocialMemory(fish.history.socialMemory, fish.seed)
           .map((entry) => ({ ...entry })),
       },
@@ -626,6 +628,7 @@ export function restorePersistentState(baseState, saved) {
         touches: Math.max(0, Math.round(finite(fish.history?.touches, 0))),
         boldnessDrift: clamp(finite(fish.history?.boldnessDrift, 0), 0, 0.18),
         sociabilityDrift: clamp(finite(fish.history?.sociabilityDrift, 0), 0, 0.12),
+        glassFamiliarity: sanitizeGlassFamiliarity(fish.history?.glassFamiliarity),
         socialMemory: sanitizeSocialMemory(fish.history?.socialMemory, seed),
       },
       behavior: {
