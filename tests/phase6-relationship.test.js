@@ -215,6 +215,10 @@ test("a saturated primary can hand the prominent response to a fresher cast memb
   const state = stockedAquarium({ seed: 0x6b00b135, wallClockHours: 12 });
   const fish = state.individuals.slice(0, 2).map((one, index) => ({
     ...one,
+    // This test isolates saturation rotation. Both fish are explicitly free to
+    // interrupt so the replacement is not accidentally testing the separate
+    // high-commitment guard added by the Phase 6 review.
+    activity: { ...one.activity, current: "cruise" },
     viewerRelationship: {
       saturation: index === 0 ? 0.9 : 0.1,
       saturationAt: 0,
