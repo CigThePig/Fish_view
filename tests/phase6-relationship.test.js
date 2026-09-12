@@ -20,6 +20,7 @@ import {
   GLASS_FAMILIARITY_DEFAULT,
   VIEWER_SATURATION_HALF_LIFE_SECONDS,
   glassFamiliarityFor,
+  relationshipResponseProfile,
   sanitizeGlassFamiliarity,
   shapeAttentionForSaturation,
   viewerSaturationFor,
@@ -39,6 +40,52 @@ function roundTrip(state) {
 
 function totalFamiliarity(state) {
   return state.individuals.reduce((sum, fish) => sum + glassFamiliarityFor(fish), 0);
+}
+
+function relationshipFish(familiarity, predicate) {
+  const template = base().individuals[0];
+  for (let seed = 1; seed <= 20000; seed += 1) {
+    const fish = withGlassFamiliarity({
+      ...template,
+      seed,
+      history: {
+        ...template.history,
+        boldnessDrift: 0,
+        sociabilityDrift: 0,
+        socialMemory: [],
+      },
+      viewerRelationship: undefined,
+      attention: null,
+    }, familiarity);
+    const profile = relationshipResponseProfile(fish);
+    if (predicate(profile)) return fish;
+  }
+  throw new Error("no deterministic relationship fixture matched the requested profile");
+}
+
+function attentionRecord(role, {
+  held = false,
+  holdSeconds = 0,
+  stimulusId = 77,
+  distance = 12,
+  durationSeconds = 1.2,
+  delaySeconds = role === "delayed" ? 1.4 : 0,
+} = {}) {
+  return {
+    stimulusId,
+    role,
+    x: 20,
+    y: 9,
+    distance,
+    ageSeconds: 0,
+    durationSeconds,
+    delaySeconds,
+    held,
+    released: false,
+    settled: false,
+    holdSeconds,
+    nearSeconds: 0,
+  };
 }
 
 test("new persistent fish begin unfamiliar without an interaction history", () => {
@@ -254,6 +301,9 @@ test("developer relationship snapshots expose long and short clocks beside fixed
   assert.ok(snapshot.fixedGlassAffinity >= 0 && snapshot.fixedGlassAffinity <= 1);
   assert.ok(snapshot.boldness >= 0 && snapshot.boldness <= 1);
   assert.ok(snapshot.curiosity >= 0 && snapshot.curiosity <= 1);
+  assert.ok(snapshot.relationshipTrust > 0 && snapshot.relationshipTrust <= 1);
+  assert.ok(snapshot.responseConfidence >= 0 && snapshot.responseConfidence <= 1);
+  assert.ok(snapshot.responseAttentiveness >= 0 && snapshot.responseAttentiveness <= 1);
   assert.equal(roster.length, touched.individuals.length);
   assert.equal(roster[0].attentionSaturation, snapshot.attentionSaturation);
 });
@@ -271,4 +321,77 @@ test("relationship round trips retain familiarity but discard short-term saturat
   assert.deepEqual(restored.individuals[0].history.socialMemory, touched.individuals[0].history.socialMemory);
   assert.equal(restored.individuals[0].viewerRelationship, undefined);
   assert.equal(viewerSaturationFor(restored.individuals[0]), 0);
+});
+
+test("high familiarity preserves bold and cautious personalities instead of flattening them", () => {
+  const cautious = relationshipFish(1, (profile) => profile.boldness < 0.3 && profile.trust > 0.4);
+  const bold = relationshipFish(1, (profile) =>
+    profile.boldness > 0.72 && profile.confidence > 0.6 && profile.trust >= 0.58);
+  const coldCautious = withGlassFamiliarity(cautious, 0);
+  const coldBold = withGlassFamiliarity(bold, 0);
+  const assignment = attentionRecord("watch");
+
+  assert.equal(shapeAttentionForSaturation([coldCautious], [assignment])[0].role, "watch");
+  assert.equal(shapeAttentionForSaturation([coldBold], [assignment])[0].role, "watch");
+  assert.equal(shapeAttentionForSaturation([cautious], [assignment])[0].role, "approach");
+  assert.equal(shapeAttentionForSaturation([bold], [assignment])[0].role, "investigate");
+});
+
+test("familiarity shortens a real hesitation and leaves a longer bounded aftermath", () => {
+  const familiar = relationshipFish(1, (profile) => profile.trust > 0.5);
+  const unfamiliar = withGlassFamiliarity(familiar, 0);
+  const assignment = attentionRecord("delayed", { durationSeconds: 1.4, delaySeconds: 1.6 });
+
+  const cold = shapeAttentionForSaturation([unfamiliar], [assignment])[0];
+  const warm = shapeAttentionForSaturation([familiar], [assignment])[0];
+
+  assert.equal(cold.role, "delayed");
+  assert.equal(warm.role, "delayed", "familiarity erased an occupied fish's hesitation style");
+  assert.ok(warm.delaySeconds > 0 && warm.delaySeconds < cold.delaySeconds);
+  assert.ok(warm.durationSeconds > cold.durationSeconds);
+  assert.ok(warm.durationSeconds < cold.durationSeconds * 1.4, "aftermath became an unbounded linger");
+});
+
+test("relationship help on a held presence fades away instead of defeating habituation", () => {
+  const familiar = relationshipFish(1, (profile) => profile.trust > 0.5);
+  const engaged = {
+    ...familiar,
+    attention: attentionRecord("approach", { held: true, holdSeconds: 2, stimulusId: 88 }),
+  };
+  const early = attentionRecord("watch", { held: true, holdSeconds: 3, stimulusId: 88 });
+  const late = attentionRecord("watch", { held: true, holdSeconds: 60, stimulusId: 88 });
+
+  const earlyShaped = shapeAttentionForSaturation([engaged], [early], { guarantee: false })[0];
+  const lateShaped = shapeAttentionForSaturation([engaged], [late], { guarantee: false })[0];
+
+  assert.ok(["approach", "investigate"].includes(earlyShaped.role),
+    `familiar incumbent did not remain visibly engaged: ${earlyShaped.role}`);
+  assert.equal(lateShaped.role, "watch", "familiarity made a minute-long hold impossible to ignore");
+});
+
+test("short-term saturation still softens a highly familiar fish", () => {
+  const familiar = relationshipFish(1, (profile) =>
+    profile.boldness > 0.72 && profile.confidence > 0.6 && profile.trust >= 0.58);
+  const saturated = {
+    ...familiar,
+    viewerRelationship: { saturation: 0.95, saturationAt: 0 },
+  };
+  const shaped = shapeAttentionForSaturation([saturated], [attentionRecord("watch")])[0];
+
+  assert.notEqual(shaped.role, "investigate");
+  assert.ok(["watch", "acknowledge"].includes(shaped.role));
+});
+
+test("the production touch path gives a familiar responder a longer readable aftermath", () => {
+  const original = base();
+  const seed = original.individuals[0].seed;
+  const point = { x: original.individuals[0].x, y: original.individuals[0].y };
+  const cold = applyTouch(withObservedGlassFamiliarity(original, seed, 0), point.x, point.y);
+  const warm = applyTouch(withObservedGlassFamiliarity(original, seed, 1), point.x, point.y);
+
+  assert.equal(cold.individuals[0].attention?.role, "investigate");
+  assert.equal(warm.individuals[0].attention?.role, "investigate");
+  assert.ok(warm.individuals[0].attention.durationSeconds > cold.individuals[0].attention.durationSeconds);
+  assert.equal(warm.individuals[0].history.boldnessDrift, cold.individuals[0].history.boldnessDrift);
+  assert.equal(warm.individuals[0].history.sociabilityDrift, cold.individuals[0].history.sociabilityDrift);
 });
