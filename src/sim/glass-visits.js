@@ -109,10 +109,17 @@ function opportunity(state) {
     GLASS_VISIT_OPPORTUNITY_MAX_SECONDS,
   );
   const offset = sampleRange(state.seed >>> 0, 9301, 0, period);
-  const clock = Math.max(0, state.elapsedRealSeconds ?? 0) + offset;
+  const elapsed = Math.max(0, state.elapsedRealSeconds ?? 0);
+  const clock = elapsed + offset;
   const phase = positiveModulo(clock, period);
+  // elapsedRealSeconds is a session clock and resets on restore. Do not let a
+  // seed whose offset happens to land inside the twelve-second open window
+  // volunteer immediately every time the device reloads. The first epoch that
+  // began before this session is deliberately closed; invitations become
+  // eligible only after the session crosses a fresh period boundary.
+  const firstOpportunityAt = period - positiveModulo(offset, period);
   return {
-    open: phase < GLASS_VISIT_OPPORTUNITY_WINDOW_SECONDS,
+    open: elapsed >= firstOpportunityAt && phase < GLASS_VISIT_OPPORTUNITY_WINDOW_SECONDS,
     epoch: Math.floor(clock / period),
     phase,
     period,
