@@ -114,6 +114,37 @@ test("a wrapped interaction sequence is new once the old contact is temporally i
   assert.equal(after.history.touches, 6, "wrapped sequence suppressed fresh-touch telemetry");
 });
 
+test("a distinct second press cannot retarget a response already under way", () => {
+  const state = createAquariumState({ seed: 0x6f001006, wallClockHours: 12 });
+  const founder = state.individuals[0];
+  const first = applyTouch(state, founder.x, founder.y);
+  const responding = first.individuals[0];
+  assert.equal(responding.activity.current, ACTIVITIES.touchReact);
+  assert.ok(responding.attention);
+
+  const before = {
+    stimulusId: responding.attention.stimulusId,
+    targetId: responding.activity.targetId,
+    targetX: responding.activity.targetX,
+    targetY: responding.activity.targetY,
+    vx: responding.vx,
+    vy: responding.vy,
+  };
+  const farX = responding.x < state.cols / 2 ? state.cols - 2 : 2;
+  const farY = Math.min(state.rows - 4, responding.y + 4);
+  const second = applyTouch(first, farX, farY);
+  const after = second.individuals[0];
+
+  assert.notEqual(second.interactionSequence, first.interactionSequence,
+    "far press coalesced instead of creating a distinct stimulus");
+  assert.equal(after.attention?.stimulusId, before.stimulusId);
+  assert.equal(after.activity.targetId, before.targetId);
+  assert.equal(after.activity.targetX, before.targetX);
+  assert.equal(after.activity.targetY, before.targetY);
+  assert.equal(after.vx, before.vx);
+  assert.equal(after.vy, before.vy);
+});
+
 test("protected voluntary-visit targets use the same depth ceiling as locomotion", () => {
   const state = createAquariumState({ seed: 0x6f001004, wallClockHours: 12 });
   const fish = {
