@@ -42,6 +42,7 @@ const FAMILIARITY_ROLE_GAIN = Object.freeze({
 });
 
 const ACTIVE_ROLES = new Set(["investigate", "approach", "delayed"]);
+const ROTATABLE_ROLES = new Set(["approach", "delayed", "watch"]);
 const SATURATION_STYLE_THRESHOLD = 0.55;
 const SATURATION_STRONG_THRESHOLD = 0.82;
 const SATURATION_ROTATE_THRESHOLD = 0.68;
@@ -189,10 +190,11 @@ function roleAfterSaturation(role, saturation) {
  * Turn short-term repetition into a change of response style.
  *
  * The assignment engine still decides who noticed and what they would normally
- * do. Saturation only softens that answer. On a fresh press, one investigator
- * is always preserved; when possible a much fresher responder takes that role
- * instead. Thus forty taps may rotate attention through the cast, but tap forty
- * one still gets an immediate animal answer.
+ * do. Saturation softens that answer. A fresh press is still guaranteed a
+ * visible response because the Phase 2 assignment already supplies one, but it
+ * does not have to remain a full investigator forever: a lone saturated fish
+ * may only approach partway or turn to look. With a cast, a much fresher fish
+ * may inherit the prominent investigator role instead.
  */
 export function shapeAttentionForSaturation(fish, assignments, { guarantee = true } = {}) {
   const shaped = assignments.map((record, index) => {
@@ -206,7 +208,7 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
     .filter((index) => index >= 0);
   if (!originalInvestigators.length) return shaped;
 
-  let anchor = originalInvestigators.reduce((best, index) =>
+  const anchor = originalInvestigators.reduce((best, index) =>
     viewerSaturationFor(fish[index]) < viewerSaturationFor(fish[best]) ? index : best,
   originalInvestigators[0]);
   const anchorSaturation = viewerSaturationFor(fish[anchor]);
@@ -216,8 +218,7 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
       .map((record, index) => ({ record, index, saturation: viewerSaturationFor(fish[index]) }))
       .filter(({ record, index, saturation }) => index !== anchor
         && record
-        && record.role !== "wary"
-        && record.role !== "investigate"
+        && ROTATABLE_ROLES.has(record.role)
         && Number.isFinite(record.distance)
         && record.distance <= 30
         && saturation + SATURATION_ROTATE_ADVANTAGE < anchorSaturation)
@@ -225,16 +226,14 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
         || left.record.distance - right.record.distance
         || fish[left.index].seed - fish[right.index].seed);
     if (alternatives.length) {
-      shaped[anchor] = { ...shaped[anchor], role: roleAfterSaturation("investigate", anchorSaturation) };
-      anchor = alternatives[0].index;
-      shaped[anchor] = { ...assignments[anchor], role: "investigate" };
+      // Demoting the saturated primary to a passive glance keeps the original
+      // active-response caps intact when the fresher fish takes its place.
+      shaped[anchor] = { ...shaped[anchor], role: "watch" };
+      const replacement = alternatives[0].index;
+      shaped[replacement] = { ...assignments[replacement], role: "investigate" };
     }
   }
 
-  // The screen must never become inert because everybody has recently played.
-  if (!shaped.some((record) => record?.role === "investigate")) {
-    shaped[anchor] = { ...assignments[anchor], role: "investigate" };
-  }
   return shaped;
 }
 
