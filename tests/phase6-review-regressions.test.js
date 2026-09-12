@@ -172,7 +172,21 @@ test("a distant second press preserves an old responder when another fish can an
   };
   const farX = responding.x < state.cols / 2 ? state.cols - 1 : 0;
   const farY = responding.y < state.rows / 2 ? state.rows - 4 : 2;
-  const second = applyTouch(first, farX, farY);
+  const spareIndex = first.individuals.findIndex((fish, otherIndex) => otherIndex !== index);
+  assert.ok(spareIndex >= 0, "review fixture needs a second fish");
+  const prepared = {
+    ...first,
+    individuals: first.individuals.map((fish, otherIndex) => otherIndex === spareIndex
+      ? {
+          ...fish,
+          x: farX,
+          y: farY,
+          attention: null,
+          activity: { ...fish.activity, current: ACTIVITIES.cruise },
+        }
+      : fish),
+  };
+  const second = applyTouch(prepared, farX, farY);
   const after = second.individuals[index];
   const newStimulus = second.stimuli.find((stimulus) =>
     stimulus.source === "touch" && stimulus.id !== before.stimulusId);
