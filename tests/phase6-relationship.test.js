@@ -21,6 +21,7 @@ import {
   VIEWER_SATURATION_HALF_LIFE_SECONDS,
   glassFamiliarityFor,
   sanitizeGlassFamiliarity,
+  shapeAttentionForSaturation,
   viewerSaturationFor,
   withGlassFamiliarity,
 } from "../src/sim/viewer-relationship.js";
@@ -118,25 +119,30 @@ test("a real response earns familiarity without rewriting personality", () => {
   assert.equal(after.history.sociabilityDrift, before.history.sociabilityDrift);
 });
 
-test("rapid repetition has diminishing relationship returns but never makes the aquarium ignore a touch", () => {
+test("rapid repetition has diminishing returns and changes response style without going inert", () => {
   let state = base();
   const point = { x: state.individuals[0].x, y: state.individuals[0].y };
   const gains = [];
+  const roles = [];
 
   for (let index = 0; index < 20; index += 1) {
     const before = totalFamiliarity(state);
     state = applyTouch(state, point.x, point.y);
     gains.push(totalFamiliarity(state) - before);
-    assert.ok(
-      state.individuals.some((fish) => fish.attention?.role === "investigate"),
-      `touch ${index + 1} lost the guaranteed animal response`,
-    );
+    const current = state.individuals.filter((fish) =>
+      fish.viewerRelationship?.responseSequence === state.interactionSequence
+      && fish.attention);
+    assert.ok(current.length >= 1, `touch ${index + 1} lost its visible animal response`);
+    roles.push(current[0].attention.role);
   }
 
   assert.ok(gains[0] > 0);
   assert.ok(gains.at(-1) < gains[0] * 0.3,
     `rapid repetition still paid ${(gains.at(-1) / gains[0]).toFixed(2)}x the first interaction`);
   assert.ok(viewerSaturationFor(state.individuals[0], state.elapsedRealSeconds) > 0.8);
+  assert.equal(roles[0], "investigate");
+  assert.ok(roles.some((role) => role !== "investigate"),
+    `saturation never changed response style: ${roles.join(", ")}`);
 });
 
 test("short-term saturation decays naturally without changing long-term familiarity", () => {
@@ -158,23 +164,23 @@ test("short-term saturation decays naturally without changing long-term familiar
   assert.equal(fish.history.glassFamiliarity, familiarity);
 });
 
-test("a saturated cast can hand the prominent response to a fresher fish", () => {
-  let state = stockedAquarium({ seed: 0x6b00b135, wallClockHours: 12 });
-  const responders = new Set();
+test("a saturated primary can hand the prominent response to a fresher cast member", () => {
+  const state = stockedAquarium({ seed: 0x6b00b135, wallClockHours: 12 });
+  const fish = state.individuals.slice(0, 2).map((one, index) => ({
+    ...one,
+    viewerRelationship: {
+      saturation: index === 0 ? 0.9 : 0.1,
+      saturationAt: 0,
+    },
+  }));
+  const assignments = [
+    { role: "investigate", distance: 2 },
+    { role: "watch", distance: 3 },
+  ];
 
-  for (let index = 0; index < 18; index += 1) {
-    const x = state.cols * 0.42 + (index % 4) * 2.2;
-    const y = state.rows * 0.43 + (index % 2) * 1.6;
-    state = applyTouch(state, x, y);
-    const current = state.individuals.filter((fish) =>
-      fish.viewerRelationship?.responseSequence === state.interactionSequence
-      && fish.attention?.role === "investigate");
-    assert.ok(current.length >= 1, `touch ${index + 1} had no current investigator`);
-    for (const fish of current) responders.add(fish.seed);
-  }
-
-  assert.ok(responders.size >= 2,
-    `rapid interaction stayed locked to one fish (${[...responders].map((seed) => seed.toString(16)).join(", ")})`);
+  const shaped = shapeAttentionForSaturation(fish, assignments, { guarantee: true });
+  assert.equal(shaped[0].role, "watch");
+  assert.equal(shaped[1].role, "investigate");
 });
 
 test("remaining close to a held presence earns more than the initial response alone", () => {
