@@ -4,6 +4,7 @@ import { traitsFromSeed } from "../sim/entities.js";
 import { affinitiesFromSeed } from "../sim/fish-personality.js";
 import {
   glassFamiliarityFor,
+  relationshipResponseProfile,
   viewerSaturationFor,
   withGlassFamiliarity,
 } from "../sim/viewer-relationship.js";
@@ -19,6 +20,7 @@ function round(value, places = 3) {
  */
 export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
   const traits = traitsFromSeed(fish.seed, fish.history);
+  const response = relationshipResponseProfile(fish);
   return Object.freeze({
     seed: fish.seed,
     glassFamiliarity: round(glassFamiliarityFor(fish), 4),
@@ -27,6 +29,9 @@ export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
     boldness: round(traits.boldness, 4),
     curiosity: round(traits.curiosity, 4),
     sociability: round(traits.sociability, 4),
+    relationshipTrust: round(response.trust, 4),
+    responseConfidence: round(response.confidence, 4),
+    responseAttentiveness: round(response.attentiveness, 4),
   });
 }
 
