@@ -116,8 +116,11 @@ function meaningfulSession(state, seed) {
   const y = fish.y;
   let next = applyTouch(state, x, y);
   for (let step = 1; step <= 30; step += 1) {
-    next = tick(next, 0.1);
+    // Match src/app.js exactly: the live contact is refreshed before each
+    // simulation tick, so the fish move against the pointer state for this
+    // frame rather than the pointer state from the previous frame.
     next = applyContact(next, x, y, step * 0.1);
+    next = tick(next, 0.1);
   }
   next = applyRelease(next);
   // Let the release aftermath move naturally before the next session/day.
@@ -202,12 +205,16 @@ function validate(report) {
 
   const bold = report.archetypes.find((row) => row.name === "bold");
   const cautious = report.archetypes.find((row) => row.name === "cautious");
+  const attentive = report.archetypes.find((row) => row.name === "attentive");
   const boldHigh = bold.levels.find((row) => row.label === "high");
   const cautiousHigh = cautious.levels.find((row) => row.label === "high");
+  const attentiveHigh = attentive.levels.find((row) => row.label === "high");
   assert.equal(boldHigh.approach.role, "investigate", "bold familiar fish did not close in");
   assert.equal(cautiousHigh.watch.role, "approach", "cautious familiar fish did not learn a reliable approach");
   assert.notEqual(cautiousHigh.approach.role, "investigate",
     "cautious familiar fish was flattened into the bold close-investigator style");
+  assert.equal(attentiveHigh.watch.role, "approach",
+    "attentive familiar fish lost its reliable familiar approach");
 
   for (const archetype of report.archetypes) {
     const unfamiliar = archetype.levels.find((row) => row.label === "unfamiliar");
@@ -216,7 +223,9 @@ function validate(report) {
     assert.equal(unfamiliar.delayed.role, "delayed");
   }
 
-  assert.ok(report.visits.some((row) => row.firstInvitation), "no high-familiarity archetype ever initiated a visit");
+  const missingVisits = report.visits.filter((row) => !row.firstInvitation).map((row) => row.archetype);
+  assert.deepEqual(missingVisits, [],
+    `high-familiarity archetypes missing voluntary invitations: ${missingVisits.join(", ")}`);
   const saved = serializePersistentState(report.productionGrowth.finalState);
   assert.ok(saved.individuals.every((fish) => !("viewerRelationship" in fish)), "transient relationship data reached persistence");
 }
