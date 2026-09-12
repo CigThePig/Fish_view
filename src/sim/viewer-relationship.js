@@ -51,6 +51,7 @@ const SATURATION_ROTATE_ADVANTAGE = 0.18;
 const MAX_CREDIT_SECONDS = 1.2;
 const NEAR_FAMILIARITY_PER_SECOND = 0.00042;
 const MOVING_FAMILIARITY_PER_SECOND = 0.00024;
+const MAX_LEGACY_TOUCHES = 1_000_000_000;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -239,16 +240,24 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
 /**
  * Pay the one-time part of a direct response and raise short-term saturation.
  *
- * Role, proximity and the fish's own participation decide the amount. A press
- * that merely happened near a fish no longer edits that fish's personality.
- * Saturation is paid once per interaction sequence, so a long hold is still one
- * interaction. Its existing hold-habituation system remains responsible for
- * deciding when a fish gets bored with one unmoving finger.
+ * Role, proximity and the fish's own participation decide the relationship
+ * reward. `history.touches` is retained only as bounded compatibility telemetry:
+ * one responding fish gets one count for a fresh press, but that count has no
+ * effect on personality, familiarity or response selection.
+ *
+ * Saturation is also paid once per interaction sequence, so a long hold is
+ * still one interaction. Its existing hold-habituation system remains
+ * responsible for deciding when a fish gets bored with one unmoving finger.
  */
 export function registerViewerResponses(fish, stimulus, nowSeconds) {
   if (!isDirectViewerStimulus(stimulus)) return fish;
   const sequence = responseSequence(stimulus);
-  return fish.map((one) => {
+  const freshPress = (stimulus.ageSeconds ?? 0) <= 1e-9 && (stimulus.holdSeconds ?? 0) <= 1e-9;
+  const touchOwner = freshPress
+    ? fish.findIndex((one) => one.attention?.stimulusId === stimulus.id)
+    : -1;
+
+  return fish.map((one, index) => {
     const response = one.attention;
     if (!response || response.stimulusId !== stimulus.id) return one;
     const previousSequence = one.viewerRelationship?.responseSequence;
@@ -260,6 +269,15 @@ export function registerViewerResponses(fish, stimulus, nowSeconds) {
       : 0;
     const rawGain = (FAMILIARITY_ROLE_GAIN[response.role] ?? 0) * (0.55 + proximity * 0.45);
     let next = addFamiliarity(one, rawGain, saturation);
+    if (index === touchOwner) {
+      next = {
+        ...next,
+        history: {
+          ...(next.history ?? {}),
+          touches: Math.min(MAX_LEGACY_TOUCHES, Math.max(0, next.history?.touches ?? 0) + 1),
+        },
+      };
+    }
     next = addSaturation(next, SATURATION_ROLE_GAIN[response.role] ?? 0.04, nowSeconds);
     return {
       ...next,
