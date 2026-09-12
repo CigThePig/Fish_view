@@ -186,8 +186,10 @@ export function applyTouch(state, x, y) {
     && fish.attention.stimulusId !== stimulus.id
     && Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y) > stimulus.radius,
   );
+  const protectedEarlier = responseIndividuals.map(answeringUnperceivedEarlierStimulus);
+  const assignmentState = { ...state, individuals: responseIndividuals, stimuli: events.stimuli };
   const assignedAttention = assignAttention(
-    { ...state, individuals: responseIndividuals, stimuli: events.stimuli },
+    assignmentState,
     stimulus,
     {
       commitmentFor: (fish) => answeringUnperceivedEarlierStimulus(fish)
@@ -195,12 +197,34 @@ export function applyTouch(state, x, y) {
         : activityCommitment(fish.activity?.current),
     },
   );
+
+  // Usually another free fish can satisfy the fresh-tap guarantee while an old
+  // responder finishes its own answer. A one-fish aquarium has no such spare.
+  // If protecting every old responder would leave the new press without an
+  // investigator, run the ordinary assignment once more and allow exactly its
+  // guaranteed investigator to accept the new press. Its existing recovery
+  // thread is carried below, so responsiveness does not cost the fish its way
+  // back to what it was doing before either interaction.
+  const protectedGuaranteeMissing = !assignedAttention.some((record, index) =>
+    !protectedEarlier[index] && record?.role === "investigate");
+  let fallbackIndex = -1;
+  let fallbackRecord = null;
+  if (protectedGuaranteeMissing && protectedEarlier.some(Boolean)) {
+    const fallbackAttention = assignAttention(assignmentState, stimulus, {
+      commitmentFor: (fish) => activityCommitment(fish.activity?.current),
+    });
+    fallbackIndex = fallbackAttention.findIndex((record) => record?.role === "investigate");
+    fallbackRecord = fallbackIndex >= 0 ? fallbackAttention[fallbackIndex] : null;
+  }
+
   // Total commitment still produces a passive notice record in the generic
   // assignment. For a fish whose live answer belongs to an out-of-range earlier
   // press, even that would overwrite the response, so mask it before relationship
-  // shaping. Nearby presses are deliberately left untouched and may replace it.
-  const availableAttention = assignedAttention.map((assigned, index) =>
-    (answeringUnperceivedEarlierStimulus(responseIndividuals[index]) ? null : assigned));
+  // shaping unless that fish is the sole fallback needed to answer this fresh tap.
+  const availableAttention = assignedAttention.map((assigned, index) => {
+    if (!protectedEarlier[index]) return assigned;
+    return index === fallbackIndex ? fallbackRecord : null;
+  });
   const attention = shapeAttentionForSaturation(responseIndividuals, availableAttention, { guarantee: true });
 
   // The school drifts toward a disturbance it is near and ignores one across
@@ -221,9 +245,9 @@ export function applyTouch(state, x, y) {
 
   const individuals = responseIndividuals.map((fish, index) => {
     // A fish answering an earlier press only has continuity against a new press
-    // outside its perception radius. A nearby disturbance is allowed to become
-    // the new answer, matching the ordinary Stage 2 consecutive-tap contract.
-    const answeringEarlier = answeringUnperceivedEarlierStimulus(fish);
+    // outside its perception radius when another fish can satisfy the fresh-tap
+    // guarantee. The fallback investigator is allowed to accept the new press.
+    const answeringEarlier = protectedEarlier[index] && index !== fallbackIndex;
     const answering = fish.activity?.current === ACTIVITIES.touchReact;
     const carried = fish.attention?.resume ?? null;
     const assigned = answeringEarlier ? null : attention[index];
@@ -243,8 +267,9 @@ export function applyTouch(state, x, y) {
       visual: { ...fish.visual },
       attention: role,
     };
-    // A distant distinct press may not retarget a response already in progress.
-    // A nearby accepted response can, and carries the original resume thread.
+    // A distant distinct press may not retarget a response already in progress
+    // when another responder is available. An accepted response can, and it
+    // carries the original resume thread.
     if (answeringEarlier || !attentionInvestigates(role)) return base;
     const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     const glassAffinity = affinitiesFromSeed(fish.seed).glass;
