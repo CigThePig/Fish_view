@@ -114,7 +114,7 @@ test("a real response earns familiarity without rewriting personality", () => {
   assert.equal(after.attention?.role, "investigate");
   assert.ok(after.history.glassFamiliarity > before.history.glassFamiliarity);
   assert.ok(viewerSaturationFor(after, touched.elapsedRealSeconds) > 0);
-  assert.equal(after.history.touches, before.history.touches, "legacy nearest-touch tally still learned from a press");
+  assert.equal(after.history.touches, before.history.touches + 1, "fresh press did not retain compatibility telemetry");
   assert.equal(after.history.boldnessDrift, before.history.boldnessDrift);
   assert.equal(after.history.sociabilityDrift, before.history.sociabilityDrift);
 });
