@@ -34,6 +34,12 @@ export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
     relationshipTrust: round(response.trust, 4),
     responseConfidence: round(response.confidence, 4),
     responseAttentiveness: round(response.attentiveness, 4),
+    attentionRole: fish.attention?.role ?? null,
+    attentionDistance: Number.isFinite(fish.attention?.distance) ? round(fish.attention.distance, 3) : null,
+    attentionDelaySeconds: Number.isFinite(fish.attention?.delaySeconds) ? round(fish.attention.delaySeconds, 3) : null,
+    attentionDurationSeconds: Number.isFinite(fish.attention?.durationSeconds)
+      ? round(fish.attention.durationSeconds, 3)
+      : null,
   });
 }
 
