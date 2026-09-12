@@ -31,6 +31,11 @@ import {
   tickFishActivity,
 } from "./fish-activities.js";
 import {
+  prepareVoluntaryGlassVisits,
+  tickVoluntaryGlassVisit,
+  trackViewerRegions,
+} from "./glass-visits.js";
+import {
   MAX_FISH_PITCH_DEGREES,
   forageEligible,
   fishMouthPosition,
@@ -464,7 +469,16 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
     bubbles,
     school,
   });
-  const { target, attention } = activityFrame;
+  const glassFrame = tickVoluntaryGlassVisit(
+    { ...fishWithBehavior, activity: activityFrame.activity, attention: activityFrame.attention },
+    index,
+    state,
+    activityFrame.target,
+    realDelta,
+  );
+  const target = glassFrame.target;
+  const attention = activityFrame.attention;
+  const relationshipFish = glassFrame.fish;
   const hungerRelief = target?.forageSearching
     ? deltaHours * 0.018 * (1 + (target.peck ?? 0) * 0.35)
     : 0;
@@ -566,7 +580,7 @@ function tickIndividual(fish, index, state, school, bubbles, realDelta, simDelta
   };
 
   return {
-    ...fish,
+    ...relationshipFish,
     x,
     y,
     vx,
@@ -591,19 +605,23 @@ export function tick(state, dt) {
   const timeOfDayHours = (state.timeOfDayHours + simDelta / 3600) % 24;
   const daylight = daylightFactor(timeOfDayHours);
   const motionScale = 0.43 + daylight * 0.57;
+  // Capture where an actual responder last met the viewer before the short-lived
+  // stimulus list ages. This remains transient relationship context and never
+  // becomes a persistent event log.
+  const tracked = trackViewerRegions(state);
   // Interaction events age on the real-time clock and are dropped the instant
   // they are spent, so the transient lists never outlive the gesture. What the
   // water that is still moving has left behind it - sand lifted off the bottom,
   // a patch of surface still breaking - is derived from the same lists
   // immediately afterwards, so a consequence is exactly one frame behind the
   // disturbance that caused it and can never outlive its own duration.
-  const aged = ageInteractionEvents(state, realDelta);
-  const events = { ...aged, stimuli: chainEnvironmentStimuli(state, aged) };
+  const aged = ageInteractionEvents(tracked, realDelta);
+  const events = { ...aged, stimuli: chainEnvironmentStimuli(tracked, aged) };
   // Long-horizon world state - aquarium age, plant growth, and every discrete
   // historical event - is owned by one shared resolver so live accelerated
   // simulation and offline catch-up cannot drift apart. It runs on the full
   // simulated span, deliberately unlike the drive/behaviour clocks below.
-  const advanced = advanceAquariumHistory(state, simDelta / 86400);
+  const advanced = advanceAquariumHistory(tracked, simDelta / 86400);
   const context = {
     ...advanced,
     elapsedRealSeconds: state.elapsedRealSeconds + realDelta,
@@ -612,9 +630,12 @@ export function tick(state, dt) {
     ...events,
   };
   const school = tickSchool(context, realDelta, motionScale);
-  const activityContext = { ...context, school };
+  // One tank-wide relationship opportunity decides whether a familiar fish
+  // initiates a quiet glass visit. The visit then rides as a steering overlay;
+  // normal biological activity and direct touch attention remain authoritative.
+  const activityContext = prepareVoluntaryGlassVisits({ ...context, school });
   const bubbles = createBubbleWorldRecords(activityContext);
-  const movedIndividuals = advanced.individuals.map((fish, index) =>
+  const movedIndividuals = activityContext.individuals.map((fish, index) =>
     tickIndividual(fish, index, activityContext, school, bubbles, realDelta, simDelta, motionScale),
   );
   const individuals = updateSocialMemories(movedIndividuals, realDelta)
