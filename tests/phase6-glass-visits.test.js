@@ -174,8 +174,8 @@ test("a real viewer response records a bounded recent region for later revisits"
 test("voluntary visits prefer a recent viewer region when one is available", () => {
   const state = readyState(1);
   const fish = state.individuals[0];
-  const targetX = fish.x + 3;
-  const targetY = fish.y + 1;
+  const targetX = fish.x;
+  const targetY = fish.y;
   const remembered = {
     ...state,
     individuals: [{
@@ -195,7 +195,7 @@ test("voluntary visits prefer a recent viewer region when one is available", () 
   assert.ok(Math.abs(visit.anchorY - targetY) < 1e-9);
 });
 
-test("the visit has approach, linger/patrol steering and respects protected depth", () => {
+test("glass visit steering clamps impossible targets to the protected swimming envelope", () => {
   const state = readyState(1);
   const fish = state.individuals[0];
   const visitFish = {
@@ -220,22 +220,34 @@ test("the visit has approach, linger/patrol steering and respects protected dept
   const floor = substrateSafeY(fish, state, frame.target.x);
   const protectedFloor = top + (floor - top) * 0.68;
   assert.ok(frame.target.y <= protectedFloor + 1e-9);
+});
 
-  const atAnchor = {
-    ...frame.fish,
-    x: frame.fish.viewerRelationship.glassVisit.anchorX,
-    y: Math.min(frame.fish.viewerRelationship.glassVisit.anchorY, protectedFloor),
+test("an arrived voluntary visitor lingers and later patrols laterally", () => {
+  const state = readyState(1);
+  const fish = state.individuals[0];
+  const visiting = (ageSeconds) => ({
+    ...fish,
     viewerRelationship: {
-      ...frame.fish.viewerRelationship,
       glassVisit: {
-        ...frame.fish.viewerRelationship.glassVisit,
-        ageSeconds: 8,
+        epoch: 1,
+        startedAt: 0,
+        ageSeconds,
+        durationSeconds: 40,
+        anchorX: fish.x,
+        anchorY: fish.y,
+        recentRegion: true,
       },
     },
-  };
-  const linger = tickVoluntaryGlassVisit(atAnchor, 0, state, baseTarget(atAnchor), 0.1);
+  });
+
+  const linger = tickVoluntaryGlassVisit(visiting(8), 0, state, baseTarget(fish), 0.1);
   assert.equal(linger.target.glassVisit, true);
-  assert.ok(["linger", "patrol"].includes(linger.target.glassVisitPhase));
+  assert.equal(linger.target.glassVisitPhase, "linger");
+
+  const patrol = tickVoluntaryGlassVisit(visiting(24), 0, state, baseTarget(fish), 0.1);
+  assert.equal(patrol.target.glassVisit, true);
+  assert.equal(patrol.target.glassVisitPhase, "patrol");
+  assert.notEqual(patrol.target.x, fish.x, "patrol never moved laterally along the glass region");
 });
 
 test("touching an inviting fish hands control to the existing touch system without deleting the visit", () => {
