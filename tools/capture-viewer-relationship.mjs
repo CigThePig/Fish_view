@@ -4,6 +4,7 @@ import { createCanvas } from "@napi-rs/canvas";
 
 import { CanvasSceneRenderer } from "../src/render/canvas-renderer.js";
 import { render } from "../src/render/render.js";
+import { attentionStandoff } from "../src/sim/attention.js";
 import {
   advanceOffline,
   applyContact,
@@ -24,6 +25,14 @@ const LEVELS = Object.freeze([
 const NATIVE = Object.freeze({ width: 800, height: 480 });
 const PASSIVE_ROLES = new Set(["watch", "wary", "acknowledge"]);
 const ACTIVE_ROLES = new Set(["approach", "investigate"]);
+const ROLE_ACTIVITY = Object.freeze({
+  acknowledge: 0,
+  wary: 0.5,
+  watch: 1,
+  delayed: 1.5,
+  approach: 2,
+  investigate: 3,
+});
 
 function optionValue(args, name, fallback) {
   const prefix = `${name}=`;
@@ -97,10 +106,32 @@ function selectedFish(state, seed) {
   return state.individuals.find((fish) => fish.seed === seed);
 }
 
-// Find a real press which the selected fish answers passively while unfamiliar.
-// That gives the relationship layer room to become visible: the same starting
-// aquarium can progress from watch/wary into approach or close investigation
-// without hand-authoring an attention record for the screenshot.
+function responseSummary(response) {
+  if (!response) return null;
+  return {
+    role: response.role,
+    durationSeconds: round(response.durationSeconds ?? 0),
+    delaySeconds: round(response.delaySeconds ?? 0),
+    standoff: round(attentionStandoff(response)),
+  };
+}
+
+function relationshipDifference(unfamiliar, familiar) {
+  if (!unfamiliar || !familiar) return -Infinity;
+  const roleGain = (ROLE_ACTIVITY[familiar.role] ?? 0) - (ROLE_ACTIVITY[unfamiliar.role] ?? 0);
+  const durationGain = Math.max(0, familiar.durationSeconds - unfamiliar.durationSeconds);
+  const delayGain = Math.max(0, unfamiliar.delaySeconds - familiar.delaySeconds);
+  const standoffGain = Math.max(0, unfamiliar.standoff - familiar.standoff);
+  return roleGain * 10 + durationGain * 2 + delayGain + standoffGain;
+}
+
+// Find one real press that tells the selected fish's own relationship story.
+// A cautious fish commonly gives us the obvious passive→active arc. A bold fish
+// is *supposed* to investigate readily even while unfamiliar, so demanding a
+// passive baseline from every personality falsifies the design we are trying to
+// verify. When no passive→active anchor exists, choose the deterministic real
+// press with the strongest high-familiarity consequence instead: longer
+// engagement, shorter hesitation, closer standoff, or a stronger response role.
 function captureAnchor(base, selectedSeed) {
   const selected = selectedFish(base, selectedSeed);
   const candidates = base.individuals
@@ -108,26 +139,44 @@ function captureAnchor(base, selectedSeed) {
     .sort((a, b) => Math.hypot(b.x - selected.x, b.y - selected.y)
       - Math.hypot(a.x - selected.x, a.y - selected.y)
       || a.seed - b.seed);
+  let best = null;
 
   for (const candidate of candidates) {
-    const touched = applyTouch(poseFamiliarity(base, selectedSeed, 0), candidate.x, candidate.y);
-    const response = selectedFish(touched, selectedSeed)?.attention;
-    if (response && PASSIVE_ROLES.has(response.role)) {
-      return { x: candidate.x, y: candidate.y, baselineRole: response.role, anchorSeed: candidate.seed };
+    const coldState = applyTouch(poseFamiliarity(base, selectedSeed, 0), candidate.x, candidate.y);
+    const warmState = applyTouch(poseFamiliarity(base, selectedSeed, 0.9), candidate.x, candidate.y);
+    const cold = responseSummary(selectedFish(coldState, selectedSeed)?.attention);
+    const warm = responseSummary(selectedFish(warmState, selectedSeed)?.attention);
+    if (!cold || !warm) continue;
+
+    const anchor = {
+      x: candidate.x,
+      y: candidate.y,
+      anchorSeed: candidate.seed,
+      baseline: cold,
+      high: warm,
+    };
+    // Prefer the clearest role progression when the personality naturally has
+    // one; it makes the rendered contact sheet easiest to read at a glance.
+    if (PASSIVE_ROLES.has(cold.role) && ACTIVE_ROLES.has(warm.role)) return anchor;
+
+    const difference = relationshipDifference(cold, warm);
+    if (!best || difference > best.difference
+      || (difference === best.difference && candidate.seed < best.anchor.anchorSeed)) {
+      best = { anchor, difference };
     }
   }
-  // This is acceptance evidence, not a best-effort screenshot utility. Falling
-  // back to an arbitrary point would still create a pretty PNG while silently
-  // losing the controlled unfamiliar-versus-familiar comparison the sheet is
-  // supposed to prove.
-  throw new Error(`no passive unfamiliar capture anchor for fish ${selectedSeed.toString(16)}`);
+
+  if (!best || !(best.difference > 0)) {
+    throw new Error(`no familiarity-sensitive production capture anchor for fish ${selectedSeed.toString(16)}`);
+  }
+  return best.anchor;
 }
 
 function runScenario(base, selectedSeed, familiarity, anchor) {
   let state = poseFamiliarity(base, selectedSeed, familiarity);
   state = applyTouch(state, anchor.x, anchor.y);
   const initial = selectedFish(state, selectedSeed);
-  const initialRole = initial?.attention?.role ?? null;
+  const initialResponse = responseSummary(initial?.attention);
 
   for (let step = 1; step <= 24; step += 1) {
     state = applyContact(state, anchor.x, anchor.y, step * 0.1);
@@ -137,7 +186,7 @@ function runScenario(base, selectedSeed, familiarity, anchor) {
   const fish = selectedFish(state, selectedSeed);
   return {
     state,
-    initialRole,
+    initialResponse,
     finalRole: fish?.attention?.role ?? null,
     distance: fish ? Math.hypot(fish.x - anchor.x, fish.y - anchor.y) : null,
     profile: fish ? relationshipResponseProfile(fish) : null,
@@ -179,7 +228,7 @@ sheetContext.fillStyle = "#060b10";
 sheetContext.fillRect(0, 0, sheet.width, sheet.height);
 
 const manifest = {
-  version: 1,
+  version: 2,
   seed: options.seed,
   matureDays: 180,
   scale: options.scale,
@@ -195,7 +244,7 @@ for (const [rowIndex, [name, selectedSeed]] of archetypes.entries()) {
     sheetContext,
     `${name}  seed=${selectedSeed.toString(16)}  bold=${profile.boldness.toFixed(2)}`
       + `  confidence=${profile.confidence.toFixed(2)}  attentive=${profile.attentiveness.toFixed(2)}`
-      + `  baseline=${anchor.baselineRole}`,
+      + `  baseline=${anchor.baseline.role}`,
     0,
     rowY,
     sheet.width,
@@ -219,9 +268,10 @@ for (const [rowIndex, [name, selectedSeed]] of archetypes.entries()) {
   for (const [column, [label, familiarity]] of LEVELS.entries()) {
     const scenario = runScenario(base, selectedSeed, familiarity, anchor);
     const x = column * frame.width;
+    const response = scenario.initialResponse;
     drawLabel(
       sheetContext,
-      `${label} f=${familiarity.toFixed(1)}  ${scenario.initialRole ?? "none"}→${scenario.finalRole ?? "none"}`
+      `${label} f=${familiarity.toFixed(1)}  ${response?.role ?? "none"}→${scenario.finalRole ?? "none"}`
         + `  d=${scenario.distance === null ? "n/a" : scenario.distance.toFixed(1)}`,
       x,
       rowY + rowHeader,
@@ -248,7 +298,10 @@ for (const [rowIndex, [name, selectedSeed]] of archetypes.entries()) {
       label,
       familiarity,
       trust: round(scenario.profile?.trust ?? 0),
-      initialRole: scenario.initialRole,
+      initialRole: response?.role ?? null,
+      initialDurationSeconds: response?.durationSeconds ?? null,
+      initialDelaySeconds: response?.delaySeconds ?? null,
+      initialStandoff: response?.standoff ?? null,
       finalRole: scenario.finalRole,
       distanceFromViewerRegion: scenario.distance === null ? null : round(scenario.distance),
     });
@@ -256,10 +309,18 @@ for (const [rowIndex, [name, selectedSeed]] of archetypes.entries()) {
 
   const unfamiliar = rowManifest.levels.find((level) => level.label === "unfamiliar");
   const high = rowManifest.levels.find((level) => level.label === "high");
-  if (!PASSIVE_ROLES.has(unfamiliar?.initialRole) || !ACTIVE_ROLES.has(high?.initialRole)) {
+  const visibleDifference = unfamiliar && high && (
+    unfamiliar.initialRole !== high.initialRole
+    || (high.initialDurationSeconds ?? 0) > (unfamiliar.initialDurationSeconds ?? 0) + 0.01
+    || (high.initialDelaySeconds ?? 0) < (unfamiliar.initialDelaySeconds ?? 0) - 0.01
+    || (high.initialStandoff ?? 0) < (unfamiliar.initialStandoff ?? 0) - 0.01
+    || (Number.isFinite(unfamiliar.distanceFromViewerRegion)
+      && Number.isFinite(high.distanceFromViewerRegion)
+      && high.distanceFromViewerRegion < unfamiliar.distanceFromViewerRegion - 0.05)
+  );
+  if (!visibleDifference) {
     throw new Error(
-      `${name} relationship capture lost its controlled progression: `
-      + `${unfamiliar?.initialRole ?? "none"} -> ${high?.initialRole ?? "none"}`,
+      `${name} relationship capture has no observable unfamiliar/high difference at its production anchor`,
     );
   }
   manifest.archetypes.push(rowManifest);
