@@ -263,6 +263,7 @@ function familiarityStrength(profile, record, previousAttention = null) {
 function roleAfterFamiliarity(fish, record) {
   if (!record) return null;
   const profile = relationshipResponseProfile(fish);
+  if (profile.familiarity <= 0) return record;
   const strength = familiarityStrength(profile, record, fish.attention ?? null);
   let role = record.role;
 
