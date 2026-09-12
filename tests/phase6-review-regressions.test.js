@@ -142,4 +142,4 @@ test("protected voluntary-visit targets use the same depth ceiling as locomotion
   assert.equal(frame.target.glassVisit, true);
   assert.ok(frame.target.y <= productionCeiling + 1e-9,
     `visit target ${frame.target.y} was below production ceiling ${productionCeiling}`);
-}
+});
