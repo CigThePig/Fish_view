@@ -121,6 +121,10 @@ function activeVisit(fish) {
   return { ...visit, ageSeconds, durationSeconds };
 }
 
+function hasVisitField(fish) {
+  return Boolean(fish?.viewerRelationship && "glassVisit" in fish.viewerRelationship);
+}
+
 function biologicallyAvailable(fish) {
   if (!ELIGIBLE_BEHAVIORS.has(fish.behavior?.current)) return false;
   return LOW_COMMITMENT_ACTIVITIES.has(fish.activity?.current);
@@ -221,8 +225,20 @@ function visitAnchor(fish, index, state, epoch) {
  * the broad behavior leaves cruise/explore, the transient visit disappears.
  */
 export function prepareVoluntaryGlassVisits(state) {
+  const source = state.individuals ?? [];
+  const hasAnyVisit = source.some(hasVisitField);
+  // Normal aquarium frames should pay almost nothing for Phase 6D. With no
+  // visit to age/clean, a viewer stimulus blocks initiation immediately and a
+  // closed global opportunity means there is no reason to allocate per-fish
+  // cleanup/arbitration arrays at all. The rarer open-window path below retains
+  // the exact same deterministic selection logic.
+  if (!hasAnyVisit) {
+    if (directViewerStimulusActive(state)) return state;
+    if (!opportunity(state).open) return state;
+  }
+
   let cleanupChanged = false;
-  let individuals = (state.individuals ?? []).map((fish) => {
+  let individuals = source.map((fish) => {
     const visit = activeVisit(fish);
     if (!visit) {
       const cleaned = relationshipWithoutVisit(fish);
@@ -298,10 +314,13 @@ export function prepareVoluntaryGlassVisits(state) {
  * reload/offline time erases that short context instead of inventing history.
  */
 export function trackViewerRegions(state) {
-  const touchById = new Map((state.stimuli ?? [])
-    .filter((stimulus) => stimulus?.source === "touch")
-    .map((stimulus) => [stimulus.id, stimulus]));
-  if (!touchById.size) return state;
+  let touchById = null;
+  for (const stimulus of state.stimuli ?? []) {
+    if (stimulus?.source !== "touch") continue;
+    if (!touchById) touchById = new Map();
+    touchById.set(stimulus.id, stimulus);
+  }
+  if (!touchById) return state;
 
   let changed = false;
   const individuals = (state.individuals ?? []).map((fish) => {
