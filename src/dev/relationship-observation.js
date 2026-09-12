@@ -2,7 +2,11 @@
 
 import { traitsFromSeed } from "../sim/entities.js";
 import { affinitiesFromSeed } from "../sim/fish-personality.js";
-import { glassFamiliarityFor, withGlassFamiliarity } from "../sim/viewer-relationship.js";
+import {
+  glassFamiliarityFor,
+  viewerSaturationFor,
+  withGlassFamiliarity,
+} from "../sim/viewer-relationship.js";
 
 function round(value, places = 3) {
   const scale = 10 ** places;
@@ -13,11 +17,12 @@ function round(value, places = 3) {
  * Compact relationship row for reports and future accelerated capture tooling.
  * Nothing here is user-facing and nothing mutates the simulation.
  */
-export function relationshipSnapshot(fish) {
+export function relationshipSnapshot(fish, elapsedRealSeconds = null) {
   const traits = traitsFromSeed(fish.seed, fish.history);
   return Object.freeze({
     seed: fish.seed,
     glassFamiliarity: round(glassFamiliarityFor(fish), 4),
+    attentionSaturation: round(viewerSaturationFor(fish, elapsedRealSeconds), 4),
     fixedGlassAffinity: round(affinitiesFromSeed(fish.seed).glass, 4),
     boldness: round(traits.boldness, 4),
     curiosity: round(traits.curiosity, 4),
@@ -26,7 +31,7 @@ export function relationshipSnapshot(fish) {
 }
 
 export function relationshipRoster(state) {
-  return state.individuals.map(relationshipSnapshot);
+  return state.individuals.map((fish) => relationshipSnapshot(fish, state.elapsedRealSeconds));
 }
 
 /**
