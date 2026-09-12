@@ -175,31 +175,32 @@ export function applyTouch(state, x, y) {
   // answer; saturation only changes the style/rotation of those answers.
   const responseIndividuals = state.individuals.map((fish) =>
     decayViewerSaturation(fish, state.elapsedRealSeconds));
-  // A responder already committed to a *different* press is not free for this
-  // assignment. Treating touch-react as ordinary zero commitment made it the
-  // easiest fish to recruit again, and a second tap could silently retarget its
-  // motion while its attention record still named the first tap. A coalesced
-  // repeat of the same stimulus is deliberately not protected by this guard.
-  const answeringEarlierStimulus = (fish) => Boolean(
+  // A responder committed to an earlier press must not be stolen by a new press
+  // it cannot perceive. If the new disturbance is genuinely inside its normal
+  // perception radius, however, the ordinary assignment is allowed to replace
+  // that response while preserving the activity the fish will eventually resume.
+  // This keeps nearby consecutive taps responsive without letting a distant tap
+  // cross-wire motion to a stimulus the attention record never accepted.
+  const answeringUnperceivedEarlierStimulus = (fish) => Boolean(
     fish.attention
-    && fish.attention.stimulusId !== stimulus.id,
+    && fish.attention.stimulusId !== stimulus.id
+    && Math.hypot(stimulus.x - fish.x, stimulus.y - fish.y) > stimulus.radius,
   );
   const assignedAttention = assignAttention(
     { ...state, individuals: responseIndividuals, stimuli: events.stimuli },
     stimulus,
     {
-      commitmentFor: (fish) => answeringEarlierStimulus(fish)
+      commitmentFor: (fish) => answeringUnperceivedEarlierStimulus(fish)
         ? 1
         : activityCommitment(fish.activity?.current),
     },
   );
-  // The generic assignment still gives an unavailable fish a passive record so
-  // it can visibly notice an event. Here that would overwrite an answer already
-  // under way, so mask those records before familiarity/saturation shaping too.
-  // This also prevents a saturated responder from handing prominence to a fish
-  // that cannot actually accept the new stimulus.
+  // Total commitment still produces a passive notice record in the generic
+  // assignment. For a fish whose live answer belongs to an out-of-range earlier
+  // press, even that would overwrite the response, so mask it before relationship
+  // shaping. Nearby presses are deliberately left untouched and may replace it.
   const availableAttention = assignedAttention.map((assigned, index) =>
-    (answeringEarlierStimulus(responseIndividuals[index]) ? null : assigned));
+    (answeringUnperceivedEarlierStimulus(responseIndividuals[index]) ? null : assigned));
   const attention = shapeAttentionForSaturation(responseIndividuals, availableAttention, { guarantee: true });
 
   // The school drifts toward a disturbance it is near and ignores one across
@@ -219,13 +220,10 @@ export function applyTouch(state, x, y) {
   });
 
   const individuals = responseIndividuals.map((fish, index) => {
-    // A fish that is already answering an earlier press keeps that answer,
-    // whatever this press does to it. A response has its own seeded life and
-    // ends when it is spent: a press somewhere else must not cut short a lean
-    // or a glance, and it must not overwrite the activity a responder put down
-    // with the `touch-react` it is currently in - recovery would have nothing
-    // to resume, and a second tap would quietly cost the fish its thread.
-    const answeringEarlier = answeringEarlierStimulus(fish);
+    // A fish answering an earlier press only has continuity against a new press
+    // outside its perception radius. A nearby disturbance is allowed to become
+    // the new answer, matching the ordinary Stage 2 consecutive-tap contract.
+    const answeringEarlier = answeringUnperceivedEarlierStimulus(fish);
     const answering = fish.activity?.current === ACTIVITIES.touchReact;
     const carried = fish.attention?.resume ?? null;
     const assigned = answeringEarlier ? null : attention[index];
@@ -245,9 +243,8 @@ export function applyTouch(state, x, y) {
       visual: { ...fish.visual },
       attention: role,
     };
-    // A distinct press may not retarget a response already in progress. The
-    // attention record, motion and activity continue toward their original
-    // stimulus until that seeded response finishes.
+    // A distant distinct press may not retarget a response already in progress.
+    // A nearby accepted response can, and carries the original resume thread.
     if (answeringEarlier || !attentionInvestigates(role)) return base;
     const direction = normalizeVector(stimulus.x - fish.x, stimulus.y - fish.y);
     const glassAffinity = affinitiesFromSeed(fish.seed).glass;
@@ -301,13 +298,13 @@ export function applyTouch(state, x, y) {
  *
  * - A press is a **tap** until it has stayed put past HOLD_THRESHOLD_SECONDS.
  * - A press that stays inside HOLD_MOVEMENT_CELLS of where it landed becomes a
- *   **presence** - Phase 3, unchanged, down to the stimulus keeping the
+ *   **presence** - Phase 3, unchanged, down to the stimulus keeping its
  *   position the press landed on rather than following the finger.
  * - A press that leaves that allowance becomes a **gesture with a direction in
  *   it**, and from then on it is one: the allowance is latched, so a finger
  *   that wanders and comes back to rest is a drag that stopped rather than a
  *   presence that started late. Which gesture it is - a slow point of interest
- *   or water being shoved - is read from the speed along the bounded path, in
+ *   or water being shoved - is read from the speed along a bounded path, in
  *   bands with hysteresis so a hand slowing down does not change the meaning of
  *   what it is doing four times on the way (src/sim/pointer-path.js).
  *
