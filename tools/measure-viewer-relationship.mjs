@@ -90,12 +90,27 @@ function chooseArchetypes(state) {
   ];
 }
 
+function controlledResponseFish(baseFish, familiarity) {
+  const familiar = withGlassFamiliarity(baseFish, familiarity);
+  return {
+    ...familiar,
+    // The archetype matrix is a controlled relationship comparison, not a
+    // snapshot of what the fish happened to be doing at day 180. Normalizing
+    // the selected fish to cruise keeps activity commitment from confounding
+    // familiarity while leaving its seeded personality completely unchanged.
+    behavior: { ...familiar.behavior, current: "cruise", previous: "cruise", blend: 1 },
+    activity: { ...familiar.activity, current: "cruise", previous: "cruise" },
+    attention: null,
+    viewerRelationship: undefined,
+  };
+}
+
 function archetypeEvidence(state) {
   return chooseArchetypes(state).map(([name, baseFish]) => ({
     name,
     personality: personalityRow(baseFish),
     levels: EVIDENCE_LEVELS.map(([label, familiarity]) => {
-      const fish = withGlassFamiliarity(baseFish, familiarity);
+      const fish = controlledResponseFish(baseFish, familiarity);
       const profile = relationshipResponseProfile(fish);
       return {
         label,
