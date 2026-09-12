@@ -11,7 +11,18 @@
  * remembers short-term attention saturation and enough bounded bookkeeping to
  * avoid paying the same held interaction twice. It is never serialised and is
  * cleared by offline progression/reload.
+ *
+ * Phase 6C makes the durable clock visible. Familiarity does not replace the
+ * attention engine or turn personality into a progress bar. Instead it reshapes
+ * the answer the existing system already chose: familiar fish notice more
+ * warmly, committed responders hesitate a little less, bold familiar fish come
+ * close, cautious familiar fish come reliably but keep a wider style, and the
+ * aftermath lasts a little longer. Long holds still habituate and short-term
+ * saturation still wins over familiarity when the viewer repeats too quickly.
  */
+
+import { traitsFromSeed } from "./entities.js";
+import { affinitiesFromSeed } from "./fish-personality.js";
 
 export const GLASS_FAMILIARITY_MINIMUM = 0;
 export const GLASS_FAMILIARITY_MAXIMUM = 1;
@@ -48,6 +59,15 @@ const SATURATION_STYLE_THRESHOLD = 0.55;
 const SATURATION_STRONG_THRESHOLD = 0.82;
 const SATURATION_ROTATE_THRESHOLD = 0.68;
 const SATURATION_ROTATE_ADVANTAGE = 0.18;
+const FAMILIAR_WATCH_THRESHOLD = 0.12;
+const FAMILIAR_APPROACH_THRESHOLD = 0.36;
+const FAMILIAR_CLOSE_THRESHOLD = 0.58;
+const FAMILIAR_CLOSE_BOLDNESS = 0.48;
+const FAMILIAR_DELAY_REDUCTION = 0.4;
+const FAMILIAR_AFTERMATH_GAIN = 0.36;
+const FAMILIAR_HOLD_BASE_SECONDS = 10;
+const FAMILIAR_HOLD_ATTENTIVE_SECONDS = 5;
+const FAMILIAR_HOLD_RELATIONSHIP_SECONDS = 7;
 const MAX_CREDIT_SECONDS = 1.2;
 const NEAR_FAMILIARITY_PER_SECOND = 0.00042;
 const MOVING_FAMILIARITY_PER_SECOND = 0.00024;
@@ -82,6 +102,40 @@ export function sanitizeGlassFamiliarity(value, fallback = GLASS_FAMILIARITY_DEF
 /** Read familiarity from a fish without requiring every historical save shape to contain it. */
 export function glassFamiliarityFor(fish) {
   return sanitizeGlassFamiliarity(fish?.history?.glassFamiliarity);
+}
+
+/**
+ * Derived response profile for the relationship layer.
+ *
+ * Familiarity is the learned part. Boldness, curiosity and glass affinity are
+ * still the fish's own seeded shape. Keeping all four visible here is useful to
+ * developer tooling and, more importantly, prevents later phases from treating
+ * a relationship level as a replacement personality.
+ */
+export function relationshipResponseProfile(fish) {
+  const familiarity = glassFamiliarityFor(fish);
+  const traits = traitsFromSeed(fish.seed, fish.history);
+  const glassAffinity = affinitiesFromSeed(fish.seed).glass;
+  const confidence = clamp(traits.boldness * 0.72 + glassAffinity * 0.28, 0, 1);
+  const attentiveness = clamp(traits.curiosity * 0.64 + glassAffinity * 0.36, 0, 1);
+  // Even a fish whose seeded glass affinity is weak can learn the viewer, but a
+  // naturally curious/glass-oriented fish expresses the same familiarity more
+  // openly. The learned scalar therefore composes with personality instead of
+  // overwriting it.
+  const trust = clamp(
+    familiarity * (0.56 + glassAffinity * 0.24 + traits.curiosity * 0.20),
+    0,
+    1,
+  );
+  return Object.freeze({
+    familiarity,
+    boldness: traits.boldness,
+    curiosity: traits.curiosity,
+    glassAffinity,
+    confidence,
+    attentiveness,
+    trust,
+  });
 }
 
 /**
@@ -186,24 +240,84 @@ function roleAfterSaturation(role, saturation) {
   return role;
 }
 
+function familiarityStrength(profile, record, previousAttention = null) {
+  let strength = profile.trust;
+  if (!record?.held) return strength;
+
+  // Familiarity may extend a hold, never make one permanent. Its contribution
+  // fades on its own bounded window and then the original hold-habituation
+  // system is the sole authority again. An already engaged fish gets a modest
+  // continuity bonus while that window is alive so it does not peel away one
+  // review beat before an equally familiar newcomer would decide to approach.
+  const horizon = FAMILIAR_HOLD_BASE_SECONDS
+    + profile.attentiveness * FAMILIAR_HOLD_ATTENTIVE_SECONDS
+    + profile.familiarity * FAMILIAR_HOLD_RELATIONSHIP_SECONDS;
+  const fade = clamp(1 - Math.max(0, record.holdSeconds ?? 0) / horizon, 0, 1);
+  strength *= fade;
+  const sameEngagement = previousAttention?.stimulusId === record.stimulusId
+    && isActiveRole(previousAttention?.role);
+  if (sameEngagement) strength = clamp(strength + profile.familiarity * 0.12 * fade, 0, 1);
+  return strength;
+}
+
+function roleAfterFamiliarity(fish, record) {
+  if (!record) return null;
+  const profile = relationshipResponseProfile(fish);
+  const strength = familiarityStrength(profile, record, fish.attention ?? null);
+  let role = record.role;
+
+  // Low familiarity first changes *tone*: a cautious/wary answer becomes a
+  // watch. More trust turns passive attention into a real approach. Only a fish
+  // that was already meaningfully bold can turn that approach into the close
+  // investigator style, which is the guardrail that keeps a familiar cautious
+  // fish cautious.
+  if (role === "wary" && strength >= FAMILIAR_WATCH_THRESHOLD) role = "watch";
+  if (role === "acknowledge" && strength >= FAMILIAR_WATCH_THRESHOLD * 2) role = "watch";
+  if ((role === "watch" || role === "wary" || role === "acknowledge")
+    && strength >= FAMILIAR_APPROACH_THRESHOLD) role = "approach";
+  if (role === "approach"
+    && strength >= FAMILIAR_CLOSE_THRESHOLD
+    && profile.boldness >= FAMILIAR_CLOSE_BOLDNESS
+    && profile.confidence >= 0.55) role = "investigate";
+
+  // A fish that was busy still gets to be itself. Familiarity shortens the
+  // hesitation but never converts a `delayed` role into an instant one, so a
+  // cautious/occupied animal remains visibly distinct from a free bold one.
+  const delayScale = 1 - strength * FAMILIAR_DELAY_REDUCTION * (0.55 + profile.confidence * 0.45);
+  // After release, familiar fish keep the last interaction region interesting
+  // for a little longer. This is a bounded multiplier on the response record,
+  // not a new timer or a new persistent memory.
+  const aftermathScale = 1 + profile.familiarity * FAMILIAR_AFTERMATH_GAIN
+    * (0.55 + profile.attentiveness * 0.45);
+
+  return {
+    ...record,
+    role,
+    delaySeconds: Math.max(0, (record.delaySeconds ?? 0) * delayScale),
+    durationSeconds: Math.max(0.001, (record.durationSeconds ?? 0.001) * aftermathScale),
+  };
+}
+
 /**
- * Turn short-term repetition into a change of response style.
+ * Shape the ordinary attention answer through the two Phase 6 clocks.
  *
- * The assignment engine still decides who noticed and what they would normally
- * do. Saturation softens that answer. A fresh press is still guaranteed a
- * visible response because the Phase 2 assignment already supplies one, but it
- * does not have to remain a full investigator forever: a lone saturated fish
- * may only approach partway or turn to look. With a cast, a much fresher fish
- * may inherit the prominent investigator role instead.
+ * Long-term familiarity acts first: it can turn a glance into an approach,
+ * shorten a real hesitation, and lengthen the bounded aftermath while keeping
+ * bold/cautious personality distinctions intact. Short-term saturation acts
+ * second, so drumming the glass can still soften or rotate even a highly
+ * familiar fish. The assignment engine remains the source of truth for who
+ * noticed the event and what they were doing when it happened.
  */
 export function shapeAttentionForSaturation(fish, assignments, { guarantee = true } = {}) {
-  const shaped = assignments.map((record, index) => {
+  const relationshipShaped = assignments.map((record, index) =>
+    roleAfterFamiliarity(fish[index], record));
+  const shaped = relationshipShaped.map((record, index) => {
     if (!record) return null;
     return { ...record, role: roleAfterSaturation(record.role, viewerSaturationFor(fish[index])) };
   });
 
   if (!guarantee) return shaped;
-  const originalInvestigators = assignments
+  const originalInvestigators = relationshipShaped
     .map((record, index) => (record?.role === "investigate" ? index : -1))
     .filter((index) => index >= 0);
   if (!originalInvestigators.length) return shaped;
@@ -214,7 +328,7 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
   const anchorSaturation = viewerSaturationFor(fish[anchor]);
 
   if (anchorSaturation >= SATURATION_ROTATE_THRESHOLD) {
-    const alternatives = assignments
+    const alternatives = relationshipShaped
       .map((record, index) => ({ record, index, saturation: viewerSaturationFor(fish[index]) }))
       .filter(({ record, index, saturation }) => index !== anchor
         && record
@@ -230,7 +344,7 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
       // active-response caps intact when the fresher fish takes its place.
       shaped[anchor] = { ...shaped[anchor], role: "watch" };
       const replacement = alternatives[0].index;
-      shaped[replacement] = { ...assignments[replacement], role: "investigate" };
+      shaped[replacement] = { ...relationshipShaped[replacement], role: "investigate" };
     }
   }
 
