@@ -163,9 +163,9 @@ The Phase 6 verification sequence is:
 6. `npm run measure:relationship`
 7. `npm run capture:relationship -- --scale=0.25 --output=.audit-output/relationship-captures`
 
-The strengthened product-first head passed the complete gate:
+The strengthened product-first and Codex-reviewed head passed the complete gate:
 
-- `npm test`: 479/479 passed;
+- `npm test`: 483/483 passed;
 - simulation audit: 48,000 ticks and 48,000 fish samples with zero failures;
 - persistence audit: 200 malformed saves with zero failures;
 - render audit: 540 frames with zero differing frames and zero escaped spans;
