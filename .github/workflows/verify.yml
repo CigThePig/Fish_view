@@ -26,3 +26,9 @@ jobs:
       - run: npm run measure:feeding
       - run: npm run measure:relationship
       - run: npm run capture:relationship -- --scale=0.25 --output=.audit-output/relationship-captures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase6-relationship-captures
+          path: .audit-output/relationship-captures
+          if-no-files-found: error
+          retention-days: 14
