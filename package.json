@@ -21,6 +21,7 @@
     "measure:relationship": "node tools/measure-viewer-relationship.mjs",
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs",
     "capture:interaction": "node tools/capture-interaction.mjs",
+    "capture:relationship": "node tools/capture-viewer-relationship.mjs",
     "capture:depth": "node tools/capture-habitat-depth.mjs",
     "capture:living": "node tools/capture-living-aquarium.mjs",
     "measure:living": "node tools/measure-living-aquarium.mjs",
