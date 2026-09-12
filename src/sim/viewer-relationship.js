@@ -19,8 +19,9 @@ export const GLASS_FAMILIARITY_DEFAULT = 0;
 
 export const VIEWER_SATURATION_MINIMUM = 0;
 export const VIEWER_SATURATION_MAXIMUM = 1;
-// Repetition should matter across a burst of tapping, not across bedtime. A
-// half-life keeps decay smooth and deterministic without a per-frame timer.
+// Repetition should matter across a burst of separate interactions, not across
+// bedtime and not merely because one finger stayed put. A half-life keeps decay
+// smooth and deterministic without a per-frame timer.
 export const VIEWER_SATURATION_HALF_LIFE_SECONDS = 22;
 
 const SATURATION_ROLE_GAIN = Object.freeze({
@@ -50,8 +51,6 @@ const SATURATION_ROTATE_ADVANTAGE = 0.18;
 const MAX_CREDIT_SECONDS = 1.2;
 const NEAR_FAMILIARITY_PER_SECOND = 0.00042;
 const MOVING_FAMILIARITY_PER_SECOND = 0.00024;
-const NEAR_SATURATION_PER_SECOND = 0.024;
-const MOVING_SATURATION_PER_SECOND = 0.016;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -242,6 +241,9 @@ export function shapeAttentionForSaturation(fish, assignments, { guarantee = tru
  *
  * Role, proximity and the fish's own participation decide the amount. A press
  * that merely happened near a fish no longer edits that fish's personality.
+ * Saturation is paid once per interaction sequence, so a long hold is still one
+ * interaction. Its existing hold-habituation system remains responsible for
+ * deciding when a fish gets bored with one unmoving finger.
  */
 export function registerViewerResponses(fish, stimulus, nowSeconds) {
   if (!isDirectViewerStimulus(stimulus)) return fish;
@@ -276,7 +278,9 @@ export function registerViewerResponses(fish, stimulus, nowSeconds) {
  * Credit what actually happened after assignment: arriving, lingering, or
  * following a moving finger. Only the uncredited delta is paid, so a long hold
  * can be re-read forever without becoming an interaction log or a familiarity
- * mint.
+ * mint. This adds familiarity but deliberately does not add saturation: the
+ * hold system already has its own habituation clock, while saturation exists to
+ * distinguish repeated separate interactions in a short burst.
  */
 export function creditViewerEngagement(fish, stimulus, nowSeconds) {
   if (!isDirectViewerStimulus(stimulus)) return fish;
@@ -300,12 +304,7 @@ export function creditViewerEngagement(fish, stimulus, nowSeconds) {
       + movingSeconds * MOVING_FAMILIARITY_PER_SECOND;
 
     const saturation = viewerSaturationFor(one, nowSeconds);
-    let next = addFamiliarity(decayViewerSaturation(one, nowSeconds), rawGain, saturation);
-    next = addSaturation(
-      next,
-      nearDelta * NEAR_SATURATION_PER_SECOND + movingSeconds * MOVING_SATURATION_PER_SECOND,
-      nowSeconds,
-    );
+    const next = addFamiliarity(decayViewerSaturation(one, nowSeconds), rawGain, saturation);
     return {
       ...next,
       viewerRelationship: {
