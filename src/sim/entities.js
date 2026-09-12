@@ -107,6 +107,8 @@ export function createIndividualFromSeed(rawSeed, index, cols, rows, options = {
       touches: 0,
       boldnessDrift: 0,
       sociabilityDrift: 0,
+      // Phase 6 relationship memory. One bounded scalar, no interaction log.
+      glassFamiliarity: 0,
       socialMemory: [],
     },
     behavior: options.behavior ?? {

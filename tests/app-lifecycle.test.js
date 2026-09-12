@@ -108,6 +108,15 @@ test("the application resumes one aquarium after suspension and displays restore
   assert.equal(panel.hidden,false);
   nodes.get('#debug-close').listeners.get('click')();
 
+  // The pointer lifecycle assertions below are about platform cleanup, not the
+  // relationship layer. Earlier in this same test we deliberately hammer the
+  // aquarium while exercising responsive layout and the hidden debug gesture;
+  // Phase 6B correctly leaves that cast temporarily saturated, where a valid
+  // answer may be a watch instead of `touch-react`. Start this independent
+  // contact-lifecycle scenario from a fresh aquarium so its old investigator
+  // assertion continues to test only what it was written to test.
+  nodes.get("#reset-simulation").listeners.get("click")();
+
   // A finger left on the glass, and the three ways this file has of letting go
   // of one. The simulation's own staleness guard cannot help while the app is
   // still confirming a contact every frame, so ending it is the platform's job

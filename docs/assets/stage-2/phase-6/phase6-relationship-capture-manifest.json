@@ -1,0 +1,227 @@
+{
+  "version": 2,
+  "seed": 7232017,
+  "matureDays": 180,
+  "scale": 0.25,
+  "archetypes": [
+    {
+      "name": "bold",
+      "seed": 1763545983,
+      "personality": {
+        "boldness": 0.599,
+        "confidence": 0.646,
+        "attentiveness": 0.458,
+        "glassAffinity": 0.767
+      },
+      "anchor": {
+        "x": 54.55723296594806,
+        "y": 6.511018228023313,
+        "anchorSeed": 46810761,
+        "baseline": {
+          "role": "approach",
+          "durationSeconds": 3.692,
+          "delaySeconds": 0,
+          "standoff": 2.7
+        },
+        "high": {
+          "role": "investigate",
+          "durationSeconds": 4.596,
+          "delaySeconds": 0,
+          "standoff": 0
+        }
+      },
+      "levels": [
+        {
+          "label": "unfamiliar",
+          "familiarity": 0,
+          "trust": 0.001,
+          "initialRole": "approach",
+          "initialDurationSeconds": 3.692,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 2.7,
+          "finalRole": "approach",
+          "distanceFromViewerRegion": 6.642
+        },
+        {
+          "label": "early",
+          "familiarity": 0.2,
+          "trust": 0.161,
+          "initialRole": "approach",
+          "initialDurationSeconds": 3.893,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 2.7,
+          "finalRole": "approach",
+          "distanceFromViewerRegion": 6.642
+        },
+        {
+          "label": "medium",
+          "familiarity": 0.5,
+          "trust": 0.401,
+          "initialRole": "approach",
+          "initialDurationSeconds": 4.194,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 2.7,
+          "finalRole": "approach",
+          "distanceFromViewerRegion": 6.642
+        },
+        {
+          "label": "high",
+          "familiarity": 0.9,
+          "trust": 0.721,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 4.596,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 6.642
+        }
+      ]
+    },
+    {
+      "name": "cautious",
+      "seed": 3131822386,
+      "personality": {
+        "boldness": 0.276,
+        "confidence": 0.27,
+        "attentiveness": 0.355,
+        "glassAffinity": 0.253
+      },
+      "anchor": {
+        "x": 0.75,
+        "y": 11.296918639188268,
+        "anchorSeed": 772204543,
+        "baseline": {
+          "role": "investigate",
+          "durationSeconds": 4.2,
+          "delaySeconds": 0,
+          "standoff": 0
+        },
+        "high": {
+          "role": "investigate",
+          "durationSeconds": 5.166,
+          "delaySeconds": 0,
+          "standoff": 0
+        }
+      },
+      "levels": [
+        {
+          "label": "unfamiliar",
+          "familiarity": 0,
+          "trust": 0.002,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 4.2,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 2.283
+        },
+        {
+          "label": "early",
+          "familiarity": 0.2,
+          "trust": 0.142,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 4.414,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 2.283
+        },
+        {
+          "label": "medium",
+          "familiarity": 0.5,
+          "trust": 0.353,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 4.736,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 2.283
+        },
+        {
+          "label": "high",
+          "familiarity": 0.9,
+          "trust": 0.633,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 5.166,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 2.283
+        }
+      ]
+    },
+    {
+      "name": "attentive",
+      "seed": 46810761,
+      "personality": {
+        "boldness": 0.341,
+        "confidence": 0.362,
+        "attentiveness": 0.733,
+        "glassAffinity": 0.414
+      },
+      "anchor": {
+        "x": 65.25,
+        "y": 6.813096549325284,
+        "anchorSeed": 475710052,
+        "baseline": {
+          "role": "investigate",
+          "durationSeconds": 2.42,
+          "delaySeconds": 0,
+          "standoff": 0
+        },
+        "high": {
+          "role": "investigate",
+          "durationSeconds": 3.11,
+          "delaySeconds": 0,
+          "standoff": 0
+        }
+      },
+      "levels": [
+        {
+          "label": "unfamiliar",
+          "familiarity": 0,
+          "trust": 0.002,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 2.42,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 9.251
+        },
+        {
+          "label": "early",
+          "familiarity": 0.2,
+          "trust": 0.17,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 2.574,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 9.251
+        },
+        {
+          "label": "medium",
+          "familiarity": 0.5,
+          "trust": 0.422,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 2.804,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 9.251
+        },
+        {
+          "label": "high",
+          "familiarity": 0.9,
+          "trust": 0.758,
+          "initialRole": "investigate",
+          "initialDurationSeconds": 3.11,
+          "initialDelaySeconds": 0,
+          "initialStandoff": 0,
+          "finalRole": "investigate",
+          "distanceFromViewerRegion": 9.251
+        }
+      ]
+    }
+  ]
+}
