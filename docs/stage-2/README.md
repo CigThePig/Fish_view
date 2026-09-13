@@ -30,7 +30,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 5 | Environmental interaction and causal chains | Done | [phase 5](phase-5-environment-and-chains.md) · [first slice](phase-5-water-and-plants.md) |
 | 6 | Persistent fish–viewer relationship | Done | [phase 6](phase-6-viewer-relationship-evidence.md) |
 | 7.1 | Readability baseline and behavior freeze | Done | [phase 7.1](phase-7-1-readability-baseline.md) |
-| 7.2 | Playful chase — core pursuit choreography | Not started | — |
+| 7.2 | Playful chase — core pursuit choreography | Done | [phase 7.2](phase-7-2-playful-chase-core-pursuit.md) |
 | 7.3 | Playful chase — complete arc and ending | Not started | — |
 | 7.4 | Plant weave — route and geometry redesign | Not started | — |
 | 7.5 | Plant vocabulary separation and polish | Not started | — |
@@ -64,6 +64,16 @@ working branch. Phase branches now have exact-commit interactive preview links,
 branch CI artifacts containing the built static site and captures, and a
 reusable chase observer that records pair-distance, speed, turn-rate, evasion,
 break and personality/body-size evidence without grading today's choreography.
+
+Phase 7.2 turns playful chase from a fast follow into a visibly asymmetric
+pursuit without retuning `individual-follow`. The evader now makes a
+deterministic lateral dodge and burst, while the chaser receives sharper
+pursuit steering and vertical correction. Six-seed telemetry and branch renders
+show stronger evader turning, more pair-line separation and clearer post-chase
+gap growth; full repository verification remained green. Gap oscillation and a
+true near-miss / overshoot climax are intentionally still absent, because those
+belong to the complete chase arc in Phase 7.3. See the
+[Phase 7.2 report](phase-7-2-playful-chase-core-pursuit.md).
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
