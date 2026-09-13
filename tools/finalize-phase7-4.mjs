@@ -35,12 +35,18 @@ strongWeaveTest = replaceOnce(
   "adapt frozen plant comparison to monolithic implementation",
 );
 
+// Rebuild the production candidate from the last green pre-7.4 branch point.
+// Restore the two interaction tests too: a prior staging commit intentionally
+// experimented with one of them and must not leak a truncated file into the
+// finished branch.
 for (const path of [
   "src/sim/fish-activities.js",
   "src/sim/choreography-tuning.js",
   "src/dev/choreography-fields.js",
   "src/dev/behavior-showcase.js",
   "tools/capture-behavior-showcase.mjs",
+  "tests/attention-roles.test.js",
+  "tests/hold-presence.test.js",
 ]) {
   await restore(path);
 }
@@ -54,6 +60,9 @@ const tempPatch = "/tmp/apply-phase7-4-patch.mjs";
 await writeFile(tempPatch, patchSource);
 await import(`${pathToFileURL(tempPatch).href}?run=${Date.now()}`);
 
+// Keep every route waypoint comfortably above the substrate clamp. The first
+// production pass could seed a target below the reachable swimming band, which
+// made a middle leg wait for its safety timeout rather than visibly cross it.
 let activities = await readFile("src/sim/fish-activities.js", "utf8");
 const routeSwaps = [
   [
@@ -119,6 +128,44 @@ phase2Test = replaceOnce(
 );
 await writeFile("tests/phase2-activities.test.js", phase2Test);
 
+// The deterministic settled aquarium changes slightly because a real spatial
+// weave keeps fish occupied for a different amount of time. Preserve the
+// interaction invariants while making their fixtures measure the invariant they
+// actually claim: a passive response while it is alive, and a long hold after
+// it has reached its plateau.
+let attentionTest = await readFile("tests/attention-roles.test.js", "utf8");
+attentionTest = replaceOnce(
+  attentionTest,
+  `  const control = run(base, 1.2);\n  const responding = run(touched, 1.2);`,
+  `  // Sample while this particular response is alive. The settled aquarium can\n  // legitimately hand the first passive slot to an acknowledgement, whose\n  // whole point is to be a short flick. Sampling every role at a fixed 1.2 s\n  // could measure it only after it had correctly finished.\n  const response = touched.individuals[index].attention;\n  const sampleSeconds = Math.min(0.6, Math.max(0.1, response.durationSeconds * 0.5));\n  const control = run(base, sampleSeconds);\n  const responding = run(touched, sampleSeconds);`,
+  "sample passive response during its lifetime",
+);
+attentionTest = replaceOnce(
+  attentionTest,
+  `  assert.ok(movedDifferently, "a passive response had no visible correlate");`,
+  `  assert.ok(movedDifferently, "a passive response had no visible correlate while active");`,
+  "clarify passive response assertion",
+);
+await writeFile("tests/attention-roles.test.js", attentionTest);
+
+let holdTest = await readFile("tests/hold-presence.test.js", "utf8");
+holdTest = replaceOnce(
+  holdTest,
+  `// The other half of boundedness: a hold that costs the same at sixty seconds as\n// at fifteen, because everyone who was going to lose interest already has.`,
+  `// The other half of boundedness: once a long hold has settled, extending it\n// does not keep recruiting or accumulating responders.`,
+  "describe settled hold plateau",
+);
+holdTest = replaceOnce(
+  holdTest,
+  `      if ([15, 30, 45, 59].some((mark) => Math.abs(at - mark) < 0.001)) {`,
+  `      if ([30, 40, 50, 59].some((mark) => Math.abs(at - mark) < 0.001)) {`,
+  "sample hold after it settles",
+);
+await writeFile("tests/hold-presence.test.js", holdTest);
+
+// Integration scaffolding is intentionally self-deleting. Phase 7.5 starts on
+// ordinary production modules and ordinary tests, with no temporary facade or
+// one-shot workflow left behind.
 for (const path of [
   "src/sim/fish-activities-core.js",
   "src/sim/choreography-tuning-core.js",
