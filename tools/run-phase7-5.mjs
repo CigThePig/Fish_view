@@ -11,7 +11,6 @@ function replaceOnce(text, before, after, label) {
 const sourcePath = "tools/apply-phase7-5.mjs";
 let source = await readFile(sourcePath, "utf8");
 
-// Correct patch-builder quoting/regexes before executing the one-shot script.
 source = source.replace(
   String.raw`\{ shelter: true \}\\);[\s\S]*?\n    \}, settled`,
   String.raw`\{ shelter: true \}\);[\s\S]*?\n    \}, settled`,
@@ -21,9 +20,6 @@ source = source.replace(
   String.raw`/function naturalCompletion\(fish, activity, target, dwell\) \{[\s\S]*?\n\}\n\n(?=\/\*\*)/,`,
 );
 
-// The generated regression test intentionally contains template literals of
-// its own. Escape those for the patch-builder's outer template without touching
-// the builder's normal `${...}` diagnostics elsewhere.
 const vocabularyStart = source.indexOf('const vocabularyTest = `');
 const vocabularyEndMarker = '`;\nawait writeFile("tests/phase7-plant-vocabulary.test.js", vocabularyTest);';
 const vocabularyEnd = source.indexOf(vocabularyEndMarker, vocabularyStart);
@@ -40,21 +36,12 @@ await writeFile(temporary, source);
 await import(`${pathToFileURL(temporary).href}?run=${Date.now()}`);
 
 let activities = await readFile("src/sim/fish-activities.js", "utf8");
-
-// A three-beat visit is one readable sentence. A broad utility swing after the
-// global 12-second behavior floor must not cut it between "inspect" and
-// "retreat", or between "quiet" and "emerge". Target validity and the bounded
-// safety ceiling below still cancel a damaged/unreachable visit.
 activities = replaceOnce(
   activities,
   `  const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);\n  if (!compatible) activity = selectActivity(fish, index, state, { ...context, traits, affinities });\n  else if (activity !== previous) activity = { ...activity };\n  else activity = { ...activity, ageRealSeconds: activity.ageRealSeconds + realDelta };`,
   `  const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);\n  const committedPlantVisit = [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]\n    .includes(activity.current);\n  if (!compatible && !committedPlantVisit) {\n    activity = selectActivity(fish, index, state, { ...context, traits, affinities });\n  } else if (activity !== previous) activity = { ...activity };\n  else activity = { ...activity, ageRealSeconds: activity.ageRealSeconds + realDelta };`,
   "let authored plant visits finish through broad-behavior utility swings",
 );
-
-// The generic dwell ceiling is still useful as a hard escape, but it cannot own
-// the ordinary ending now that final departure is physical. These caps are far
-// above observed production visits while remaining fixed and tiny in state/cost.
 activities = replaceOnce(
   activities,
   `  let target = resolve(activity, attention);\n  const dwell = activityDwell(fish, activity.current);\n  if (!target || activity.ageRealSeconds >= dwell.maximum || naturalCompletion(fish, activity, target, dwell)) {`,
@@ -63,10 +50,6 @@ activities = replaceOnce(
 );
 await writeFile("src/sim/fish-activities.js", activities);
 
-// Phase 7.5 makes plant entry physical. The old readability test simulated
-// inspection by aging a fish in place, which now correctly remains in approach.
-// Ask for the authored inspect stage directly while keeping the test's original
-// comparison against the frozen weave geometry.
 let readability = await readFile("tests/behavior-readability.test.js", "utf8");
 readability = replaceOnce(
   readability,
@@ -80,10 +63,6 @@ readability = readability.replace(
 );
 await writeFile("tests/behavior-readability.test.js", readability);
 
-// This Phase 2 regression owned the old timer-completion rule. Preserve its real
-// product claim, "a completed plant visit does not immediately pick vegetation
-// again", but stage the new physically completed retreat instead of aging a fish
-// beside the plant for forty seconds.
 let phase2 = await readFile("tests/phase2-activities.test.js", "utf8");
 phase2 = replaceOnce(
   phase2,
@@ -99,9 +78,27 @@ phase2 = replaceOnce(
 );
 await writeFile("tests/phase2-activities.test.js", phase2);
 
-// The final broad behavior at the instant shelter emergence completes is allowed
-// to have changed while the authored visit was finishing. What matters here is
-// that the fish cannot snap straight back into cover after visibly emerging.
+let tuning = await readFile("src/sim/choreography-tuning.js", "utf8");
+tuning = replaceOnce(
+  tuning,
+  `  "plant-investigate:retreat": Object.freeze({\n    accelerationResponse: 1.8,\n    turningResponse: 1.9,\n    verticalSpeedScale: 0.92,\n    minimumSpeed: 0.055,\n    maximumSpeed: 0.68,\n    approachRadius: 0.9,\n    arrivalSpeedScale: 0.58,\n    turnDuration: 0.52,\n  }),`,
+  `  "plant-investigate:retreat": Object.freeze({\n    accelerationResponse: 2.05,\n    turningResponse: 4.8,\n    verticalSpeedScale: 0.88,\n    minimumSpeed: 0.045,\n    maximumSpeed: 0.62,\n    approachRadius: 0.9,\n    arrivalSpeedScale: 0.56,\n    positionGain: 0.92,\n    pitchScale: 0.42,\n    turnDuration: 0.46,\n  }),`,
+  "give investigation retreat enough local reversal authority",
+);
+tuning = replaceOnce(
+  tuning,
+  `  "plant-shelter:settle": Object.freeze({\n    accelerationResponse: 1,\n    turningResponse: 1.05,\n    maximumSpeed: 0.42,\n    verticalSpeedScale: 0.64,\n  }),`,
+  `  "plant-shelter:settle": Object.freeze({\n    accelerationResponse: 1.45,\n    turningResponse: 4.2,\n    maximumSpeed: 0.46,\n    verticalSpeedScale: 0.7,\n    turnDuration: 0.5,\n  }),`,
+  "make shelter entry commit to cover",
+);
+tuning = replaceOnce(
+  tuning,
+  `  "plant-shelter:emerge": Object.freeze({\n    accelerationResponse: 1.35,\n    turningResponse: 1.25,\n    verticalSpeedScale: 0.72,\n    minimumSpeed: 0.045,\n    maximumSpeed: 0.58,\n    approachRadius: 0.9,\n    arrivalSpeedScale: 0.55,\n    pitchScale: 0.42,\n    turnDuration: 0.78,\n  }),`,
+  `  "plant-shelter:emerge": Object.freeze({\n    accelerationResponse: 1.85,\n    turningResponse: 4.8,\n    verticalSpeedScale: 0.78,\n    minimumSpeed: 0.045,\n    maximumSpeed: 0.62,\n    approachRadius: 0.9,\n    arrivalSpeedScale: 0.58,\n    positionGain: 0.92,\n    pitchScale: 0.42,\n    turnDuration: 0.46,\n  }),`,
+  "make shelter emergence a deliberate peel-away",
+);
+await writeFile("src/sim/choreography-tuning.js", tuning);
+
 let vocabularyTestFile = await readFile("tests/phase7-plant-vocabulary.test.js", "utf8");
 vocabularyTestFile = replaceOnce(
   vocabularyTestFile,
