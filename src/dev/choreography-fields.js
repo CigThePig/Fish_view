@@ -44,6 +44,10 @@ export const STEERING_FIELDS = Object.freeze([
   field("turnDuration", "Turn duration", "seconds to swing through a facing change", 0.2, 1.5, 0.01),
 ]);
 
+const PLAYFUL_CHASE_STEERING_FIELDS = Object.freeze([
+  field("pursuitVerticalGain", "Pursuit vertical cut", "multiplier on vertical correction once the chase commits", 0.5, 2.5, 0.01),
+]);
+
 // minimumSpeed and maximumSpeed describe one interval. The controller used to
 // silently collapse an inverted interval at runtime, leaving the lab and its
 // copied source claiming a value the fish could not use. Move the other end
@@ -180,6 +184,8 @@ export const SCENE_FIELDS = Object.freeze({
     field("lungeSpeedGain", "Chaser lunge", "rows/s added at the top of each lunge", 0, 1, 0.005),
     field("evasionSpeed", "Evader speed", "rows/s the chased fish bolts at", 0.05, 1.6, 0.005),
     field("evasionProximityGain", "Evader panic", "rows/s added as the chaser closes", 0, 1, 0.005),
+    field("evasionSideRows", "Evader sidestep", "lateral escape strength during the dodge pulse", 0, 2, 0.01),
+    field("evasionBurstGain", "Evader dodge burst", "rows/s added at the top of the dodge pulse", 0, 0.5, 0.005),
     field("approachLeadSeconds", "Lead · approach", "seconds ahead of the companion it aims", 0, 3, 0.01),
     field("pursuitLeadSeconds", "Lead · pursuit", "seconds ahead of the companion it aims", 0, 3, 0.01),
     field("approachStandoffRows", "Standoff · approach", "rows short of the companion", 0, 5, 0.01),
@@ -233,9 +239,12 @@ const VELOCITY_TARGET_ACTIVITIES = new Set([
 
 export function steeringFieldsFor(key) {
   const activity = key.split(":")[0];
-  return STEERING_FIELDS.filter((definition) => (
+  const common = STEERING_FIELDS.filter((definition) => (
     definition.key !== "velocityMatch" || VELOCITY_TARGET_ACTIVITIES.has(activity)
   ));
+  return key === ACTIVITIES.playfulChase
+    ? [...common, ...PLAYFUL_CHASE_STEERING_FIELDS]
+    : common;
 }
 
 export function steeringKeyLabel(key) {
