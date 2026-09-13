@@ -57,6 +57,14 @@ slice. A blind contact-sheet generator hides behavior names and phase labels so
 the motion has to communicate its own meaning. See the
 [Phase 7.1 report](phase-7-1-readability-baseline.md).
 
+Before Phase 7.2 changes chase motion, use the
+[Phase 7 visual tooling readiness guide](phase-7-tooling-readiness.md). The live
+GitHub Pages deployment is `main` and is therefore not valid evidence for a
+working branch. Phase branches now have exact-commit interactive preview links,
+branch CI artifacts containing the built static site and captures, and a
+reusable chase observer that records pair-distance, speed, turn-rate, evasion,
+break and personality/body-size evidence without grading today's choreography.
+
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
 Meaningful interaction builds that familiarity over weeks and months; rapid
