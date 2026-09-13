@@ -30,7 +30,7 @@ export function chaseArcBoundaries(tuning = null) {
   const breakSeconds = finitePositive(tuning?.breakSeconds, CHASE_DEFAULT_BREAK_SECONDS);
 
   // At the authored 6.2 second chase the broad windows land near 0.78, 3.78,
-  // 5.0 and 6.2 seconds. The target does not spend the whole escape window
+  // 4.6 and 6.2 seconds. The target does not spend the whole escape window
   // fleeing: chaseArcPhase keeps engagement until the pair is physically close
   // or until the final short escape window is reached. That gives us a readable
   // deliberate close, a real burst, time to close again, then the final juke.
@@ -44,7 +44,7 @@ export function chaseArcBoundaries(tuning = null) {
   const escapeEnd = Math.min(breakSeconds - 0.8, engageEnd + escapeDuration);
   const roomAfterEscape = Math.max(0.25, breakSeconds - escapeEnd);
   const interceptDuration = clamp(
-    Math.min(1.2, breakSeconds * 0.2),
+    Math.min(1.6, breakSeconds * 0.26),
     0.3,
     Math.max(0.3, roomAfterEscape - 0.15),
   );
@@ -85,14 +85,18 @@ export function chaseArcPhase(ageRealSeconds, distance, tuning = null) {
 }
 
 // fish-activities.js already distinguishes its broad approach / pursuit / break
-// steering branches. Escape deliberately reuses the slower approach target:
-// the evader gets the first acceleration while the chaser has a human-readable
-// beat of hesitation. Semantic telemetry still calls the moment `escape`; this
-// mapping only chooses which existing target envelope drives the chaser.
+// steering branches. During the short escape beat the chaser deliberately uses
+// the existing break/glide envelope without actually ending the activity. That
+// creates the slight reaction delay the visual sentence needs: the target gets
+// the first acceleration, the gap opens, and pursuit then resumes. Because the
+// real break is still age-gated, the turn-away/recovery logic only happens at
+// the actual ending.
 export function chaseMacroPhase(ageRealSeconds, distance, tuning = null) {
   const phase = chaseArcPhase(ageRealSeconds, distance, tuning);
-  if (phase === CHASE_ARC_PHASES.engage || phase === CHASE_ARC_PHASES.escape) return "approach";
-  if (phase === CHASE_ARC_PHASES.break || phase === CHASE_ARC_PHASES.recover) return "break";
+  if (phase === CHASE_ARC_PHASES.engage) return "approach";
+  if (phase === CHASE_ARC_PHASES.escape
+    || phase === CHASE_ARC_PHASES.break
+    || phase === CHASE_ARC_PHASES.recover) return "break";
   return phase;
 }
 
