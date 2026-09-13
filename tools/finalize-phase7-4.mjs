@@ -31,8 +31,8 @@ strongWeaveTest = replaceOnce(
 );
 strongWeaveTest = replaceOnce(
   strongWeaveTest,
-  `    if (currentFish.activity.current !== ACTIVITIES.plantWeave) break;`,
-  `    if (currentFish.activity.current !== ACTIVITIES.plantWeave) {\n      if (label === "phase7-weave-b") {\n        console.log("WEAVE_EXIT", JSON.stringify({\n          time: Number(time.toFixed(2)),\n          current: currentFish.activity.current,\n          previous: currentFish.activity.previous,\n          behavior: currentFish.behavior?.current,\n          ageRealSeconds: currentFish.activity.ageRealSeconds,\n          targetId: currentFish.activity.targetId,\n          stages,\n        }));\n      }\n      break;\n    }`,
+  `    const result = runWeave(label);\n    assert.deepEqual([...result.seen.keys()], [0, 1, 2, 3, 4], \`${'${label}'}: route skipped a leg\`);`,
+  `    const result = runWeave(label);\n    if (label === "phase7-weave-b") {\n      console.log("WEAVE_DIAG", JSON.stringify({\n        label, stages: [...result.seen.keys()], transitions: result.transitions, exit: result.exit,\n      }));\n    }\n    assert.deepEqual([...result.seen.keys()], [0, 1, 2, 3, 4], \`${'${label}'}: route skipped a leg\`);`,
   "diagnose early weave exit",
 );
 
@@ -88,7 +88,7 @@ let attentionTest = await readFile("tests/attention-roles.test.js", "utf8");
 attentionTest = replaceOnce(
   attentionTest,
   `  const old = before[passive.index];\n  assert.equal(passive.fish.activity.current, old.activity);`,
-  `  const old = before[passive.index];\n  console.log("PASSIVE_DIAG", JSON.stringify({\n    index: passive.index,\n    role: passive.fish.attention?.role,\n    activity: passive.fish.activity.current,\n    behaviorBefore: old.behavior,\n    behaviorAfter: passive.fish.behavior.current,\n    velocityBefore: [old.vx, old.vy],\n    velocityAfter: [passive.fish.vx, passive.fish.vy],\n    velocityDelta: Math.hypot(passive.fish.vx - old.vx, passive.fish.vy - old.vy),\n  }));\n  assert.equal(passive.fish.activity.current, old.activity);`,
+  `  const old = before[passive.index];\n  console.log("PASSIVE_DIAG", JSON.stringify({\n    index: passive.index, role: passive.fish.attention?.role, activity: passive.fish.activity.current,\n    behaviorBefore: old.behavior, behaviorAfter: passive.fish.behavior.current,\n    velocityBefore: [old.vx, old.vy], velocityAfter: [passive.fish.vx, passive.fish.vy],\n    velocityDelta: Math.hypot(passive.fish.vx - old.vx, passive.fish.vy - old.vy),\n  }));\n  assert.equal(passive.fish.activity.current, old.activity);`,
   "diagnose passive response",
 );
 await writeFile("tests/attention-roles.test.js", attentionTest);
@@ -97,7 +97,7 @@ let holdTest = await readFile("tests/hold-presence.test.js", "utf8");
 holdTest = replaceOnce(
   holdTest,
   `    const engaged = frame.individuals.filter((fish) => attentionInvestigates(fish.attention)).length;\n    assert.ok(engaged <= 3, \`${'${engaged}'} fish still committed to a settled hold\`);`,
-  `    const engagedFish = frame.individuals\n      .map((fish, index) => ({ fish, index }))\n      .filter(({ fish }) => attentionInvestigates(fish.attention));\n    const engaged = engagedFish.length;\n    console.log("HOLD_DIAG", JSON.stringify({\n      time,\n      engaged: engagedFish.map(({ fish, index }) => ({\n        index, role: fish.attention?.role, activity: fish.activity.current, behavior: fish.behavior.current,\n        age: fish.attention?.ageSeconds, near: fish.attention?.nearSeconds, hold: fish.attention?.holdSeconds,\n      })),\n    }));\n    assert.ok(engaged <= 3, \`${'${engaged}'} fish still committed to a settled hold\`);`,
+  `    const engagedFish = frame.individuals.map((fish, index) => ({ fish, index }))\n      .filter(({ fish }) => attentionInvestigates(fish.attention));\n    const engaged = engagedFish.length;\n    console.log("HOLD_DIAG", JSON.stringify({ time, engaged: engagedFish.map(({ fish, index }) => ({\n      index, role: fish.attention?.role, activity: fish.activity.current, behavior: fish.behavior.current,\n      age: fish.attention?.ageSeconds, near: fish.attention?.nearSeconds, hold: fish.attention?.holdSeconds,\n    })) }));\n    assert.ok(engaged <= 3, \`${'${engaged}'} fish still committed to a settled hold\`);`,
   "diagnose hold recruitment",
 );
 await writeFile("tests/hold-presence.test.js", holdTest);
