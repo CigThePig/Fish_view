@@ -1,4 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { readFile, writeFile, rm } from "node:fs/promises";
+
+const BASE = "f5637abedf958457f5867b463e0f52c300d08bbb";
 
 function replaceOnce(text, before, after, label) {
   const first = text.indexOf(before);
@@ -9,70 +13,97 @@ function replaceOnce(text, before, after, label) {
   return text.slice(0, first) + after + text.slice(first + before.length);
 }
 
-async function patch(path, transform) {
-  const before = await readFile(path, "utf8");
-  const after = transform(before);
-  if (after === before) throw new Error(`${path}: no change`);
-  await writeFile(path, after);
+async function restore(path) {
+  const content = execFileSync("git", ["show", `${BASE}:${path}`], { encoding: "utf8" });
+  await writeFile(path, content);
 }
 
-await patch("src/sim/fish-activities.js", (source) => {
-  let text = source;
-  text = replaceOnce(
-    text,
-    'import * as core from "./fish-activities-core.js";\n',
-    'import * as core from "./fish-activities-core.js";\nimport { shapeTargetForAttention } from "./attention.js";\n',
-    "import attention target shaping",
-  );
-  text = replaceOnce(
-    text,
-    "const WEAVE_ROUTE_MAX_SECONDS = 70;",
-    "const WEAVE_ROUTE_MAX_SECONDS = 40;",
-    "tighten bounded weave safety ceiling",
-  );
-  text = replaceOnce(
-    text,
-    "  [core.ACTIVITIES.plantWeave]: [8, 55, WEAVE_ROUTE_MAX_SECONDS],",
-    "  [core.ACTIVITIES.plantWeave]: [8, 32, WEAVE_ROUTE_MAX_SECONDS],",
-    "align weave dwell interval with route ceiling",
-  );
-  text = replaceOnce(
-    text,
-    `  let target = weaveTarget(fish, index, state, activity, context);\n  if (!target) return coreResult;\n\n  const distance = Math.hypot(target.x - fish.x, target.y - fish.y);`,
-    `  let target = weaveTarget(fish, index, state, activity, context);\n  if (!target) return coreResult;\n\n  // The mature activity core owns attention semantics. Replacing its weave\n  // target must preserve the same wary / passive / held-presence shaping that\n  // every other activity receives, otherwise a weaving fish can appear to\n  // ignore a disturbance or even keep closing on one.\n  const shapedTarget = shapeTargetForAttention(target, fish, coreResult.attention);\n\n  const distance = Math.hypot(target.x - fish.x, target.y - fish.y);`,
-    "preserve attention shaping on spatial weave",
-  );
-  text = replaceOnce(
-    text,
-    `      target: resolveActivityTarget(fish, index, state, next, context),\n    };`,
-    `      target: shapeTargetForAttention(\n        resolveActivityTarget(fish, index, state, next, context),\n        fish,\n        coreResult.attention,\n      ),\n    };`,
-    "shape weave exit target",
-  );
-  text = replaceOnce(
-    text,
-    `    target,\n  };\n}\n\nexport function tickFishActivity`,
-    `    target: shapedTarget,\n  };\n}\n\nexport function tickFishActivity`,
-    "return shaped weave target",
-  );
-  return text;
-});
+// Preserve the stronger six-seed route regression that was added while the
+// first implementation was being exercised. We will re-home it onto the
+// monolithic production path after applying the original surgical patch.
+let strongWeaveTest = await readFile("tests/phase7-plant-weave.test.js", "utf8");
+strongWeaveTest = strongWeaveTest.replace(
+  'import * as core from "../src/sim/fish-activities-core.js";\n',
+  "",
+);
+strongWeaveTest = replaceOnce(
+  strongWeaveTest,
+  `test("plant investigation and shelter targets remain delegated to the frozen implementation", () => {\n  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]) {\n    const state = createShowcaseState({ scenario: activity });\n    const { index, fish } = subject(state, activity);\n    assert.deepEqual(\n      resolveActivityTarget(fish, index, state, fish.activity),\n      core.resolveActivityTarget(fish, index, state, fish.activity),\n      \`${'${activity}'} changed while Phase 7.4 was scoped to weave\`,\n    );\n  }\n});`,
+  `test("plant investigation and shelter stay outside weave route semantics", () => {\n  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]) {\n    const state = createShowcaseState({ scenario: activity });\n    const { index, fish } = subject(state, activity);\n    const target = resolveActivityTarget(fish, index, state, fish.activity);\n    assert.ok(target, \`${'${activity}'} lost its plant target\`);\n    assert.equal(target.weaveStage, undefined, \`${'${activity}'} gained weave route state\`);\n    assert.equal(target.weaveLeg, undefined, \`${'${activity}'} gained weave route geometry\`);\n  }\n});`,
+  "adapt frozen plant comparison to monolithic implementation",
+);
 
-await patch("tests/choreography-tuning.test.js", (source) => replaceOnce(
-  source,
+// The facade/core split from the first attempt caused one activity to pass
+// through two lifecycle implementations. Restore the last green monolithic
+// files, then apply the already-authored Phase 7.4 surgical patch directly to
+// that production path. This keeps attention, recovery and consequence
+// arbitration in exactly one tickFishActivity implementation.
+for (const path of [
+  "src/sim/fish-activities.js",
+  "src/sim/choreography-tuning.js",
+  "src/dev/choreography-fields.js",
+  "src/dev/behavior-showcase.js",
+  "tools/capture-behavior-showcase.mjs",
+]) {
+  await restore(path);
+}
+
+const patchSource = execFileSync(
+  "git",
+  ["show", `${BASE}:tools/apply-phase7-4-patch.mjs`],
+  { encoding: "utf8" },
+);
+const tempPatch = "/tmp/apply-phase7-4-patch.mjs";
+await writeFile(tempPatch, patchSource);
+await import(`${pathToFileURL(tempPatch).href}?run=${Date.now()}`);
+
+// Keep the stronger production-route coverage from the exercised version.
+await writeFile("tests/phase7-plant-weave.test.js", strongWeaveTest);
+
+// These two older tests described the retired timer-driven route. Keep their
+// intent, but point them at the active spatial controls/stages.
+let tuningTest = await readFile("tests/choreography-tuning.test.js", "utf8");
+tuningTest = replaceOnce(
+  tuningTest,
   '    ["stageSecondsMin", "stageSecondsMax"],',
   '    ["legTimeoutSecondsMin", "legTimeoutSecondsMax"],',
   "test active weave timeout interval",
-));
+);
+await writeFile("tests/choreography-tuning.test.js", tuningTest);
 
-await patch("tests/behavior-readability.test.js", (source) => replaceOnce(
-  source,
+let readabilityTest = await readFile("tests/behavior-readability.test.js", "utf8");
+readabilityTest = replaceOnce(
+  readabilityTest,
   `  const first = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 0 });\n  const second = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 3.2 });`,
-  `  // Phase 7.4 made route progression spatial. Compare two authored route\n  // legs directly rather than advancing the old timer in a synthetic target.\n  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };\n  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };\n  const first = resolveActivityTarget(weaving, index, base, firstActivity);\n  const second = resolveActivityTarget(weaving, index, base, secondActivity);`,
+  `  // Phase 7.4 made route progression spatial. Compare two authored route\n  // legs directly rather than advancing the retired timer in a synthetic target.\n  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };\n  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };\n  const first = resolveActivityTarget(weaving, index, base, firstActivity);\n  const second = resolveActivityTarget(weaving, index, base, secondActivity);`,
   "update readability assertion for spatial weave",
-));
+);
+await writeFile("tests/behavior-readability.test.js", readabilityTest);
 
-// One-shot scaffolding must not survive the successful commit.
-await rm("tools/finalize-phase7-4.mjs", { force: true });
-await rm(".github/workflows/phase7-4-finalize.yml", { force: true });
+// The old 40-second plant-visit assertion treated elapsed age as completion.
+// Investigation and shelter still use that lifecycle, but weave now completes
+// only after reaching its explicit emergence waypoint. Exercise that real
+// completion instead of teaching the regression suite the bug Phase 7.4 removes.
+let phase2Test = await readFile("tests/phase2-activities.test.js", "utf8");
+phase2Test = replaceOnce(
+  phase2Test,
+  `  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave, ACTIVITIES.plantShelter]) {`,
+  `  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]) {`,
+  "keep timer completion assertion on timer-owned plant visits",
+);
+await writeFile("tests/phase2-activities.test.js", phase2Test);
 
-console.log("Phase 7.4 final integration patch applied.");
+// Remove the temporary parallel implementations. The final 7.4 architecture is
+// one production activity path plus two bounded transient route scalars.
+for (const path of [
+  "src/sim/fish-activities-core.js",
+  "src/sim/choreography-tuning-core.js",
+  "src/dev/behavior-showcase-core.js",
+  "tools/apply-phase7-4-patch.mjs",
+  "tools/finalize-phase7-4.mjs",
+  ".github/workflows/phase7-4-finalize.yml",
+]) {
+  await rm(path, { force: true });
+}
+
+console.log("Phase 7.4 monolithic integration patch applied.");
