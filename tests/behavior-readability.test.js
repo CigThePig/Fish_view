@@ -269,13 +269,27 @@ test("playful chase gives the evader the first beat, then accelerates beyond fol
     "the chased fish bolted from further away than the chaser can close",
   );
 
+  const initialGap = Math.hypot(chaser.x - chased.x, chaser.y - chased.y);
   let chasedState = state;
   for (let frame = 0; frame < 8; frame += 1) chasedState = tick(chasedState, 0.1);
-  const movedChaser = chasedState.individuals[0];
-  const movedChased = chasedState.individuals[1];
-  assert.ok(Math.hypot(movedChaser.vx, movedChaser.vy) > 0.7);
-  assert.ok(Math.hypot(movedChased.vx, movedChased.vy) > 0.62);
-  assert.ok(Math.abs(movedChased.vy) > 0.08, "the chased fish did not make a visible vertical dodge");
+  const escapedChaser = chasedState.individuals[0];
+  const escapedFish = chasedState.individuals[1];
+  const escapedGap = Math.hypot(
+    escapedChaser.x - escapedFish.x,
+    escapedChaser.y - escapedFish.y,
+  );
+  assert.ok(Math.hypot(escapedChaser.vx, escapedChaser.vy) < 0.35);
+  assert.ok(Math.hypot(escapedFish.vx, escapedFish.vy) > 0.9);
+  assert.ok(Math.abs(escapedFish.vy) > 0.08, "the chased fish did not make a visible vertical dodge");
+  assert.ok(escapedGap > initialGap + 0.35, "the first escape beat did not visibly open the gap");
+
+  // Once the escape beat has had room to read, the chaser must answer rather
+  // than remaining in the glide envelope. This checks realised motion, not just
+  // the target speed above.
+  for (let frame = 0; frame < 24; frame += 1) chasedState = tick(chasedState, 0.1);
+  const answeringChaser = chasedState.individuals[0];
+  assert.equal(answeringChaser.activity.current, ACTIVITIES.playfulChase);
+  assert.ok(Math.hypot(answeringChaser.vx, answeringChaser.vy) > 0.8);
 
   const breakingChaser = {
     ...chaser,
