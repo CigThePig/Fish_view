@@ -25,6 +25,7 @@ jobs:
         run: |
           node tools/run-phase7-5.mjs
           node tools/phase7-5-geometry-fix.mjs
+          node tools/phase7-5-turn-fix.mjs
       - name: Trace difficult plant visits
         run: |
           node --input-type=module <<'NODE'
