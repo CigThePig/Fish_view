@@ -3,7 +3,9 @@ name: Verify aquarium
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "phase-*"
 
 permissions:
   contents: read
@@ -30,5 +32,38 @@ jobs:
         with:
           name: phase6-relationship-captures
           path: .audit-output/relationship-captures
+          if-no-files-found: error
+          retention-days: 14
+
+      # Phase branches need inspectable evidence before they reach main. The
+      # live GitHub Pages deployment intentionally remains main-only; these
+      # artifacts are a branch-accurate fallback when an external development
+      # preview is unavailable or stale.
+      - name: Measure Phase 7 chase telemetry
+        if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
+        run: npm run measure:chase-readiness -- --output=.audit-output/chase-readiness
+
+      - name: Capture chase and nearest visual neighbor
+        if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
+        run: npm run capture:behaviors -- --scenario=playful-chase,individual-follow --scale=0.35 --gif --output=.audit-output/chase-captures
+
+      - name: Capture blind Phase 7 baseline
+        if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
+        run: npm run capture:phase7-baseline -- --scale=0.25 --output=.audit-output/phase7-baseline
+
+      - name: Build branch-accurate static site
+        if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
+        run: npm run build:pages
+
+      - name: Upload Phase 7 working-branch evidence
+        if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase7-working-branch-${{ github.run_id }}
+          path: |
+            .audit-output/chase-readiness
+            .audit-output/chase-captures
+            .audit-output/phase7-baseline
+            _site
           if-no-files-found: error
           retention-days: 14
