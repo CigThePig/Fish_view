@@ -115,7 +115,7 @@ export function chaseEvasionForFish(fish, state) {
     const away = safeNormalize(dx, dy, fish.vx < 0 ? -1 : 1, 0);
     const perpendicular = { x: -away.y, y: away.x };
     const dodgePulse = Math.sin(clamp((age - 0.32) / 2.15, 0, 1) * Math.PI);
-    const sidestep = dodgeSign * dodgePulse * (0.72 + strength * 0.28);
+    const sidestep = dodgeSign * dodgePulse * (tuning.evasionSideRows + strength * 0.28);
     const direction = safeNormalize(
       away.x + perpendicular.x * sidestep,
       away.y + perpendicular.y * sidestep,
@@ -133,7 +133,7 @@ export function chaseEvasionForFish(fish, state) {
       speed: tuning.evasionSpeed
         + traits.activity * 0.18
         + proximity * tuning.evasionProximityGain
-        + dodgePulse * 0.16,
+        + dodgePulse * tuning.evasionBurstGain,
       weight: 0.5 + strength * 0.44,
       strength,
       sourceSeed: chaser.seed,
@@ -176,16 +176,14 @@ export function steerActivityVelocity(fish, target, {
   }
 
   const chasePursuit = target?.playfulChase && target?.choreographyPhase === "pursuit";
-  if (chasePursuit) desiredVy *= 1.38;
+  if (chasePursuit) {
+    const verticalGain = Number.isFinite(profile.pursuitVerticalGain) ? profile.pursuitVerticalGain : 1;
+    desiredVy *= Math.max(0, verticalGain);
+  }
 
   let accelerationResponse = Math.max(0.01, profile.accelerationResponse ?? 1.45);
   let turningResponse = Math.max(0.01, profile.turningResponse ?? 1.5);
   let maximumSpeed = Math.max(0.02, profile.maximumSpeed ?? 0.82) * motionScale;
-  if (chasePursuit) {
-    accelerationResponse = Math.max(accelerationResponse, 3.65);
-    turningResponse = Math.max(turningResponse, 4.35);
-    maximumSpeed = Math.max(maximumSpeed, 1.1 * motionScale);
-  }
   if (evasion) {
     const weight = clamp(evasion.weight ?? 0, 0, 1);
     const escapeSpeed = Math.max(0, evasion.speed ?? 0) * motionScale;
