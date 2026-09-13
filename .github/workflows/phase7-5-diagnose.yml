@@ -1,0 +1,66 @@
+name: Phase 7.5 plant visit diagnosis
+
+on:
+  push:
+    branches:
+      - phase-7-1-readability-baseline
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.head_commit.message == 'Diagnose Phase 7.5 plant visits'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build candidate
+        run: node tools/run-phase7-5.mjs
+      - name: Trace difficult plant visits
+        run: |
+          node --input-type=module <<'NODE'
+          import { createShowcaseState, showcaseSubjects, showcaseTarget, tickShowcase } from './src/dev/behavior-showcase.js';
+          import { ACTIVITIES } from './src/sim/fish-activities.js';
+          import { hashSeed } from './src/sim/prng.js';
+
+          for (const [label, activity] of [
+            ['phase7-plant-b', ACTIVITIES.plantInvestigate],
+            ['phase7-plant-d', ACTIVITIES.plantShelter],
+          ]) {
+            console.log(`\n=== ${label} ${activity} ===`);
+            let state = createShowcaseState({ scenario: activity, seed: hashSeed(label) });
+            let previousStage = -1;
+            let previousActivity = activity;
+            for (let step = 0; step < 650; step += 1) {
+              const seconds = step * 0.1;
+              const [{ index, fish } = {}] = showcaseSubjects(state, activity);
+              if (!fish) break;
+              const target = showcaseTarget(state, activity);
+              if (fish.activity.current !== previousActivity) {
+                console.log('ACTIVITY CHANGE', { seconds, from: previousActivity, to: fish.activity.current, behavior: fish.behavior?.current, age: fish.activity.ageRealSeconds });
+                previousActivity = fish.activity.current;
+              }
+              if (fish.activity.current !== activity || !target) break;
+              const distance = Math.hypot(target.x - fish.x, target.y - fish.y);
+              const stage = target.plantVisitStage;
+              if (stage !== previousStage || step % 20 === 0 || seconds > 38 && step % 5 === 0) {
+                console.log({ seconds: Number(seconds.toFixed(1)), stage, phase: target.choreographyPhase,
+                  fish: [Number(fish.x.toFixed(2)), Number(fish.y.toFixed(2))],
+                  target: [Number(target.x.toFixed(2)), Number(target.y.toFixed(2))],
+                  distance: Number(distance.toFixed(3)), speed: Number(Math.hypot(fish.vx, fish.vy).toFixed(3)),
+                  requestedSpeed: target.speed, age: Number(fish.activity.ageRealSeconds.toFixed(1)),
+                  stageAge: Number((fish.activity.ageRealSeconds - (fish.activity.plantVisitStageStartedAt ?? 0)).toFixed(1)),
+                  behavior: fish.behavior?.current, targetId: fish.activity.targetId });
+                previousStage = stage;
+              }
+              state = tickShowcase(state, 0.1, activity);
+            }
+          }
+          NODE
