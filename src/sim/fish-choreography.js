@@ -34,12 +34,6 @@ const REVERSAL_DOT = Math.cos(REVERSAL_LIMIT_RADIANS);
 // scene tuning, which starts at exactly these.
 export const CHASE_RECOGNITION_RADIUS = CHASE_DEFAULT_RECOGNITION_RADIUS;
 export const CHASE_BREAK_SECONDS = CHASE_DEFAULT_BREAK_SECONDS;
-// How close the chaser has to get before the chased fish actually breaks lives
-// in the same table, as panicNearRows/panicFarRows. Recognition reaches across
-// the whole radius above - the fish knows it is being followed long before it
-// reacts - but bolting at that range meant fleeing from five rows away, which
-// no chaser can close, and the pair simply ran the tank at a fixed distance.
-// Reacting late is what lets the gap shut.
 
 function safeNormalize(x, y, fallbackX = 1, fallbackY = 0) {
   const length = Math.hypot(x, y);
@@ -149,41 +143,58 @@ export function chaseEvasionForFish(fish, state) {
     let burstPulse = 0;
     let phaseStrength = 0;
     let awayWeight = 1;
+    let phaseSpeedBonus = 0;
+    let accelerationResponse = 4.2;
+    let turningResponse = 4.2 * agility;
+    let maximumSpeed = 1.12;
 
     if (arcPhase === CHASE_ARC_PHASES.escape) {
-      // The target notices the closing fish and gets the first unmistakable
-      // move: a compact acceleration spike plus one diagonal cut. The chaser's
-      // response is intentionally delayed below, so this opens the first gap.
+      // This beat has to open the gap. A merely decorative sidestep still lets
+      // the already-closing chaser eat distance, so the first dodge carries a
+      // short real acceleration advantage while the chaser hesitates below.
       const burst = Math.sin(progress * Math.PI);
       signedSide = dodgeSign;
-      sideMagnitude = (0.32 + burst * (tuning.evasionSideRows + 0.18)) * agility;
-      burstPulse = 0.55 + burst * 0.9;
-      phaseStrength = 0.55 + proximity * 0.45;
+      sideMagnitude = (0.26 + burst * (tuning.evasionSideRows * 0.72 + 0.2)) * agility;
+      burstPulse = 0.45 + burst * 0.55;
+      phaseSpeedBonus = 0.34 + burst * 0.3;
+      phaseStrength = 0.62 + proximity * 0.32 + burst * 0.06;
+      accelerationResponse = 5.6 + burst * 1.2;
+      turningResponse = (3.8 + burst * 0.8) * agility;
+      maximumSpeed = 1.22 + Math.max(0, agility - 1) * 0.08;
     } else if (arcPhase === CHASE_ARC_PHASES.pursuit) {
-      // Repeated short evasions make the pair-distance line breathe instead of
-      // settling into one nose-to-tail interval. The sign alternates through a
-      // deterministic pair phase, so the route is not mirrored steering.
+      // Brief pulses interrupt the closing run. They are deliberately short:
+      // the chaser should regain the gap between them, creating the readable
+      // close / evade / close rhythm instead of a second steady fleeing speed.
       const bounds = chaseArcBoundaries(tuning);
-      const cycleSeconds = 1.42;
+      const cycleSeconds = 1.34;
       const phaseOffset = ((pairSeed >>> 8) & 0xff) / 255 * Math.PI * 2;
       const cycle = (age - bounds.escapeEnd) / cycleSeconds * Math.PI * 2 + phaseOffset;
       const wave = Math.sin(cycle);
-      const burst = Math.max(0, Math.sin(cycle + Math.PI * 0.2));
+      const burst = Math.max(0, Math.sin(cycle + Math.PI * 0.16));
       signedSide = Math.sign(wave || dodgeSign);
-      sideMagnitude = Math.abs(wave) * (tuning.evasionSideRows * 0.62 + 0.12) * agility;
-      burstPulse = burst * 0.9;
-      phaseStrength = 0.28 + proximity * 0.58 + burst * 0.14;
+      sideMagnitude = Math.abs(wave) * (tuning.evasionSideRows * 0.5 + 0.1) * agility;
+      burstPulse = burst * 0.52;
+      phaseSpeedBonus = burst * 0.3;
+      phaseStrength = 0.3 + proximity * 0.54 + burst * 0.16;
+      accelerationResponse = 4.25 + burst * 1.15;
+      turningResponse = (3.8 + Math.abs(wave) * 0.75) * agility;
+      maximumSpeed = 1.16 + Math.max(0, agility - 1) * 0.06;
     } else {
-      // Final juke. The evader gives up most of the straight-away component at
-      // the middle of the cut while the chaser is still committed to the old
-      // line. That creates a real near miss rather than a decorative wobble.
+      // The final dodge trades forward speed for direction. The chaser is
+      // allowed to commit and surge through the old line, then has to turn back
+      // after the evader has cut aside. That is the near-miss beat that casual
+      // following can never produce.
       const juke = Math.sin(progress * Math.PI);
       const interceptSign = ((pairSeed >>> 1) & 1) === 0 ? dodgeSign : -dodgeSign;
       signedSide = interceptSign;
-      sideMagnitude = (0.46 + juke * (tuning.evasionSideRows * 1.25 + 0.42)) * agility;
-      burstPulse = 0.7 + juke * 1.15;
-      phaseStrength = 0.62 + proximity * 0.28 + juke * 0.1;
-      awayWeight = 1 - juke * 0.72;
+      sideMagnitude = (0.38 + juke * (tuning.evasionSideRows * 0.95 + 0.36)) * agility;
+      burstPulse = 0.12 + juke * 0.18;
+      phaseSpeedBonus = -juke * 0.16;
+      phaseStrength = 0.66 + proximity * 0.22 + juke * 0.12;
+      awayWeight = 1 - juke * 0.82;
+      accelerationResponse = 4.5;
+      turningResponse = (3.45 + juke * 0.55) * agility;
+      maximumSpeed = 0.98 + Math.max(0, agility - 1) * 0.04;
     }
 
     const direction = safeNormalize(
@@ -198,16 +209,24 @@ export function chaseEvasionForFish(fish, state) {
     best = {
       x: direction.x,
       y: direction.y,
-      speed: tuning.evasionSpeed
-        + traits.activity * 0.18
-        + proximity * tuning.evasionProximityGain
-        + burstPulse * tuning.evasionBurstGain,
-      weight: 0.5 + strength * 0.44,
+      speed: Math.max(
+        0.16,
+        tuning.evasionSpeed
+          + traits.activity * 0.18
+          + proximity * tuning.evasionProximityGain
+          + burstPulse * tuning.evasionBurstGain
+          + phaseSpeedBonus,
+      ),
+      weight: arcPhase === CHASE_ARC_PHASES.escape
+        ? 0.78 + strength * 0.18
+        : arcPhase === CHASE_ARC_PHASES.intercept
+          ? 0.72 + strength * 0.2
+          : 0.56 + strength * 0.34,
       strength,
       sourceSeed: chaser.seed,
-      accelerationResponse: (3.25 + strength * 1.15) * (0.92 + agility * 0.08),
-      turningResponse: (4.35 + strength * 1.55) * agility,
-      maximumSpeed: 1.04 + Math.max(0, agility - 1) * 0.08,
+      accelerationResponse,
+      turningResponse,
+      maximumSpeed,
     };
   }
   return best;
@@ -257,10 +276,10 @@ export function steerActivityVelocity(fish, target, {
   let turningResponse = Math.max(0.01, profile.turningResponse ?? 1.5);
   let maximumSpeed = Math.max(0.02, profile.maximumSpeed ?? 0.82) * motionScale;
 
-  // The chaser's arc is mostly a change in response timing, not another target
-  // generator. The target still comes from the normal activity resolver. These
-  // response envelopes are what make "target bolts, chaser answers, chaser
-  // commits, chaser corrects" readable instead of simultaneous mirrored motion.
+  // The target gets the first escape beat. The chaser then rebuilds speed in
+  // pursuit, commits hard to one interception line, and only after the juke is
+  // allowed to swing back. This response timing is what turns the same target
+  // relationship into a chase arc rather than perfectly mirrored steering.
   if (target?.playfulChase) {
     const age = Math.max(0, Number.isFinite(fish.activity?.ageRealSeconds)
       ? fish.activity.ageRealSeconds
@@ -270,20 +289,24 @@ export function steerActivityVelocity(fish, target, {
 
     if (chasePhaseName === CHASE_ARC_PHASES.escape) {
       const progress = chaseArcProgress(age, CHASE_ARC_PHASES.escape);
-      accelerationResponse *= 0.62 + progress * (0.52 + traits.activity * 0.12);
-      turningResponse *= (0.68 + progress * 0.42) * agility;
-      maximumSpeed *= 0.92 + progress * 0.08;
+      accelerationResponse *= 0.36 + progress * (0.28 + traits.activity * 0.08);
+      turningResponse *= (0.58 + progress * 0.28) * agility;
+      maximumSpeed *= 0.7 + progress * 0.08;
     } else if (chasePhaseName === CHASE_ARC_PHASES.pursuit) {
-      accelerationResponse *= 0.96 + traits.activity * 0.16;
+      accelerationResponse *= 1.02 + traits.activity * 0.16;
       turningResponse *= agility;
     } else if (chasePhaseName === CHASE_ARC_PHASES.intercept) {
       const progress = chaseArcProgress(age, CHASE_ARC_PHASES.intercept);
-      // First half: commit to the interception line while the evader jukes.
-      // Second half: release that commitment and correct hard after the miss.
-      const correctionRelease = smoothstep(0.4, 0.82, progress);
-      accelerationResponse *= 1.14 + traits.activity * 0.16;
-      turningResponse *= (0.26 + correctionRelease * 1.22) * agility;
-      maximumSpeed *= 1.04;
+      const correctionRelease = smoothstep(0.5, 0.86, progress);
+      const surge = 1.46 + traits.activity * 0.12;
+      desiredVx *= surge;
+      desiredVy *= surge;
+      accelerationResponse *= 1.36 + traits.activity * 0.18;
+      turningResponse *= (0.16 + correctionRelease * 1.34) * agility;
+      maximumSpeed = Math.max(
+        maximumSpeed,
+        (1.58 + Math.max(0, agility - 1) * 0.18) * motionScale,
+      );
     } else if (chasePhaseName === "break") {
       const agePastAuthoredBreak = Math.max(0, age - CHASE_BREAK_SECONDS);
       const recovering = agePastAuthoredBreak >= CHASE_RECOVERY_DELAY_SECONDS;
