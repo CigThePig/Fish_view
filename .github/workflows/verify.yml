@@ -66,6 +66,9 @@ jobs:
       - name: Build branch-accurate static site
         run: npm run build:pages
 
+      - name: Record exact-commit interactive preview
+        run: npm run preview:branch -- --ref="$GITHUB_SHA" --page=behaviors.html --activity=playful-chase > .audit-output/preview-links.txt
+
       - name: Upload Phase 7 working-branch evidence
         uses: actions/upload-artifact@v4
         with:
@@ -74,6 +77,7 @@ jobs:
             .audit-output/chase-readiness
             .audit-output/chase-captures
             .audit-output/phase7-baseline
+            .audit-output/preview-links.txt
             _site
           if-no-files-found: error
           retention-days: 14
