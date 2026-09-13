@@ -82,15 +82,15 @@ export const STEERING_PROFILES = Object.freeze({
     turningResponse: 2.25,
   }),
   "plant-weave": Object.freeze({
-    accelerationResponse: 2.05,
-    turningResponse: 2.35,
-    verticalSpeedScale: 1.12,
+    accelerationResponse: 2.18,
+    turningResponse: 2.5,
+    verticalSpeedScale: 1.16,
     minimumSpeed: 0.07,
-    maximumSpeed: 0.76,
-    approachRadius: 0.9,
-    arrivalSpeedScale: 0.72,
-    pitchResponse: 4.4,
-    turnDuration: 0.48,
+    maximumSpeed: 0.9,
+    approachRadius: 0.82,
+    arrivalSpeedScale: 0.7,
+    pitchResponse: 4.6,
+    turnDuration: 0.46,
   }),
   "bubble-investigate": Object.freeze({
     accelerationResponse: 2.75,
@@ -334,12 +334,18 @@ export const SCENE_TUNING = Object.freeze({
     stationSeconds: 2.35,
   }),
   "plant-weave": Object.freeze({
-    speedBase: 0.4,
-    speedActivity: 0.15,
-    speedAffinity: 0.04,
-    stageSecondsMin: 2.55,
-    stageSecondsMax: 3.05,
-    asymmetryRows: 0.18,
+    speedBase: 0.68,
+    speedActivity: 0.18,
+    speedAffinity: 0.06,
+    // These are safety escapes only. Normal leg changes are position-driven.
+    legTimeoutSecondsMin: 11,
+    legTimeoutSecondsMax: 14,
+    // Legacy core compatibility only. The public Phase 7.4 facade never uses
+    // this timer for progression; keeping its delegated safety pass on stage 0
+    // avoids duplicating the mature activity-selection machinery.
+    stageSecondsMin: 60,
+    stageSecondsMax: 60,
+    asymmetryRows: 0.22,
   }),
   "bubble-investigate": Object.freeze({
     acquireSpeed: 0.5,
