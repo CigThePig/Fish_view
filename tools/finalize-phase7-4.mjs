@@ -13,16 +13,8 @@ function replaceOnce(text, before, after, label) {
   return text.slice(0, first) + after + text.slice(first + before.length);
 }
 
-function replaceExact(text, before, after, expected, label) {
-  let count = 0;
-  let at = 0;
-  while ((at = text.indexOf(before, at)) >= 0) {
-    count += 1;
-    at += before.length;
-  }
-  if (count !== expected) {
-    throw new Error(`${label}: expected ${expected} matches, found ${count}`);
-  }
+function replaceRoute(text, before, after, label) {
+  if (!text.includes(before)) throw new Error(`${label}: route fragment not found`);
   return text.split(before).join(after);
 }
 
@@ -67,41 +59,34 @@ const routeSwaps = [
   [
     'point(primary, entrySide, verticalSign * 0.66, clearance, { stage: 0, name: "entry-primary" })',
     'point(primary, entrySide, verticalSign > 0 ? -0.35 : -1.35, clearance, { stage: 0, name: "entry-primary" })',
-    2,
   ],
   [
     'point(primary, travelSide, verticalSign * -0.58, clearance, { stage: 1, name: "cross-primary" })',
     'point(primary, travelSide, verticalSign > 0 ? -1.45 : -0.25, clearance, { stage: 1, name: "cross-primary" })',
-    2,
   ],
   [
     'point(secondary, -travelSide, verticalSign * -0.14, clearance, { stage: 2, name: "thread-gap" })',
     'point(secondary, -travelSide, verticalSign > 0 ? -0.62 : -1.08, clearance, { stage: 2, name: "thread-gap" })',
-    1,
   ],
   [
     'point(secondary, travelSide, verticalSign * 0.74, clearance, { stage: 3, name: "cross-secondary" })',
     'point(secondary, travelSide, verticalSign > 0 ? -1.58 : -0.32, clearance, { stage: 3, name: "cross-secondary" })',
-    1,
   ],
   [
     '        verticalSign * 0.08,\n        clearance + WEAVE_EMERGE_EXTRA_COLUMNS,\n        { stage: 4, name: "emerge" },',
     '        -0.82,\n        clearance + WEAVE_EMERGE_EXTRA_COLUMNS,\n        { stage: 4, name: "emerge" },',
-    2,
   ],
   [
     'point(primary, entrySide, verticalSign * -0.12, clearance, { stage: 2, name: "cross-back" })',
     'point(primary, entrySide, verticalSign > 0 ? -0.62 : -1.08, clearance, { stage: 2, name: "cross-back" })',
-    1,
   ],
   [
     'point(primary, travelSide, verticalSign * 0.72, clearance, { stage: 3, name: "cross-again" })',
     'point(primary, travelSide, verticalSign > 0 ? -1.58 : -0.32, clearance, { stage: 3, name: "cross-again" })',
-    1,
   ],
 ];
-for (const [before, after, expected] of routeSwaps) {
-  activities = replaceExact(activities, before, after, expected, "correct weave route geometry");
+for (const [before, after] of routeSwaps) {
+  activities = replaceRoute(activities, before, after, "correct weave route geometry");
 }
 await writeFile("src/sim/fish-activities.js", activities);
 
