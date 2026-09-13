@@ -1,0 +1,44 @@
+name: Phase 7.5 relationship gate diagnosis
+
+on:
+  push:
+    branches:
+      - phase-7-1-readability-baseline
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.head_commit.message == 'Diagnose Phase 7.5 relationship gate'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Measure current two-hour window
+        run: |
+          cp tools/measure-viewer-relationship.mjs /tmp/measure-original.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/measure-viewer-relationship.mjs')
+          s=p.read_text()
+          s=s.replace('validate(report);', 'console.log("NATURAL_VISITS", JSON.stringify(naturalVisits));')
+          p.write_text(s)
+          PY
+          node tools/measure-viewer-relationship.mjs
+      - name: Measure six-hour window
+        run: |
+          cp /tmp/measure-original.mjs tools/measure-viewer-relationship.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/measure-viewer-relationship.mjs')
+          s=p.read_text()
+          s=s.replace('const NATURAL_VISIT_SECONDS = 2 * 60 * 60;', 'const NATURAL_VISIT_SECONDS = 6 * 60 * 60;')
+          s=s.replace('validate(report);', 'console.log("NATURAL_VISITS_6H", JSON.stringify(naturalVisits));')
+          p.write_text(s)
+          PY
+          node tools/measure-viewer-relationship.mjs
