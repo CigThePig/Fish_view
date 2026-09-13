@@ -26,6 +26,10 @@ jobs:
           node tools/run-phase7-5.mjs
           node tools/phase7-5-geometry-fix.mjs
           node tools/phase7-5-turn-fix.mjs
+      - name: Keep workflow plumbing out of implementation commit
+        run: |
+          git checkout -- .github/workflows/phase7-5-finalize.yml
+          rm -f .github/workflows/phase7-5-visual.yml
       - name: Verify candidate before committing
         run: |
           git diff --check
