@@ -4,6 +4,7 @@ import { chaseEvasionForFish } from "../sim/fish-choreography.js";
 import { spriteForFish } from "../sim/fish-growth.js";
 import {
   createShowcaseState,
+  showcaseScenario,
   showcaseSubjects,
   showcaseTarget,
   tickShowcase,
@@ -125,7 +126,7 @@ export function observeChaseShowcase({
     chaser: pairProfile(initialSubjects[0].fish),
     evader: pairProfile(initialSubjects[1].fish),
   };
-  const scenarioSeconds = 9.5;
+  const scenarioSeconds = showcaseScenario(CHASE_OBSERVATION_SCENARIO).loopSeconds;
   const duration = Number.isFinite(durationSeconds) && durationSeconds > 0
     ? durationSeconds
     : scenarioSeconds;
