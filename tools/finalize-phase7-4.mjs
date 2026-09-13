@@ -18,9 +18,6 @@ async function restore(path) {
   await writeFile(path, content);
 }
 
-// Preserve the stronger six-seed route regression that was added while the
-// first implementation was being exercised. We will re-home it onto the
-// monolithic production path after applying the original surgical patch.
 let strongWeaveTest = await readFile("tests/phase7-plant-weave.test.js", "utf8");
 strongWeaveTest = strongWeaveTest.replace(
   'import * as core from "../src/sim/fish-activities-core.js";\n',
@@ -33,11 +30,6 @@ strongWeaveTest = replaceOnce(
   "adapt frozen plant comparison to monolithic implementation",
 );
 
-// The facade/core split from the first attempt caused one activity to pass
-// through two lifecycle implementations. Restore the last green monolithic
-// files, then apply the already-authored Phase 7.4 surgical patch directly to
-// that production path. This keeps attention, recovery and consequence
-// arbitration in exactly one tickFishActivity implementation.
 for (const path of [
   "src/sim/fish-activities.js",
   "src/sim/choreography-tuning.js",
@@ -57,11 +49,8 @@ const tempPatch = "/tmp/apply-phase7-4-patch.mjs";
 await writeFile(tempPatch, patchSource);
 await import(`${pathToFileURL(tempPatch).href}?run=${Date.now()}`);
 
-// Keep the stronger production-route coverage from the exercised version.
 await writeFile("tests/phase7-plant-weave.test.js", strongWeaveTest);
 
-// These two older tests described the retired timer-driven route. Keep their
-// intent, but point them at the active spatial controls/stages.
 let tuningTest = await readFile("tests/choreography-tuning.test.js", "utf8");
 tuningTest = replaceOnce(
   tuningTest,
@@ -80,21 +69,15 @@ readabilityTest = replaceOnce(
 );
 await writeFile("tests/behavior-readability.test.js", readabilityTest);
 
-// The old 40-second plant-visit assertion treated elapsed age as completion.
-// Investigation and shelter still use that lifecycle, but weave now completes
-// only after reaching its explicit emergence waypoint. Exercise that real
-// completion instead of teaching the regression suite the bug Phase 7.4 removes.
 let phase2Test = await readFile("tests/phase2-activities.test.js", "utf8");
 phase2Test = replaceOnce(
   phase2Test,
-  `  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave, ACTIVITIES.plantShelter]) {`,
-  `  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]) {`,
+  `  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave]) {`,
+  `  // Investigation still uses age-bounded completion. Plant weave now has\n  // its own spatial completion regression in phase7-plant-weave.test.js.\n  for (const activity of [ACTIVITIES.plantInvestigate]) {`,
   "keep timer completion assertion on timer-owned plant visits",
 );
 await writeFile("tests/phase2-activities.test.js", phase2Test);
 
-// Remove the temporary parallel implementations. The final 7.4 architecture is
-// one production activity path plus two bounded transient route scalars.
 for (const path of [
   "src/sim/fish-activities-core.js",
   "src/sim/choreography-tuning-core.js",
