@@ -1,0 +1,38 @@
+name: Phase 7.5 finalizer
+
+on:
+  push:
+    branches:
+      - phase-7-1-readability-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event.head_commit.message == 'Stage Phase 7.5 implementation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build Phase 7.5 plant vocabulary
+        run: node tools/run-phase7-5.mjs
+      - name: Verify candidate before committing
+        run: |
+          git diff --check
+          npm test
+          npm run audit:simulation
+          npm run audit:render
+      - name: Commit tested Phase 7.5 result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Phase 7.5 implement plant vocabulary"
+          git push origin HEAD:phase-7-1-readability-baseline
