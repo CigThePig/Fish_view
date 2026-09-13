@@ -1,5 +1,5 @@
 import { spriteDimensions } from "../art/sprites.js";
-import { chaseArcPhase } from "../sim/chase-arc.js";
+import { CHASE_ARC_PHASES, chaseArcPhase } from "../sim/chase-arc.js";
 import { sceneTuning } from "../sim/choreography-tuning.js";
 import { traitsFromSeed } from "../sim/entities.js";
 import { chaseEvasionForFish } from "../sim/fish-choreography.js";
@@ -76,16 +76,18 @@ function summarize(timeline) {
   const evaderSpeeds = timeline.map((sample) => sample.evader.speed);
   const minimumGap = Math.min(...gaps);
   const minimumGapSample = firstSample(timeline, (sample) => sample.gap === minimumGap);
-  const breakSample = firstSample(timeline, (sample) => sample.phase === "break");
-  const recoverSample = firstSample(timeline, (sample) => sample.phase === "recover");
+  const breakSample = firstSample(timeline, (sample) => sample.phase === CHASE_ARC_PHASES.break);
+  const recoverSample = firstSample(timeline, (sample) => sample.phase === CHASE_ARC_PHASES.recover);
   const breakTail = breakSample
     ? timeline.filter((sample) => sample.seconds >= breakSample.seconds)
     : [];
   const activePursuit = timeline.filter((sample) => (
-    sample.phase === "pursuit" || sample.phase === "intercept"
+    sample.phase === CHASE_ARC_PHASES.pursuit || sample.phase === CHASE_ARC_PHASES.intercept
   ));
   const overshootSamples = activePursuit.filter((sample) => sample.targetAlignment < -0.08);
-  const preBreak = timeline.filter((sample) => sample.phase !== "break" && sample.phase !== "recover");
+  const preBreak = timeline.filter((sample) => (
+    sample.phase !== CHASE_ARC_PHASES.break && sample.phase !== CHASE_ARC_PHASES.recover
+  ));
   const first = timeline[0];
   const last = timeline.at(-1);
 
@@ -106,7 +108,7 @@ function summarize(timeline) {
     strongestEvasion: Math.max(...timeline.map((sample) => sample.evasionStrength)),
     overshootFrames: overshootSamples.length,
     firstOvershootSecond: overshootSamples[0]?.seconds ?? null,
-    interceptSeen: timeline.some((sample) => sample.phase === "intercept"),
+    interceptSeen: timeline.some((sample) => sample.phase === CHASE_ARC_PHASES.intercept),
     breakSeen: Boolean(breakSample),
     breakSecond: breakSample?.seconds ?? null,
     recoverSeen: Boolean(recoverSample),
@@ -160,6 +162,7 @@ export function observeChaseShowcase({
   let previousGap = null;
   let previousChaserHeading = headingFor(initialSubjects[0].fish);
   let previousEvaderHeading = headingFor(initialSubjects[1].fish);
+  let chaseHasEnded = false;
 
   for (let frame = 0; frame <= frameCount; frame += 1) {
     const subjects = showcaseSubjects(state, CHASE_OBSERVATION_SCENARIO);
@@ -172,7 +175,14 @@ export function observeChaseShowcase({
     const dy = evader.y - chaser.y;
     const gap = Math.hypot(dx, dy);
     const tuning = sceneTuning(state, CHASE_OBSERVATION_SCENARIO);
-    const semanticPhase = chaseArcPhase(chaser.activity?.ageRealSeconds, gap, tuning);
+    const chaseStillActive = chaser.activity?.current === CHASE_OBSERVATION_SCENARIO;
+    const livePhase = chaseArcPhase(chaser.activity?.ageRealSeconds, gap, tuning);
+    if (!chaseStillActive || livePhase === CHASE_ARC_PHASES.recover) chaseHasEnded = true;
+    // Once the production activity has peeled away, its new activity age starts
+    // at zero. Feeding that reset age back into chaseArcPhase used to make the
+    // telemetry claim a second engagement that never happened. Hold the final
+    // semantic beat instead: this portion of the capture is the aftermath.
+    const semanticPhase = chaseHasEnded ? CHASE_ARC_PHASES.recover : livePhase;
     const chaserHeading = headingFor(chaser, previousChaserHeading);
     const evaderHeading = headingFor(evader, previousEvaderHeading);
     const targetDirection = gap > 0.00001 ? { x: dx / gap, y: dy / gap } : { x: 1, y: 0 };
@@ -184,7 +194,9 @@ export function observeChaseShowcase({
     timeline.push({
       seconds,
       phase: semanticPhase,
-      macroPhase: target?.choreographyPhase ?? chaser.activity?.current ?? null,
+      macroPhase: chaseStillActive
+        ? (target?.choreographyPhase ?? chaser.activity?.current ?? "unknown")
+        : "ended",
       gap,
       gapRate: previousGap === null ? 0 : (gap - previousGap) / step,
       verticalSeparation: dy,
