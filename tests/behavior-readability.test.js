@@ -195,7 +195,7 @@ test("bubble pursuit predicts a real rising bubble and produces a readable ascen
   assert.ok(strongestPitch < -18);
 });
 
-test("playful chase is faster than following and gives the chased fish a bounded evasive response", () => {
+test("playful chase gives the evader the first beat, then accelerates beyond following", () => {
   const base = stockedAquarium({ seed: 2020, wallClockHours: 12 });
   const chaserSource = base.individuals[0];
   const chasedSource = base.individuals[1];
@@ -210,16 +210,16 @@ test("playful chase is faster than following and gives the chased fish a bounded
     vx: 0.2,
     vy: 0,
   };
-  // Close enough to bolt. A chased fish that flees the moment it is noticed -
-  // five rows out, further than any chaser can close - keeps a fixed gap, and a
-  // constant gap is a formation rather than a chase. The break comes late and
-  // hard instead, which is what makes the distance visibly open and shut.
+  // Close enough to bolt. Recognition is not the same as panic: once the pair
+  // is genuinely close the evader gets the first acceleration beat and the
+  // chaser briefly glides instead of matching it instantly. Pursuit then comes
+  // back faster and sharper than ordinary following.
   const chased = { ...chasedSource, x: 21.6, y: 8, vx: 0.2, vy: 0 };
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0 ? chaser : index === 1 ? chased : fish),
   };
-  const chaseTarget = resolveActivityTarget(chaser, 0, state, chaser.activity);
+  const escapeTarget = resolveActivityTarget(chaser, 0, state, chaser.activity);
   const following = {
     ...chaser,
     activity: {
@@ -230,8 +230,26 @@ test("playful chase is faster than following and gives the chased fish a bounded
     },
   };
   const followTarget = resolveActivityTarget(following, 0, state, following.activity);
-  assert.ok(chaseTarget.speed > followTarget.speed * 1.35);
-  assert.ok(chaseTarget.choreography.turningResponse > followTarget.choreography.turningResponse * 2);
+  assert.equal(escapeTarget.choreographyPhase, "break");
+  assert.ok(escapeTarget.speed < followTarget.speed);
+
+  const pursuitChaser = {
+    ...chaser,
+    activity: { ...chaser.activity, ageRealSeconds: 4 },
+  };
+  const pursuitState = {
+    ...state,
+    individuals: state.individuals.map((fish, index) => index === 0 ? pursuitChaser : fish),
+  };
+  const pursuitTarget = resolveActivityTarget(
+    pursuitChaser,
+    0,
+    pursuitState,
+    pursuitChaser.activity,
+  );
+  assert.equal(pursuitTarget.choreographyPhase, "pursuit");
+  assert.ok(pursuitTarget.speed > followTarget.speed * 1.35);
+  assert.ok(pursuitTarget.choreography.turningResponse > followTarget.choreography.turningResponse * 2);
 
   const evasion = chaseEvasionForFish(chased, state);
   assert.ok(evasion && evasion.strength > 0.8);
