@@ -12,6 +12,7 @@
     "audit:render": "node tools/audit-render.mjs",
     "audit:persistence": "node tools/audit-persistence.mjs",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
+    "measure:chase-readiness": "node tools/measure-chase-readiness.mjs",
     "measure:stage2-baseline": "node tools/measure-stage2-baseline.mjs",
     "measure:water": "node tools/measure-water-response.mjs",
     "measure:environment": "node tools/measure-environment-response.mjs",
@@ -26,6 +27,7 @@
     "capture:depth": "node tools/capture-habitat-depth.mjs",
     "capture:living": "node tools/capture-living-aquarium.mjs",
     "measure:living": "node tools/measure-living-aquarium.mjs",
+    "preview:branch": "node tools/branch-preview-url.mjs",
     "dev": "node tools/serve.mjs",
     "build:pages": "node tools/build-pages.mjs"
   },
