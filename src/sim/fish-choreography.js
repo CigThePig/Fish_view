@@ -152,12 +152,15 @@ export function chaseEvasionForFish(fish, state) {
       // This beat has to open the gap. A merely decorative sidestep still lets
       // the already-closing chaser eat distance, so the first dodge carries a
       // short real acceleration advantage while the chaser hesitates below.
+      // Recognition at the outside of the radius stays subtle: panic strength
+      // is still governed by distance, so noticing a fish four rows away is not
+      // the same thing as bolting from it.
       const burst = Math.sin(progress * Math.PI);
       signedSide = dodgeSign;
       sideMagnitude = (0.26 + burst * (tuning.evasionSideRows * 0.72 + 0.2)) * agility;
       burstPulse = 0.45 + burst * 0.55;
       phaseSpeedBonus = 0.34 + burst * 0.3;
-      phaseStrength = 0.62 + proximity * 0.32 + burst * 0.06;
+      phaseStrength = 0.06 + proximity * 0.78 + burst * 0.08;
       accelerationResponse = 5.6 + burst * 1.2;
       turningResponse = (3.8 + burst * 0.8) * agility;
       maximumSpeed = 1.22 + Math.max(0, agility - 1) * 0.08;
@@ -175,7 +178,7 @@ export function chaseEvasionForFish(fish, state) {
       sideMagnitude = Math.abs(wave) * (tuning.evasionSideRows * 0.5 + 0.1) * agility;
       burstPulse = burst * 0.52;
       phaseSpeedBonus = burst * 0.3;
-      phaseStrength = 0.3 + proximity * 0.54 + burst * 0.16;
+      phaseStrength = 0.04 + proximity * 0.78 + burst * 0.08;
       accelerationResponse = 4.25 + burst * 1.15;
       turningResponse = (3.8 + Math.abs(wave) * 0.75) * agility;
       maximumSpeed = 1.16 + Math.max(0, agility - 1) * 0.06;
@@ -218,10 +221,10 @@ export function chaseEvasionForFish(fish, state) {
           + phaseSpeedBonus,
       ),
       weight: arcPhase === CHASE_ARC_PHASES.escape
-        ? 0.78 + strength * 0.18
+        ? 0.08 + strength * 0.9
         : arcPhase === CHASE_ARC_PHASES.intercept
-          ? 0.72 + strength * 0.2
-          : 0.56 + strength * 0.34,
+          ? 0.52 + strength * 0.36
+          : 0.12 + strength * 0.78,
       strength,
       sourceSeed: chaser.seed,
       accelerationResponse,
