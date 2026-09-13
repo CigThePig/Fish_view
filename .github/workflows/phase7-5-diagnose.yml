@@ -1,4 +1,4 @@
-name: Phase 7.5 plant visit diagnosis
+name: Phase 7.5 plant vocabulary visual
 
 on:
   push:
@@ -9,69 +9,20 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
-    if: github.event.head_commit.message == 'Diagnose Phase 7.5 plant visits'
+  capture:
+    if: github.event.head_commit.message == 'Capture Phase 7.5 plant vocabulary'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build candidate
-        run: |
-          node tools/run-phase7-5.mjs
-          node tools/phase7-5-geometry-fix.mjs
-          node tools/phase7-5-turn-fix.mjs
-      - name: Trace difficult plant visits
-        run: |
-          node --input-type=module <<'NODE'
-          import { createShowcaseState, showcaseSubjects, showcaseTarget, tickShowcase } from './src/dev/behavior-showcase.js';
-          import { ACTIVITIES } from './src/sim/fish-activities.js';
-          import { steerActivityVelocity } from './src/sim/fish-choreography.js';
-          import { hashSeed } from './src/sim/prng.js';
-
-          for (const [label, activity] of [
-            ['phase7-plant-b', ACTIVITIES.plantInvestigate],
-            ['phase7-plant-d', ACTIVITIES.plantShelter],
-          ]) {
-            console.log(`\n=== ${label} ${activity} ===`);
-            let state = createShowcaseState({ scenario: activity, seed: hashSeed(label) });
-            let previousStage = -1;
-            let previousActivity = activity;
-            for (let step = 0; step < 650; step += 1) {
-              const seconds = step * 0.1;
-              const [{ fish } = {}] = showcaseSubjects(state, activity);
-              if (!fish) break;
-              const target = showcaseTarget(state, activity);
-              if (fish.activity.current !== previousActivity) {
-                console.log('ACTIVITY CHANGE', { seconds, from: previousActivity, to: fish.activity.current, behavior: fish.behavior?.current, age: fish.activity.ageRealSeconds });
-                previousActivity = fish.activity.current;
-              }
-              if (fish.activity.current !== activity || !target) break;
-              const distance = Math.hypot(target.x - fish.x, target.y - fish.y);
-              const stage = target.plantVisitStage;
-              if (stage !== previousStage || step % 20 === 0 || seconds > 38 && step % 5 === 0) {
-                const direct = stage === 2 && activity === ACTIVITIES.plantInvestigate
-                  ? steerActivityVelocity(fish, target, { realDelta: 0.1, motionScale: 1, behaviorBlend: fish.behavior?.blend ?? 1 })
-                  : null;
-                console.log({ seconds: Number(seconds.toFixed(1)), stage, phase: target.choreographyPhase,
-                  fish: [Number(fish.x.toFixed(2)), Number(fish.y.toFixed(2))],
-                  velocity: [Number(fish.vx.toFixed(3)), Number(fish.vy.toFixed(3))],
-                  target: [Number(target.x.toFixed(2)), Number(target.y.toFixed(2))],
-                  distance: Number(distance.toFixed(3)), speed: Number(Math.hypot(fish.vx, fish.vy).toFixed(3)),
-                  requestedSpeed: target.speed, turningResponse: target.choreography?.turningResponse,
-                  directPrediction: direct ? [Number(direct.vx.toFixed(3)), Number(direct.vy.toFixed(3))] : null,
-                  directDesired: direct ? [Number(direct.desiredVx.toFixed(3)), Number(direct.desiredVy.toFixed(3))] : null,
-                  age: Number(fish.activity.ageRealSeconds.toFixed(1)),
-                  stageAge: Number((fish.activity.ageRealSeconds - (fish.activity.plantVisitStageStartedAt ?? 0)).toFixed(1)),
-                  behavior: fish.behavior?.current, targetId: fish.activity.targetId });
-                previousStage = stage;
-              }
-              state = tickShowcase(state, 0.1, activity);
-            }
-          }
-          NODE
+      - name: Capture plant vocabulary comparison
+        run: npm run capture:behaviors -- --scenario=plant-investigate,plant-weave,plant-shelter --scale=0.5 --gif --output=.audit-output/phase7-5-plant-visual
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase7-5-plant-visual-${{ github.run_id }}
+          path: .audit-output/phase7-5-plant-visual
+          if-no-files-found: error
