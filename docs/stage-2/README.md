@@ -33,8 +33,8 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 7.2 | Playful chase — core pursuit choreography | Done | [phase 7.2](phase-7-2-playful-chase-core-pursuit.md) |
 | 7.3 | Playful chase — complete arc and ending | Done | [phase 7.3](phase-7-3-playful-chase-complete-arc.md) |
 | 7.4 | Plant weave — route and geometry redesign | Done | [phase 7.4](phase-7-4-plant-weave-route-and-geometry.md) |
-| 7.5 | Plant vocabulary separation and polish | Ready | [7.4 handoff](phase-7-4-plant-weave-route-and-geometry.md#phase-75-handoff) |
-| 7.6 | Remaining behavior readability audit | Not started | — |
+| 7.5 | Plant vocabulary separation and polish | Done | [phase 7.5](phase-7-5-plant-vocabulary-separation-and-polish.md) |
+| 7.6 | Remaining behavior readability audit | Ready | [7.5 handoff](phase-7-5-plant-vocabulary-separation-and-polish.md#phase-76-handoff) |
 | 7.7 | Cross-behavior readability validation and freeze | Not started | — |
 | 8 | Scene salience and anti-synchronisation | Not started | — |
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
@@ -96,11 +96,15 @@ local plant-investigation and quiet plant-shelter controls. Full verification,
 persistence and renderer audits remain green. See the
 [Phase 7.4 report](phase-7-4-plant-weave-route-and-geometry.md).
 
-Phase 7.5 may now treat plant weave as the frozen traversal control. Its job is
-to sharpen the vocabulary around it: investigation should read approach →
-inspect → retreat, while shelter should read enter cover → quiet → emerge.
-Changes to weave itself need direct side-by-side evidence of a readability
-problem rather than general polish pressure.
+Phase 7.5 separates the full plant vocabulary around that frozen traversal
+control. Plant investigation now reads approach → stable local inspect →
+same-side retreat, while shelter reads enter cover → quiet → emerge. Both use a
+bounded three-stage activity-local cursor and require physical arrival/departure
+rather than letting elapsed time stand in for motion. Six deterministic seeds
+for each behavior complete the authored arc, the difficult regression fixtures
+now finish naturally, and the exact visual comparison keeps weave energetic and
+spatial while investigation stays local and shelter becomes nearly still. See
+the [Phase 7.5 report](phase-7-5-plant-vocabulary-separation-and-polish.md).
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
