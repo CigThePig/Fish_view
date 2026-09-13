@@ -1,4 +1,4 @@
-name: Phase 7.4 monolithic finalizer
+name: Phase 7.4 monolithic finalizer retry
 
 on:
   push:
