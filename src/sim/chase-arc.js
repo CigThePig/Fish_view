@@ -29,27 +29,26 @@ function finitePositive(value, fallback) {
 export function chaseArcBoundaries(tuning = null) {
   const breakSeconds = finitePositive(tuning?.breakSeconds, CHASE_DEFAULT_BREAK_SECONDS);
 
-  // Keep the same dramatic proportions when the behaviour lab moves the break
-  // time. At the authored 6.2 seconds these land near 0.78s, 2.78s and 4.55s.
-  // Escape is deliberately long enough for a chaser that begins near the edge
-  // of recognition range to get close before the target's first real bolt.
-  // Interception still gets enough runway to become a crossing/near miss rather
-  // than a label applied to the final second of ordinary pursuit.
+  // At the authored 6.2 second chase the broad windows land near 0.78, 3.78,
+  // 5.0 and 6.2 seconds. The target does not spend the whole escape window
+  // fleeing: chaseArcPhase keeps engagement until the pair is physically close
+  // or until the final short escape window is reached. That gives us a readable
+  // deliberate close, a real burst, time to close again, then the final juke.
   const engageEnd = clamp(Math.min(0.78, breakSeconds * 0.16), 0.12, breakSeconds * 0.28);
   const remainingAfterEngage = Math.max(0.2, breakSeconds - engageEnd);
   const escapeDuration = clamp(
-    Math.min(2, remainingAfterEngage * 0.42),
-    0.3,
-    remainingAfterEngage * 0.5,
+    Math.min(3, remainingAfterEngage * 0.62),
+    0.5,
+    remainingAfterEngage * 0.68,
   );
-  const escapeEnd = Math.min(breakSeconds - 0.5, engageEnd + escapeDuration);
+  const escapeEnd = Math.min(breakSeconds - 0.8, engageEnd + escapeDuration);
   const roomAfterEscape = Math.max(0.25, breakSeconds - escapeEnd);
   const interceptDuration = clamp(
-    Math.min(1.65, breakSeconds * 0.27),
+    Math.min(1.2, breakSeconds * 0.2),
     0.3,
     Math.max(0.3, roomAfterEscape - 0.15),
   );
-  const interceptStart = Math.max(escapeEnd + 0.15, breakSeconds - interceptDuration);
+  const interceptStart = Math.max(escapeEnd + 0.35, breakSeconds - interceptDuration);
   const recoverStart = breakSeconds + CHASE_RECOVERY_DELAY_SECONDS;
 
   return {
@@ -67,13 +66,17 @@ export function chaseArcPhase(ageRealSeconds, distance, tuning = null) {
     tuning?.recognitionRadiusRows,
     CHASE_DEFAULT_RECOGNITION_RADIUS,
   );
+  const panicFar = finitePositive(tuning?.panicFarRows, radius * 0.74);
   const bounds = chaseArcBoundaries(tuning);
+  const forcedEscapeStart = Math.max(bounds.engageEnd, bounds.escapeEnd - 0.72);
 
-  // The target is allowed to remain unaware a little longer if the chaser has
-  // not actually closed into recognition range yet. Once that opening window
-  // has passed, time wins so a chase can never become stuck in engagement.
+  // Recognition is not panic. The chaser may be noticed at the outer radius,
+  // but the target stays on its line while the gap closes. Once the pair enters
+  // the panic band, or the opening has run long enough, the target gets one
+  // unmistakable escape beat. This keeps the four-row invariant from becoming
+  // a distant formation while still guaranteeing an escape in every chase.
   if (age < bounds.engageEnd
-    || (distance > radius && age < bounds.escapeEnd)) return CHASE_ARC_PHASES.engage;
+    || (distance > panicFar && age < forcedEscapeStart)) return CHASE_ARC_PHASES.engage;
   if (age < bounds.escapeEnd) return CHASE_ARC_PHASES.escape;
   if (age < bounds.interceptStart) return CHASE_ARC_PHASES.pursuit;
   if (age < bounds.breakSeconds) return CHASE_ARC_PHASES.intercept;
@@ -98,6 +101,10 @@ export function chaseArcProgress(ageRealSeconds, phase, tuning = null) {
   let end = bounds.engageEnd;
 
   if (phase === CHASE_ARC_PHASES.escape) {
+    // The actual escape may begin later than engageEnd because its trigger is
+    // distance-sensitive. Using the fixed outer window here is intentional: it
+    // keeps the burst deterministic and naturally stronger when the target was
+    // forced to wait until the pair became close.
     start = bounds.engageEnd;
     end = bounds.escapeEnd;
   } else if (phase === CHASE_ARC_PHASES.pursuit) {
