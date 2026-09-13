@@ -29,6 +29,12 @@ strongWeaveTest = replaceOnce(
   `test("plant investigation and shelter stay outside weave route semantics", () => {\n  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]) {\n    const state = createShowcaseState({ scenario: activity });\n    const { index, fish } = subject(state, activity);\n    const target = resolveActivityTarget(fish, index, state, fish.activity);\n    assert.ok(target, \`${'${activity}'} lost its plant target\`);\n    assert.equal(target.weaveStage, undefined, \`${'${activity}'} gained weave route state\`);\n    assert.equal(target.weaveLeg, undefined, \`${'${activity}'} gained weave route geometry\`);\n  }\n});`,
   "adapt frozen plant comparison to monolithic implementation",
 );
+strongWeaveTest = replaceOnce(
+  strongWeaveTest,
+  `    if (currentFish.activity.current !== ACTIVITIES.plantWeave) break;`,
+  `    if (currentFish.activity.current !== ACTIVITIES.plantWeave) {\n      if (label === "phase7-weave-b") {\n        console.log("WEAVE_EXIT", JSON.stringify({\n          time: Number(time.toFixed(2)),\n          current: currentFish.activity.current,\n          previous: currentFish.activity.previous,\n          behavior: currentFish.behavior?.current,\n          ageRealSeconds: currentFish.activity.ageRealSeconds,\n          targetId: currentFish.activity.targetId,\n          stages,\n        }));\n      }\n      break;\n    }`,
+  "diagnose early weave exit",
+);
 
 for (const path of [
   "src/sim/fish-activities.js",
@@ -64,7 +70,7 @@ let readabilityTest = await readFile("tests/behavior-readability.test.js", "utf8
 readabilityTest = replaceOnce(
   readabilityTest,
   `  const first = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 0 });\n  const second = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 3.2 });`,
-  `  // Phase 7.4 made route progression spatial. Compare two authored route\n  // legs directly rather than advancing the retired timer in a synthetic target.\n  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };\n  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };\n  const first = resolveActivityTarget(weaving, index, base, firstActivity);\n  const second = resolveActivityTarget(weaving, index, base, secondActivity);`,
+  `  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };\n  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };\n  const first = resolveActivityTarget(weaving, index, base, firstActivity);\n  const second = resolveActivityTarget(weaving, index, base, secondActivity);`,
   "update readability assertion for spatial weave",
 );
 await writeFile("tests/behavior-readability.test.js", readabilityTest);
@@ -73,20 +79,36 @@ let phase2Test = await readFile("tests/phase2-activities.test.js", "utf8");
 phase2Test = replaceOnce(
   phase2Test,
   `  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave]) {`,
-  `  // Investigation still uses age-bounded completion. Plant weave now has\n  // its own spatial completion regression in phase7-plant-weave.test.js.\n  for (const activity of [ACTIVITIES.plantInvestigate]) {`,
+  `  for (const activity of [ACTIVITIES.plantInvestigate]) {`,
   "keep timer completion assertion on timer-owned plant visits",
 );
 await writeFile("tests/phase2-activities.test.js", phase2Test);
+
+let attentionTest = await readFile("tests/attention-roles.test.js", "utf8");
+attentionTest = replaceOnce(
+  attentionTest,
+  `  const old = before[passive.index];\n  assert.equal(passive.fish.activity.current, old.activity);`,
+  `  const old = before[passive.index];\n  console.log("PASSIVE_DIAG", JSON.stringify({\n    index: passive.index,\n    role: passive.fish.attention?.role,\n    activity: passive.fish.activity.current,\n    behaviorBefore: old.behavior,\n    behaviorAfter: passive.fish.behavior.current,\n    velocityBefore: [old.vx, old.vy],\n    velocityAfter: [passive.fish.vx, passive.fish.vy],\n    velocityDelta: Math.hypot(passive.fish.vx - old.vx, passive.fish.vy - old.vy),\n  }));\n  assert.equal(passive.fish.activity.current, old.activity);`,
+  "diagnose passive response",
+);
+await writeFile("tests/attention-roles.test.js", attentionTest);
+
+let holdTest = await readFile("tests/hold-presence.test.js", "utf8");
+holdTest = replaceOnce(
+  holdTest,
+  `    const engaged = frame.individuals.filter((fish) => attentionInvestigates(fish.attention)).length;\n    assert.ok(engaged <= 3, \`${'${engaged}'} fish still committed to a settled hold\`);`,
+  `    const engagedFish = frame.individuals\n      .map((fish, index) => ({ fish, index }))\n      .filter(({ fish }) => attentionInvestigates(fish.attention));\n    const engaged = engagedFish.length;\n    console.log("HOLD_DIAG", JSON.stringify({\n      time,\n      engaged: engagedFish.map(({ fish, index }) => ({\n        index, role: fish.attention?.role, activity: fish.activity.current, behavior: fish.behavior.current,\n        age: fish.attention?.ageSeconds, near: fish.attention?.nearSeconds, hold: fish.attention?.holdSeconds,\n      })),\n    }));\n    assert.ok(engaged <= 3, \`${'${engaged}'} fish still committed to a settled hold\`);`,
+  "diagnose hold recruitment",
+);
+await writeFile("tests/hold-presence.test.js", holdTest);
 
 for (const path of [
   "src/sim/fish-activities-core.js",
   "src/sim/choreography-tuning-core.js",
   "src/dev/behavior-showcase-core.js",
   "tools/apply-phase7-4-patch.mjs",
-  "tools/finalize-phase7-4.mjs",
-  ".github/workflows/phase7-4-finalize.yml",
 ]) {
   await rm(path, { force: true });
 }
 
-console.log("Phase 7.4 monolithic integration patch applied.");
+console.log("Phase 7.4 diagnostic integration prepared.");
