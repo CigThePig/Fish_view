@@ -1,4 +1,4 @@
-name: Phase 7.4 monolithic finalizer retry
+name: Phase 7.4 diagnostics
 
 on:
   push:
@@ -6,11 +6,11 @@ on:
       - phase-7-1-readability-baseline
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  finalize:
-    if: github.event.head_commit.message == 'Stage Phase 7.4 finalizer'
+  diagnose:
+    if: github.event.head_commit.message == 'Stage Phase 7.4 diagnostics'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,16 +21,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply final Phase 7.4 integration patch
+      - name: Prepare Phase 7.4 candidate
         run: node tools/finalize-phase7-4.mjs
-      - name: Verify finalizer result
+      - name: Run targeted diagnostics
         run: |
-          git diff --check
-          npm test
-      - name: Commit tested Phase 7.4 result
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Phase 7.4 complete spatial plant weave"
-          git push origin HEAD:phase-7-1-readability-baseline
+          node --test tests/attention-roles.test.js tests/hold-presence.test.js tests/phase7-plant-weave.test.js || true
