@@ -31,8 +31,8 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 6 | Persistent fish–viewer relationship | Done | [phase 6](phase-6-viewer-relationship-evidence.md) |
 | 7.1 | Readability baseline and behavior freeze | Done | [phase 7.1](phase-7-1-readability-baseline.md) |
 | 7.2 | Playful chase — core pursuit choreography | Done | [phase 7.2](phase-7-2-playful-chase-core-pursuit.md) |
-| 7.3 | Playful chase — complete arc and ending | Not started | — |
-| 7.4 | Plant weave — route and geometry redesign | Not started | — |
+| 7.3 | Playful chase — complete arc and ending | Done | [phase 7.3](phase-7-3-playful-chase-complete-arc.md) |
+| 7.4 | Plant weave — route and geometry redesign | Ready | [readiness](phase-7-4-plant-weave-readiness.md) |
 | 7.5 | Plant vocabulary separation and polish | Not started | — |
 | 7.6 | Remaining behavior readability audit | Not started | — |
 | 7.7 | Cross-behavior readability validation and freeze | Not started | — |
@@ -74,6 +74,24 @@ gap growth; full repository verification remained green. Gap oscillation and a
 true near-miss / overshoot climax are intentionally still absent, because those
 belong to the complete chase arc in Phase 7.3. See the
 [Phase 7.2 report](phase-7-2-playful-chase-core-pursuit.md).
+
+Phase 7.3 gives that pursuit a complete motion sentence: engage, first escape,
+renewed pursuit, interception / near miss, decisive break and recovery. Across
+all six deterministic chase seeds the pair-distance direction changes three
+times, including two changes before the break, so the chase now visibly closes,
+releases and closes again instead of behaving like a fast formation. Closure
+also fixed a stale Phase 7.2-era readability assertion and made the capture tool
+report semantic chase phases rather than the broad steering envelope used under
+the hood. Normal repository verification and the exact-commit Phase 7 evidence
+job are green. See the [Phase 7.3 report](phase-7-3-playful-chase-complete-arc.md).
+
+Phase 7.4 is prepared but has not changed production behavior yet. The current
+plant-weave route already contains useful deterministic alternating waypoints,
+but progression is driven mainly by elapsed stage time, so a slower fish can be
+given the next target before its body has completed the previous crossing. The
+next slice will make spatial traversal the normal progression signal and judge
+the fish body's actual route through vegetation rather than only the waypoint
+coordinates. See the [Phase 7.4 readiness note](phase-7-4-plant-weave-readiness.md).
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
