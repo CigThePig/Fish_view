@@ -22,7 +22,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build candidate
-        run: node tools/run-phase7-5.mjs
+        run: |
+          node tools/run-phase7-5.mjs
+          node tools/phase7-5-geometry-fix.mjs
       - name: Trace difficult plant visits
         run: |
           node --input-type=module <<'NODE'
@@ -40,7 +42,7 @@ jobs:
             let previousActivity = activity;
             for (let step = 0; step < 650; step += 1) {
               const seconds = step * 0.1;
-              const [{ index, fish } = {}] = showcaseSubjects(state, activity);
+              const [{ fish } = {}] = showcaseSubjects(state, activity);
               if (!fish) break;
               const target = showcaseTarget(state, activity);
               if (fish.activity.current !== previousActivity) {
@@ -55,7 +57,8 @@ jobs:
                   fish: [Number(fish.x.toFixed(2)), Number(fish.y.toFixed(2))],
                   target: [Number(target.x.toFixed(2)), Number(target.y.toFixed(2))],
                   distance: Number(distance.toFixed(3)), speed: Number(Math.hypot(fish.vx, fish.vy).toFixed(3)),
-                  requestedSpeed: target.speed, age: Number(fish.activity.ageRealSeconds.toFixed(1)),
+                  requestedSpeed: target.speed, turningResponse: target.choreography?.turningResponse,
+                  age: Number(fish.activity.ageRealSeconds.toFixed(1)),
                   stageAge: Number((fish.activity.ageRealSeconds - (fish.activity.plantVisitStageStartedAt ?? 0)).toFixed(1)),
                   behavior: fish.behavior?.current, targetId: fish.activity.targetId });
                 previousStage = stage;
