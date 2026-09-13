@@ -85,11 +85,13 @@ export function chaseArcPhase(ageRealSeconds, distance, tuning = null) {
 }
 
 // fish-activities.js already distinguishes its broad approach / pursuit / break
-// steering branches. Keep that stable while exposing the finer dramatic phases
-// to steering, telemetry and visual review.
+// steering branches. Escape deliberately reuses the slower approach target:
+// the evader gets the first acceleration while the chaser has a human-readable
+// beat of hesitation. Semantic telemetry still calls the moment `escape`; this
+// mapping only chooses which existing target envelope drives the chaser.
 export function chaseMacroPhase(ageRealSeconds, distance, tuning = null) {
   const phase = chaseArcPhase(ageRealSeconds, distance, tuning);
-  if (phase === CHASE_ARC_PHASES.engage) return "approach";
+  if (phase === CHASE_ARC_PHASES.engage || phase === CHASE_ARC_PHASES.escape) return "approach";
   if (phase === CHASE_ARC_PHASES.break || phase === CHASE_ARC_PHASES.recover) return "break";
   return phase;
 }
