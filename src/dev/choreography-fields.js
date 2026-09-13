@@ -192,7 +192,14 @@ export const SCENE_FIELDS = Object.freeze({
     field("pursuitStandoffRows", "Standoff · pursuit", "rows short of the companion", 0, 5, 0.01),
     field("breakGlideSpeed", "Break glide speed", "rows/s once the chaser gives up", 0.02, 1, 0.005),
     field("recognitionRadiusRows", "Recognition radius", "rows within which the chase is noticed", 0.5, 12, 0.05),
-    field("breakSeconds", "Break after", "seconds before the chaser breaks off · bounded by how long a chase lives", 1, CHASE_BREAK_CEILING_SECONDS, 0.1),
+    field(
+      "breakSeconds",
+      "Break after",
+      "seconds before the chaser breaks off · bounded by how long a chase lives",
+      1,
+      CHASE_BREAK_CEILING_SECONDS,
+      0.1,
+    ),
     field("panicNearRows", "Panic · near", "rows at which the evader is fully alarmed", 0, 6, 0.05),
     field("panicFarRows", "Panic · far", "rows at which the evader stops caring", 0, 10, 0.05),
   ]),
@@ -218,16 +225,26 @@ export const SCENE_FIELDS = Object.freeze({
   ]),
 });
 
+// A phase profile is keyed "<activity>:<phase>" and only lists what it changes.
 export function steeringKeysFor(activity) {
-  return Object.keys(STEERING_PROFILES).filter((key) => key === activity || key.startsWith(activity + ":"));
+  return Object.keys(STEERING_PROFILES)
+    .filter((key) => key === activity || key.startsWith(activity + ":"));
 }
 
-const VELOCITY_TARGET_ACTIVITIES = new Set([ACTIVITIES.schoolFollow, ACTIVITIES.individualFollow, ACTIVITIES.companionCruise]);
+const VELOCITY_TARGET_ACTIVITIES = new Set([
+  ACTIVITIES.schoolFollow,
+  ACTIVITIES.individualFollow,
+  ACTIVITIES.companionCruise,
+]);
 
 export function steeringFieldsFor(key) {
   const activity = key.split(":")[0];
-  const common = STEERING_FIELDS.filter((definition) => definition.key !== "velocityMatch" || VELOCITY_TARGET_ACTIVITIES.has(activity));
-  return key === ACTIVITIES.playfulChase ? [...common, ...PLAYFUL_CHASE_STEERING_FIELDS] : common;
+  const common = STEERING_FIELDS.filter((definition) => (
+    definition.key !== "velocityMatch" || VELOCITY_TARGET_ACTIVITIES.has(activity)
+  ));
+  return key === ACTIVITIES.playfulChase
+    ? [...common, ...PLAYFUL_CHASE_STEERING_FIELDS]
+    : common;
 }
 
 export function steeringKeyLabel(key) {

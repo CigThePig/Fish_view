@@ -256,7 +256,9 @@ test("completed plant visits return to open water before choosing vegetation aga
   const base = stockedAquarium({ seed: 614 });
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
   assert.ok(plant);
-  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave]) {
+  // Investigation still uses age-bounded completion. Plant weave now has
+  // its own spatial completion regression in phase7-plant-weave.test.js.
+  for (const activity of [ACTIVITIES.plantInvestigate]) {
     const fish = {
       ...withBehavior(base.individuals[4], "explore"),
       activity: {

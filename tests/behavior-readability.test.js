@@ -505,8 +505,12 @@ test("plant inspection hovers around one specimen while weaving alternates route
       targetId: plant.seed,
     },
   };
-  const first = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 0 });
-  const second = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 3.2 });
+  // Phase 7.4 made route progression spatial. Compare two authored route
+  // legs directly rather than advancing the retired timer in a synthetic target.
+  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };
+  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };
+  const first = resolveActivityTarget(weaving, index, base, firstActivity);
+  const second = resolveActivityTarget(weaving, index, base, secondActivity);
   assert.ok((first.x - plant.x) * (second.x - plant.x) < 0, "weave route never crossed the plant");
   assert.ok(Math.abs(first.y - second.y) > 0.45);
 });

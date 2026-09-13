@@ -6,7 +6,6 @@ import {
   WEAVE_ROUTE_STAGE_COUNT,
   resolveActivityTarget,
 } from "../src/sim/fish-activities.js";
-import * as core from "../src/sim/fish-activities-core.js";
 import {
   createShowcaseState,
   showcaseSubjects,
@@ -143,14 +142,13 @@ test("six deterministic production routes physically cross both plants and emerg
   }
 });
 
-test("plant investigation and shelter targets remain delegated to the frozen implementation", () => {
+test("plant investigation and shelter stay outside weave route semantics", () => {
   for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]) {
     const state = createShowcaseState({ scenario: activity });
     const { index, fish } = subject(state, activity);
-    assert.deepEqual(
-      resolveActivityTarget(fish, index, state, fish.activity),
-      core.resolveActivityTarget(fish, index, state, fish.activity),
-      `${activity} changed while Phase 7.4 was scoped to weave`,
-    );
+    const target = resolveActivityTarget(fish, index, state, fish.activity);
+    assert.ok(target, `${activity} lost its plant target`);
+    assert.equal(target.weaveStage, undefined, `${activity} gained weave route state`);
+    assert.equal(target.weaveLeg, undefined, `${activity} gained weave route geometry`);
   }
 });

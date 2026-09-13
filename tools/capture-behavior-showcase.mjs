@@ -193,7 +193,9 @@ function semanticSnapshotTimes(scenario) {
     const inspect = phaseTime("inspect", scenario.loopSeconds * 0.45);
     times = [0, inspect, Math.min(scenario.loopSeconds, inspect + 2.4), scenario.loopSeconds * 0.94];
   } else if (scenario.id === "plant-weave") {
-    times = [1, 2, 3, 4].map((stage) => phaseTime(`weave-${stage}`, null));
+    // Entry, the first crossing, the second crossing, and emergence are the
+    // four stills that prove this is traversal rather than target hopping.
+    times = [1, 2, 4, 5].map((stage) => phaseTime(`weave-${stage}`, null));
   } else {
     times = [];
   }

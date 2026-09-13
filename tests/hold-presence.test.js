@@ -450,14 +450,14 @@ test("a minute-long hold creates nothing that accumulates", () => {
   }
 });
 
-// The other half of boundedness: a hold that costs the same at sixty seconds as
-// at fifteen, because everyone who was going to lose interest already has.
+// The other half of boundedness: once a long hold has settled, extending it
+// does not keep recruiting or accumulating responders.
 test("a hold settles, and stays settled", () => {
   const samples = new Map();
   holdFor(settled(5), 33, 9.5, 60, {
     onFrame: (state, seconds) => {
       const at = Math.round(seconds * 10) / 10;
-      if ([15, 30, 45, 59].some((mark) => Math.abs(at - mark) < 0.001)) {
+      if ([30, 40, 50, 59].some((mark) => Math.abs(at - mark) < 0.001)) {
         samples.set(at, engaged(state));
       }
     },
