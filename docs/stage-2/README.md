@@ -29,12 +29,33 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 4 | Drag, swipe and local water impulse | Done | [phase 4](phase-4-drag-swipe.md) |
 | 5 | Environmental interaction and causal chains | Done | [phase 5](phase-5-environment-and-chains.md) · [first slice](phase-5-water-and-plants.md) |
 | 6 | Persistent fish–viewer relationship | Done | [phase 6](phase-6-viewer-relationship-evidence.md) |
-| 7A | Flagship chase redesign | Not started | — |
-| 7B | Remaining behaviour readability pass | Not started | — |
+| 7.1 | Readability baseline and behavior freeze | Done | [phase 7.1](phase-7-1-readability-baseline.md) |
+| 7.2 | Playful chase — core pursuit choreography | Not started | — |
+| 7.3 | Playful chase — complete arc and ending | Not started | — |
+| 7.4 | Plant weave — route and geometry redesign | Not started | — |
+| 7.5 | Plant vocabulary separation and polish | Not started | — |
+| 7.6 | Remaining behavior readability audit | Not started | — |
+| 7.7 | Cross-behavior readability validation and freeze | Not started | — |
 | 8 | Scene salience and anti-synchronisation | Not started | — |
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+The root specification still describes Phase 7 as flagship chase work followed
+by the remaining behavior vocabulary. The numbered 7.1–7.7 rows above are the
+smaller reviewable execution slices used to carry that specification out without
+mixing several visual problems into one change.
+
+Phase 7.1 freezes the starting line before choreography changes begin. Bubble
+investigation and substrate feeding are explicit reference-quality behaviors;
+cruise, open-water wander, school follow, individual follow and open-water rest
+are provisionally frozen unless side-by-side evidence shows a real problem.
+Playful chase and plant weave are the only top-priority rework targets. Every
+required behavior now has a machine-readable visual sentence, at least three
+visible cues, nearest visual neighbors, a change policy and a later owning
+slice. A blind contact-sheet generator hides behavior names and phase labels so
+the motion has to communicate its own meaning. See the
+[Phase 7.1 report](phase-7-1-readability-baseline.md).
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
