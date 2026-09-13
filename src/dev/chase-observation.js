@@ -1,4 +1,6 @@
 import { spriteDimensions } from "../art/sprites.js";
+import { chaseArcPhase } from "../sim/chase-arc.js";
+import { sceneTuning } from "../sim/choreography-tuning.js";
 import { traitsFromSeed } from "../sim/entities.js";
 import { chaseEvasionForFish } from "../sim/fish-choreography.js";
 import { spriteForFish } from "../sim/fish-growth.js";
@@ -72,20 +74,29 @@ function summarize(timeline) {
   const gaps = timeline.map((sample) => sample.gap);
   const chaserSpeeds = timeline.map((sample) => sample.chaser.speed);
   const evaderSpeeds = timeline.map((sample) => sample.evader.speed);
+  const minimumGap = Math.min(...gaps);
+  const minimumGapSample = firstSample(timeline, (sample) => sample.gap === minimumGap);
   const breakSample = firstSample(timeline, (sample) => sample.phase === "break");
+  const recoverSample = firstSample(timeline, (sample) => sample.phase === "recover");
   const breakTail = breakSample
     ? timeline.filter((sample) => sample.seconds >= breakSample.seconds)
     : [];
-  const minGap = Math.min(...gaps);
-  const maxGap = Math.max(...gaps);
-  const pursuitSamples = timeline.filter((sample) => sample.phase === "pursuit");
-  const overshootFrames = pursuitSamples.filter((sample) => sample.targetAlignment < -0.08).length;
+  const activePursuit = timeline.filter((sample) => (
+    sample.phase === "pursuit" || sample.phase === "intercept"
+  ));
+  const overshootSamples = activePursuit.filter((sample) => sample.targetAlignment < -0.08);
+  const preBreak = timeline.filter((sample) => sample.phase !== "break" && sample.phase !== "recover");
+  const first = timeline[0];
+  const last = timeline.at(-1);
+
   return {
-    durationSeconds: timeline.at(-1)?.seconds ?? 0,
-    minimumGap: minGap,
-    maximumGap: maxGap,
-    gapRange: maxGap - minGap,
+    durationSeconds: last?.seconds ?? 0,
+    minimumGap,
+    minimumGapSecond: minimumGapSample?.seconds ?? null,
+    maximumGap: Math.max(...gaps),
+    gapRange: Math.max(...gaps) - minimumGap,
     gapOscillations: gapOscillations(timeline),
+    pursuitGapOscillations: gapOscillations(preBreak),
     peakChaserSpeed: Math.max(...chaserSpeeds),
     peakEvaderSpeed: Math.max(...evaderSpeeds),
     peakChaserTurnRateDegreesPerSecond: Math.max(...timeline.map((sample) => sample.chaser.turnRateDegreesPerSecond)),
@@ -93,15 +104,25 @@ function summarize(timeline) {
     peakHeadingSeparationDegrees: Math.max(...timeline.map((sample) => sample.headingSeparationDegrees)),
     peakVerticalSeparation: Math.max(...timeline.map((sample) => Math.abs(sample.verticalSeparation))),
     strongestEvasion: Math.max(...timeline.map((sample) => sample.evasionStrength)),
-    overshootFrames,
+    overshootFrames: overshootSamples.length,
+    firstOvershootSecond: overshootSamples[0]?.seconds ?? null,
+    interceptSeen: timeline.some((sample) => sample.phase === "intercept"),
     breakSeen: Boolean(breakSample),
     breakSecond: breakSample?.seconds ?? null,
+    recoverSeen: Boolean(recoverSample),
+    recoverSecond: recoverSample?.seconds ?? null,
     breakGapGrowth: breakSample && breakTail.length
       ? breakTail.at(-1).gap - breakSample.gap
       : null,
     breakHeadingSeparationPeakDegrees: breakTail.length
       ? Math.max(...breakTail.map((sample) => sample.headingSeparationDegrees))
       : null,
+    postBreakChaserSpeedDrop: breakSample && last
+      ? breakSample.chaser.speed - last.chaser.speed
+      : null,
+    endingChaserSpeed: last?.chaser.speed ?? null,
+    endingEvaderSpeed: last?.evader.speed ?? null,
+    startingGap: first?.gap ?? null,
     phases: phaseTransitions(timeline),
   };
 }
@@ -109,10 +130,11 @@ function summarize(timeline) {
 /**
  * Observe the forced production chase without changing it.
  *
- * The output intentionally records geometry rather than grading the current
- * implementation. Phase 7.2 is expected to make these numbers move. Keeping
- * the observer non-prescriptive means it remains useful while the choreography
- * is being rebuilt instead of becoming a test that protects today's defects.
+ * The output records both the broad target choreography and the semantic
+ * Phase-7 chase arc. It remains descriptive rather than grading one exact set
+ * of magic numbers: visual review still decides whether the motion sentence is
+ * legible, while these timelines expose whether the intended beats actually
+ * happened and where.
  */
 export function observeChaseShowcase({
   seed,
@@ -149,6 +171,8 @@ export function observeChaseShowcase({
     const dx = evader.x - chaser.x;
     const dy = evader.y - chaser.y;
     const gap = Math.hypot(dx, dy);
+    const tuning = sceneTuning(state, CHASE_OBSERVATION_SCENARIO);
+    const semanticPhase = chaseArcPhase(chaser.activity?.ageRealSeconds, gap, tuning);
     const chaserHeading = headingFor(chaser, previousChaserHeading);
     const evaderHeading = headingFor(evader, previousEvaderHeading);
     const targetDirection = gap > 0.00001 ? { x: dx / gap, y: dy / gap } : { x: 1, y: 0 };
@@ -159,7 +183,8 @@ export function observeChaseShowcase({
 
     timeline.push({
       seconds,
-      phase: target?.choreographyPhase ?? chaser.activity?.current ?? null,
+      phase: semanticPhase,
+      macroPhase: target?.choreographyPhase ?? chaser.activity?.current ?? null,
       gap,
       gapRate: previousGap === null ? 0 : (gap - previousGap) / step,
       verticalSeparation: dy,
