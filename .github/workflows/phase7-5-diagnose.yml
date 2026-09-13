@@ -31,6 +31,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { createShowcaseState, showcaseSubjects, showcaseTarget, tickShowcase } from './src/dev/behavior-showcase.js';
           import { ACTIVITIES } from './src/sim/fish-activities.js';
+          import { steerActivityVelocity } from './src/sim/fish-choreography.js';
           import { hashSeed } from './src/sim/prng.js';
 
           for (const [label, activity] of [
@@ -54,11 +55,17 @@ jobs:
               const distance = Math.hypot(target.x - fish.x, target.y - fish.y);
               const stage = target.plantVisitStage;
               if (stage !== previousStage || step % 20 === 0 || seconds > 38 && step % 5 === 0) {
+                const direct = stage === 2 && activity === ACTIVITIES.plantInvestigate
+                  ? steerActivityVelocity(fish, target, { realDelta: 0.1, motionScale: 1, behaviorBlend: fish.behavior?.blend ?? 1 })
+                  : null;
                 console.log({ seconds: Number(seconds.toFixed(1)), stage, phase: target.choreographyPhase,
                   fish: [Number(fish.x.toFixed(2)), Number(fish.y.toFixed(2))],
+                  velocity: [Number(fish.vx.toFixed(3)), Number(fish.vy.toFixed(3))],
                   target: [Number(target.x.toFixed(2)), Number(target.y.toFixed(2))],
                   distance: Number(distance.toFixed(3)), speed: Number(Math.hypot(fish.vx, fish.vy).toFixed(3)),
                   requestedSpeed: target.speed, turningResponse: target.choreography?.turningResponse,
+                  directPrediction: direct ? [Number(direct.vx.toFixed(3)), Number(direct.vy.toFixed(3))] : null,
+                  directDesired: direct ? [Number(direct.desiredVx.toFixed(3)), Number(direct.desiredVy.toFixed(3))] : null,
                   age: Number(fish.activity.ageRealSeconds.toFixed(1)),
                   stageAge: Number((fish.activity.ageRealSeconds - (fish.activity.plantVisitStageStartedAt ?? 0)).toFixed(1)),
                   behavior: fish.behavior?.current, targetId: fish.activity.targetId });
