@@ -22,7 +22,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build Phase 7.5 plant vocabulary
-        run: node tools/run-phase7-5.mjs
+        run: |
+          node tools/run-phase7-5.mjs
+          node tools/phase7-5-geometry-fix.mjs
       - name: Verify candidate before committing
         run: |
           git diff --check
