@@ -25,4 +25,5 @@ jobs:
         run: node tools/finalize-phase7-4.mjs
       - name: Run targeted diagnostics
         run: |
+          echo "Phase 7.4 diagnostic retry"
           node --test tests/attention-roles.test.js tests/hold-presence.test.js tests/phase7-plant-weave.test.js || true
