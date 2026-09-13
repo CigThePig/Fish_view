@@ -82,7 +82,7 @@ test("scene tuning starts at the constants the simulation used to inline", () =>
 test("a phase profile layers over its activity rather than over the bare default", () => {
   const chase = choreographyFor(null, ACTIVITIES.playfulChase);
   const breaking = choreographyFor(null, ACTIVITIES.playfulChase, "playful-chase:break");
-  assert.equal(chase.positionGain, 1.1);
+  assert.equal(chase.positionGain, STEERING_PROFILES[ACTIVITIES.playfulChase].positionGain);
   // The break profile never mentions positionGain, so it keeps the chase's.
   assert.equal(breaking.positionGain, chase.positionGain);
   assert.equal(breaking.maximumSpeed, STEERING_PROFILES["playful-chase:break"].maximumSpeed);
@@ -347,11 +347,12 @@ test("substrate showcase makes the full search-span range observable", () => {
 });
 
 test("every tunable value has a lab slider whose range contains its default", () => {
-  const steeringMeta = new Map(STEERING_FIELDS.map((definition) => [definition.key, definition]));
+  const commonSteeringMeta = new Map(STEERING_FIELDS.map((definition) => [definition.key, definition]));
   for (const field of Object.keys(DEFAULT_STEERING_PROFILE)) {
-    assert.ok(steeringMeta.has(field), field + " has no slider");
+    assert.ok(commonSteeringMeta.has(field), field + " has no slider");
   }
   for (const [key, profile] of Object.entries(STEERING_PROFILES)) {
+    const steeringMeta = new Map(steeringFieldsFor(key).map((definition) => [definition.key, definition]));
     for (const [field, value] of Object.entries(profile)) {
       const definition = steeringMeta.get(field);
       assert.ok(definition, key + "." + field + " has no slider");
