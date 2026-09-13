@@ -30,7 +30,9 @@ export function chaseArcBoundaries(tuning = null) {
   const breakSeconds = finitePositive(tuning?.breakSeconds, CHASE_DEFAULT_BREAK_SECONDS);
 
   // Keep the same dramatic proportions when the behaviour lab moves the break
-  // time. At the authored 6.2 seconds these land near 0.78s, 1.73s and 5.0s.
+  // time. At the authored 6.2 seconds these land near 0.78s, 1.73s and 4.55s.
+  // The interception gets enough runway to become an actual crossing/near miss
+  // rather than a label applied to the final second of an ordinary pursuit.
   const engageEnd = clamp(Math.min(0.78, breakSeconds * 0.16), 0.12, breakSeconds * 0.28);
   const remainingAfterEngage = Math.max(0.2, breakSeconds - engageEnd);
   const escapeDuration = clamp(
@@ -41,9 +43,9 @@ export function chaseArcBoundaries(tuning = null) {
   const escapeEnd = Math.min(breakSeconds - 0.35, engageEnd + escapeDuration);
   const roomAfterEscape = Math.max(0.25, breakSeconds - escapeEnd);
   const interceptDuration = clamp(
-    Math.min(1.2, breakSeconds * 0.2),
-    0.2,
-    Math.max(0.2, roomAfterEscape - 0.15),
+    Math.min(1.65, breakSeconds * 0.27),
+    0.3,
+    Math.max(0.3, roomAfterEscape - 0.15),
   );
   const interceptStart = Math.max(escapeEnd + 0.15, breakSeconds - interceptDuration);
   const recoverStart = breakSeconds + CHASE_RECOVERY_DELAY_SECONDS;
