@@ -459,7 +459,7 @@ test("the peck meets the substrate crest without burying the fish", () => {
   }
 });
 
-test("plant inspection hovers around one specimen while weaving alternates route sides", () => {
+test("plant inspection stays local while weaving alternates route sides", () => {
   const base = stockedAquarium({ seed: 614, wallClockHours: 12 });
   const index = 4;
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
@@ -469,7 +469,17 @@ test("plant inspection hovers around one specimen while weaving alternates route
     targetId: plant.seed,
   });
   const anchor = plantTargetPosition(source, plant, base);
-  const near = { ...source, x: anchor.x, y: anchor.y, activity: { ...source.activity, ageRealSeconds: 3.1 } };
+  const near = {
+    ...source,
+    x: anchor.x,
+    y: anchor.y,
+    activity: {
+      ...source.activity,
+      ageRealSeconds: 3.1,
+      plantVisitStage: 1,
+      plantVisitStageStartedAt: 0,
+    },
+  };
   const inspect = resolveActivityTarget(near, index, base, near.activity);
   // The head sweep and the hover are sines with seeded phases, so two arbitrary
   // instants can land on the same point however lively the inspection is. What

@@ -128,6 +128,8 @@ test("speed-bound edits cannot export an interval the controller will collapse",
 test("scene interval edits keep every lower endpoint at or below its upper endpoint", () => {
   const cases = [
     ["legTimeoutSecondsMin", "legTimeoutSecondsMax"],
+    ["inspectSecondsMin", "inspectSecondsMax"],
+    ["quietSecondsMin", "quietSecondsMax"],
     ["trailingMinRows", "trailingMaxRows"],
     ["besideMinRows", "besideMaxRows"],
     ["panicNearRows", "panicFarRows"],

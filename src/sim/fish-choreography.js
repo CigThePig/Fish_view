@@ -343,13 +343,26 @@ export function steerActivityVelocity(fish, target, {
   const currentSpeed = Math.hypot(fish.vx, fish.vy);
   const currentDirection = safeNormalize(fish.vx, fish.vy, desiredDirection.x, desiredDirection.y);
   const turnEase = 1 - Math.exp(-delta * turningResponse);
+  // The final investigation beat is a deliberate back-away from the specimen,
+  // not ordinary roaming. Near the substrate, a graceful 180-degree steering
+  // arc can lose its vertical component to body/terrain clearance every frame;
+  // the fish then keeps travelling the wrong way until a wall finally turns it.
+  // The target already marks this one bounded beat explicitly, so let its motion
+  // heading commit to the authored retreat immediately while the existing
+  // acceleration and visual turn pose still soften the departure. No other
+  // activity, including plant weave and shelter, changes steering semantics.
+  const deliberatePlantRetreat = target?.plantTarget === true
+    && target?.plantVisitFinal === true
+    && target?.choreographyPhase === "retreat";
   const turnTarget = turnableDirection(currentDirection, desiredDirection, fish.seed);
-  const steeredDirection = safeNormalize(
-    currentDirection.x + (turnTarget.x - currentDirection.x) * turnEase,
-    currentDirection.y + (turnTarget.y - currentDirection.y) * turnEase,
-    turnTarget.x,
-    turnTarget.y,
-  );
+  const steeredDirection = deliberatePlantRetreat
+    ? desiredDirection
+    : safeNormalize(
+      currentDirection.x + (turnTarget.x - currentDirection.x) * turnEase,
+      currentDirection.y + (turnTarget.y - currentDirection.y) * turnEase,
+      turnTarget.x,
+      turnTarget.y,
+    );
   const blendResponse = accelerationResponse * (0.72 + clamp(behaviorBlend, 0, 1) * 0.28);
   const accelerationEase = 1 - Math.exp(-delta * blendResponse);
   let speed = currentSpeed + (desiredSpeed - currentSpeed) * accelerationEase;

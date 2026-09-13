@@ -190,12 +190,27 @@ function semanticSnapshotTimes(scenario) {
       scenario.loopSeconds * 0.94,
     )];
   } else if (scenario.id === "plant-investigate") {
-    const inspect = phaseTime("inspect", scenario.loopSeconds * 0.45);
-    times = [0, inspect, Math.min(scenario.loopSeconds, inspect + 2.4), scenario.loopSeconds * 0.94];
+    const inspect = phaseTime("inspect", scenario.loopSeconds * 0.4);
+    const lateInspect = firstTimeAfter(
+      timeline,
+      inspect + 1.4,
+      (metadata) => metadata.phase === "inspect",
+      inspect,
+    );
+    times = [phaseTime("approach", 0), inspect, lateInspect, phaseTime("retreat", scenario.loopSeconds * 0.72)];
   } else if (scenario.id === "plant-weave") {
     // Entry, the first crossing, the second crossing, and emergence are the
     // four stills that prove this is traversal rather than target hopping.
     times = [1, 2, 4, 5].map((stage) => phaseTime(`weave-${stage}`, null));
+  } else if (scenario.id === "plant-shelter") {
+    const quiet = phaseTime("quiet", scenario.loopSeconds * 0.42);
+    const lateQuiet = firstTimeAfter(
+      timeline,
+      quiet + 2,
+      (metadata) => metadata.phase === "quiet",
+      quiet,
+    );
+    times = [phaseTime("enter", 0), quiet, lateQuiet, phaseTime("emerge", scenario.loopSeconds * 0.72)];
   } else {
     times = [];
   }

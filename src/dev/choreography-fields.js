@@ -64,6 +64,8 @@ export function constrainedSteeringEdit(profile, key, value) {
 
 const SCENE_INTERVAL_PAIRS = Object.freeze([
   Object.freeze(["legTimeoutSecondsMin", "legTimeoutSecondsMax"]),
+  Object.freeze(["inspectSecondsMin", "inspectSecondsMax"]),
+  Object.freeze(["quietSecondsMin", "quietSecondsMax"]),
   Object.freeze(["trailingMinRows", "trailingMaxRows"]),
   Object.freeze(["besideMinRows", "besideMaxRows"]),
   Object.freeze(["panicNearRows", "panicFarRows"]),
@@ -117,12 +119,18 @@ export const SCENE_FIELDS = Object.freeze({
   "plant-investigate": Object.freeze([
     field("approachSpeed", "Approach speed", "rows/s crossing to the plant", 0.02, 1.2, 0.005),
     field("approachCuriosity", "Approach · curiosity", "rows/s added by a curious fish", 0, 1, 0.005),
-    field("inspectSpeed", "Inspect speed", "rows/s once it is reading the plant", 0.01, 0.8, 0.005),
+    field("inspectSpeed", "Inspect speed", "rows/s while reading one local feature", 0.01, 0.8, 0.005),
     field("inspectCuriosity", "Inspect · curiosity", "rows/s added by a curious fish", 0, 0.5, 0.005),
     field("inspectAffinity", "Inspect · plant affinity", "rows/s added by a plant lover", 0, 0.5, 0.005),
-    field("headSweepColumns", "Head sweep", "columns the nose sweeps across the leaf", 0, 2, 0.01),
-    field("hoverRows", "Hover", "rows the body rises and falls while reading", 0, 1.5, 0.01),
-    field("stationSeconds", "Station dwell", "seconds before it moves to the next spot", 0.5, 8, 0.05),
+    field("inspectPitchDegrees", "Inspect pitch", "degrees of planted-looking body bias", -12, 12, 0.25),
+    field("headSweepColumns", "Head sweep", "columns the nose sweeps across the feature", 0, 1.2, 0.01),
+    field("hoverRows", "Hover", "rows the body rises and falls while inspecting", 0, 0.8, 0.01),
+    field("inspectSecondsMin", "Inspect time · min", "seconds held on the local inspection beat", 1, 8, 0.05),
+    field("inspectSecondsMax", "Inspect time · max", "seconds held on the local inspection beat", 1, 8, 0.05),
+    field("retreatSpeed", "Retreat speed", "rows/s leaving the plant after inspection", 0.02, 1.2, 0.005),
+    field("retreatActivity", "Retreat · activity", "rows/s added by an energetic fish", 0, 0.6, 0.005),
+    field("retreatColumns", "Retreat distance", "minimum columns moved clear of the plant", 1, 6, 0.05),
+    field("retreatRows", "Retreat vertical variation", "rows of seeded vertical offset on departure", 0, 2, 0.01),
   ]),
   "plant-weave": Object.freeze([
     field("speedBase", "Speed", "rows/s through the weave", 0.05, 1.4, 0.005),
@@ -222,6 +230,21 @@ export const SCENE_FIELDS = Object.freeze({
     field("driftSpeed", "Drift speed", "rows/s once parked", 0.005, 0.4, 0.005),
     field("driftAmplitudeRows", "Drift · horizontal", "columns of idle sway", 0, 1, 0.005),
     field("driftVerticalRows", "Drift · vertical", "rows of idle rise and fall", 0, 1, 0.005),
+  ]),
+  "plant-shelter": Object.freeze([
+    field("enterSpeed", "Entry speed", "rows/s entering plant cover", 0.02, 0.8, 0.005),
+    field("enterActivity", "Entry · activity", "rows/s added by an energetic fish", 0, 0.5, 0.005),
+    field("quietSpeed", "Quiet speed", "rows/s while settled in cover", 0.005, 0.2, 0.002),
+    field("quietActivity", "Quiet · activity", "small activity contribution while sheltered", 0, 0.1, 0.002),
+    field("quietPitchDegrees", "Quiet pitch", "degrees of body bias while sheltered", -10, 10, 0.25),
+    field("quietSecondsMin", "Quiet time · min", "seconds visibly settled in cover", 2, 12, 0.05),
+    field("quietSecondsMax", "Quiet time · max", "seconds visibly settled in cover", 2, 12, 0.05),
+    field("quietDriftColumns", "Quiet drift · horizontal", "columns of tiny sheltered drift", 0, 0.5, 0.005),
+    field("quietDriftRows", "Quiet drift · vertical", "rows of tiny sheltered drift", 0, 0.5, 0.005),
+    field("emergeSpeed", "Emergence speed", "rows/s leaving cover", 0.02, 1, 0.005),
+    field("emergeActivity", "Emergence · activity", "rows/s added by an energetic fish", 0, 0.5, 0.005),
+    field("emergeColumns", "Emergence distance", "minimum columns moved clear of cover", 1, 6, 0.05),
+    field("emergeRiseRows", "Emergence rise", "rows lifted while leaving cover", 0, 2, 0.01),
   ]),
 });
 
