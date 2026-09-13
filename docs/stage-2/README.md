@@ -32,8 +32,8 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 7.1 | Readability baseline and behavior freeze | Done | [phase 7.1](phase-7-1-readability-baseline.md) |
 | 7.2 | Playful chase — core pursuit choreography | Done | [phase 7.2](phase-7-2-playful-chase-core-pursuit.md) |
 | 7.3 | Playful chase — complete arc and ending | Done | [phase 7.3](phase-7-3-playful-chase-complete-arc.md) |
-| 7.4 | Plant weave — route and geometry redesign | Ready | [readiness](phase-7-4-plant-weave-readiness.md) |
-| 7.5 | Plant vocabulary separation and polish | Not started | — |
+| 7.4 | Plant weave — route and geometry redesign | Done | [phase 7.4](phase-7-4-plant-weave-route-and-geometry.md) |
+| 7.5 | Plant vocabulary separation and polish | Ready | [7.4 handoff](phase-7-4-plant-weave-route-and-geometry.md#phase-75-handoff) |
 | 7.6 | Remaining behavior readability audit | Not started | — |
 | 7.7 | Cross-behavior readability validation and freeze | Not started | — |
 | 8 | Scene salience and anti-synchronisation | Not started | — |
@@ -85,13 +85,22 @@ report semantic chase phases rather than the broad steering envelope used under
 the hood. Normal repository verification and the exact-commit Phase 7 evidence
 job are green. See the [Phase 7.3 report](phase-7-3-playful-chase-complete-arc.md).
 
-Phase 7.4 is prepared but has not changed production behavior yet. The current
-plant-weave route already contains useful deterministic alternating waypoints,
-but progression is driven mainly by elapsed stage time, so a slower fish can be
-given the next target before its body has completed the previous crossing. The
-next slice will make spatial traversal the normal progression signal and judge
-the fish body's actual route through vegetation rather than only the waypoint
-coordinates. See the [Phase 7.4 readiness note](phase-7-4-plant-weave-readiness.md).
+Phase 7.4 turns plant weave into an actual route through vegetation. Five
+deterministic body-aware legs now advance from physical waypoint completion
+instead of a stage clock: entry, primary crossing, threading toward/through a
+second plant when available, another crossing, and a physically reached
+emergence. Intermediate timeouts exist only as bounded stuck recovery. A six-seed
+production-path regression proves the route is spatial, while a dedicated GIF
+comparison shows weave continuously traversing vegetation beside the much more
+local plant-investigation and quiet plant-shelter controls. Full verification,
+persistence and renderer audits remain green. See the
+[Phase 7.4 report](phase-7-4-plant-weave-route-and-geometry.md).
+
+Phase 7.5 may now treat plant weave as the frozen traversal control. Its job is
+to sharpen the vocabulary around it: investigation should read approach →
+inspect → retreat, while shelter should read enter cover → quiet → emerge.
+Changes to weave itself need direct side-by-side evidence of a readability
+problem rather than general polish pressure.
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
