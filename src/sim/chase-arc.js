@@ -70,11 +70,18 @@ export function chaseArcPhase(ageRealSeconds, distance, tuning = null) {
   const bounds = chaseArcBoundaries(tuning);
   const forcedEscapeStart = Math.max(bounds.engageEnd, bounds.escapeEnd - 0.72);
 
+  // A semantic chase cannot start before the companion is actually close
+  // enough to perceive it. Natural selection now begins chases inside this
+  // radius, and this guard also keeps hand-posed/lab states honest if the pair
+  // starts or drifts outside it.
+  if (!Number.isFinite(distance) || distance > radius) return CHASE_ARC_PHASES.engage;
+
   // Recognition is not panic. The chaser may be noticed at the outer radius,
   // but the target stays on its line while the gap closes. Once the pair enters
   // the panic band, or the opening has run long enough, the target gets one
   // unmistakable escape beat. This keeps the four-row invariant from becoming
-  // a distant formation while still guaranteeing an escape in every chase.
+  // a distant formation while still guaranteeing an escape in every chase that
+  // was selected from a recognized companion.
   if (age < bounds.engageEnd
     || (distance > panicFar && age < forcedEscapeStart)) return CHASE_ARC_PHASES.engage;
   if (age < bounds.escapeEnd) return CHASE_ARC_PHASES.escape;

@@ -694,13 +694,15 @@ function activityChoices(fish, index, state, {
       ) / playPeriod;
       const daylight = state.timeOfDayHours >= 6 && state.timeOfDayHours < 20;
       // A compatible fish met at close range can invite a first game. Long-
-      // term familiarity still chooses companions, but no longer gates every
-      // playful encounter in a new aquarium behind minutes of prior contact.
+      // term familiarity still chooses companions, but every chase begins with
+      // a companion that is physically inside the authored recognition range.
+      const chaseRecognitionRadius = sceneTuning(state, ACTIVITIES.playfulChase).recognitionRadiusRows;
       const firstMeeting = companion.distance < 4.5 && companion.compatibility > 0.65;
       const availableForPlay = companion.fish.behavior?.current !== 'rest'
         && companion.fish.behavior?.current !== 'forage';
       if (fish.activity?.current !== ACTIVITIES.playfulChase
-        && availableForPlay && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
+        && availableForPlay && companion.distance <= chaseRecognitionRadius
+        && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
         && traits.activity > 0.38 && traits.sociability > 0.34
         && (companion.familiarity >= 0.018 || firstMeeting)) {
         choices.push(choice(
@@ -1524,6 +1526,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
           postureBias: 0,
           companionTarget: true,
           playfulChase: true,
+          chaseTuning: tuning,
           choreographyPhase: "break",
         }, "playful-chase:break");
       }
@@ -1551,6 +1554,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
         postureBias: 0,
         companionTarget: true,
         playfulChase: true,
+        chaseTuning: tuning,
         choreographyPhase: phase,
       });
     }
@@ -1857,9 +1861,11 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
 
   if (activity.current === ACTIVITIES.surfaceInvestigate) {
     const stage = activity.surfaceStage ?? 0;
-    const surfaceY = surfaceSafeY(fish, state, activity.targetX ?? fish.x);
+    const halfWidth = spriteHalfWidth(fish);
+    const targetX = clamp(activity.targetX ?? fish.x, halfWidth, state.cols - halfWidth);
+    const surfaceY = surfaceSafeY(fish, state, targetX);
     const arrived = Math.abs(fish.y - surfaceY) < 1.12
-      && Math.abs(fish.x - activity.targetX) < 2;
+      && Math.abs(fish.x - targetX) < 2;
     const held = activity.ageRealSeconds - (activity.surfaceStageStartedAt ?? 0);
     if ((stage === 0 && arrived) || (stage === 1 && held >= 2.8)) {
       activity = { ...activity, surfaceStage: stage + 1, surfaceStageStartedAt: activity.ageRealSeconds };

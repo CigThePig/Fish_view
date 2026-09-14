@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -17,6 +18,12 @@ const STEP_SECONDS = 0.1;
 const DEFAULT_SCALE = 0.5;
 const DEFAULT_OUTPUT = ".behavior-captures/phase-7-1";
 const SNAPSHOT_FRACTIONS = Object.freeze([0, 0.32, 0.64, 0.92]);
+
+// This commit contains the Phase 7.1 capture tool and report but predates all
+// Phase 7 production choreography edits. A baseline rendered from a later HEAD
+// is not a baseline at all, so the baseline contract deliberately refuses to
+// run from another source revision. CI checks out this revision separately.
+export const PHASE_7_BASELINE_CAPTURE_COMMIT = "bd78dccca7d05a95f5674b3a683a45c12de940e0";
 
 async function loadCanvasModule() {
   try {
@@ -58,6 +65,25 @@ function parseOptions(argumentsList) {
     scale,
     output: path.resolve(optionValue(argumentsList, "--output", DEFAULT_OUTPUT)),
   };
+}
+
+function currentCommit() {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  } catch (error) {
+    throw new Error("Phase 7 capture could not determine the checked-out commit.", { cause: error });
+  }
+}
+
+function assertPreservedBaselineSource(options) {
+  if (options.contract !== "baseline") return;
+  const commit = currentCommit();
+  if (commit === PHASE_7_BASELINE_CAPTURE_COMMIT) return;
+  throw new Error(
+    "Phase 7 baseline evidence must be rendered from preserved commit "
+      + `${PHASE_7_BASELINE_CAPTURE_COMMIT}; current HEAD is ${commit}. `
+      + "Use the phase7-evidence workflow or check out the preserved commit before running the baseline capture.",
+  );
 }
 
 function blindOrder(scenario, contract) {
@@ -180,6 +206,7 @@ async function captureBlindSheet(canvasModule, options) {
 }
 
 const options = parseOptions(process.argv.slice(2));
+assertPreservedBaselineSource(options);
 const canvasModule = await loadCanvasModule();
 await mkdir(options.output, { recursive: true });
 const result = await captureBlindSheet(canvasModule, options);

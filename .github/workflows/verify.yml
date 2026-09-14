@@ -46,7 +46,7 @@ jobs:
   phase7-evidence:
     if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
@@ -61,8 +61,20 @@ jobs:
       - name: Capture chase and nearest visual neighbor
         run: npm run capture:behaviors -- --scenario=playful-chase,individual-follow --scale=0.35 --gif --output=.audit-output/chase-captures
 
-      - name: Capture blind Phase 7 baseline
-        run: npm run capture:phase7-baseline -- --scale=0.25 --output=.audit-output/phase7-baseline
+      # The "before" capture must execute the code that existed when Phase 7.1
+      # froze the vocabulary. Running the baseline command from final HEAD would
+      # simply recapture final choreography under baseline labels.
+      - name: Checkout preserved Phase 7.1 baseline source
+        uses: actions/checkout@v6
+        with:
+          ref: bd78dccca7d05a95f5674b3a683a45c12de940e0
+          path: .phase7-baseline-source
+
+      - name: Capture preserved blind Phase 7 baseline
+        working-directory: .phase7-baseline-source
+        run: |
+          npm ci
+          npm run capture:phase7-baseline -- --scale=0.25 --output="$GITHUB_WORKSPACE/.audit-output/phase7-baseline"
 
       - name: Audit final Phase 7 vocabulary across identities and body profiles
         run: npm run audit:phase7-vocabulary -- --output=.audit-output/phase7-final-audit

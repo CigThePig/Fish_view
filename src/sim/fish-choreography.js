@@ -7,7 +7,6 @@ import {
   CHASE_ARC_PHASES,
   CHASE_DEFAULT_BREAK_SECONDS,
   CHASE_DEFAULT_RECOGNITION_RADIUS,
-  CHASE_RECOVERY_DELAY_SECONDS,
   chaseArcBoundaries,
   chaseArcPhase,
   chaseArcProgress,
@@ -266,6 +265,7 @@ export function steerActivityVelocity(fish, target, {
   }
 
   const chasePhaseName = target?.playfulChase ? target?.choreographyPhase : null;
+  const chaseTuning = target?.playfulChase ? target?.chaseTuning ?? null : null;
   const chaseActive = chasePhaseName === CHASE_ARC_PHASES.escape
     || chasePhaseName === CHASE_ARC_PHASES.pursuit
     || chasePhaseName === CHASE_ARC_PHASES.intercept;
@@ -291,7 +291,7 @@ export function steerActivityVelocity(fish, target, {
     const agility = chaseBodyAgility(fish);
 
     if (chasePhaseName === CHASE_ARC_PHASES.escape) {
-      const progress = chaseArcProgress(age, CHASE_ARC_PHASES.escape);
+      const progress = chaseArcProgress(age, CHASE_ARC_PHASES.escape, chaseTuning);
       accelerationResponse *= 0.36 + progress * (0.28 + traits.activity * 0.08);
       turningResponse *= (0.58 + progress * 0.28) * agility;
       maximumSpeed *= 0.7 + progress * 0.08;
@@ -299,7 +299,7 @@ export function steerActivityVelocity(fish, target, {
       accelerationResponse *= 1.02 + traits.activity * 0.16;
       turningResponse *= agility;
     } else if (chasePhaseName === CHASE_ARC_PHASES.intercept) {
-      const progress = chaseArcProgress(age, CHASE_ARC_PHASES.intercept);
+      const progress = chaseArcProgress(age, CHASE_ARC_PHASES.intercept, chaseTuning);
       const correctionRelease = smoothstep(0.5, 0.86, progress);
       const surge = 1.46 + traits.activity * 0.12;
       desiredVx *= surge;
@@ -311,8 +311,9 @@ export function steerActivityVelocity(fish, target, {
         (1.58 + Math.max(0, agility - 1) * 0.18) * motionScale,
       );
     } else if (chasePhaseName === "break") {
-      const agePastAuthoredBreak = Math.max(0, age - CHASE_BREAK_SECONDS);
-      const recovering = agePastAuthoredBreak >= CHASE_RECOVERY_DELAY_SECONDS;
+      const bounds = chaseArcBoundaries(chaseTuning);
+      const agePastAuthoredBreak = Math.max(0, age - bounds.breakSeconds);
+      const recovering = age >= bounds.recoverStart;
       const breakTurn = smoothstep(0, 0.72, agePastAuthoredBreak);
       const turnSign = (mix32((fish.seed >>> 0) ^ 0x6a09e667) & 1) === 0 ? -1 : 1;
       const rotated = rotateVector(

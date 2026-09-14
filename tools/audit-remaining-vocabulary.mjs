@@ -94,6 +94,14 @@ const personState=state;
 const personFish=state.individuals.find(f=>['cruise','school-follow','open-water-wander'].includes(f.activity.current))??state.individuals[0];
 const point={x:personFish.x+2,y:personFish.y};
 examples['human-hold']={state:personState,index:state.individuals.indexOf(personFish),point};
+
+// A production-path evidence gate is only meaningful when every activity it
+// claims to cover actually occurred. Keep writing the partial diagnostics when
+// one is absent so CI has evidence to inspect, but report the gap and exit
+// nonzero instead of silently turning a missing episode into a green build.
+const requiredEpisodes=[...wanted];
+const missingEpisodes=requiredEpisodes.filter(name=>!examples[name]);
+
 const records=[];
 for(const [name,example] of Object.entries(examples)){
  await writeFile(`${output}/${name}-state.json`,JSON.stringify(example));
@@ -108,5 +116,9 @@ for(const [name,example] of Object.entries(examples)){
  }
  records.push({name,index:example.index,fishSeed:example.state.individuals[example.index].seed,frames});
 }
-await writeFile(`${output}/natural.json`,JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),seconds,youngSeconds:600,counts,episodes,saveBytes:JSON.stringify(serializePersistentState(state)).length,records},null,2));
-console.log(JSON.stringify({seconds,episodes,examples:Object.keys(examples)}));
+await writeFile(`${output}/natural.json`,JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),seconds,youngSeconds:600,counts,episodes,requiredEpisodes,missingEpisodes,saveBytes:JSON.stringify(serializePersistentState(state)).length,records},null,2));
+console.log(JSON.stringify({seconds,episodes,examples:Object.keys(examples),requiredEpisodes,missingEpisodes}));
+if(missingEpisodes.length){
+ console.error(`Missing required production episodes: ${missingEpisodes.join(', ')}`);
+ process.exitCode=1;
+}
