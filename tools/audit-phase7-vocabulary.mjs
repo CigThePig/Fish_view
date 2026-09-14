@@ -148,21 +148,29 @@ function observeScenario(scenario, seed, failures) {
   };
 }
 
-function summarizeActivity(record, scenario, samples) {
+function summarizeActivity(record, scenario, samples, failures) {
   const profiles = [...new Set(samples.map((sample) => (
     sample.identity.species + ":" + sample.identity.width + "x" + sample.identity.height
   )))];
+  const identityCount = new Set(samples.map((sample) => sample.identity.seed)).size;
   const traits = {};
   for (const key of ["boldness", "sociability", "activity", "preferredDepth", "curiosity"]) {
     traits[key] = range(samples.map((sample) => sample.identity.traits[key]));
   }
+  const variedTraits = Object.values(traits)
+    .filter((values) => values.maximum - values.minimum >= 0.12)
+    .length;
+  if (identityCount !== SEED_LABELS.length) failures.push(record.activity + ": identity matrix collapsed");
+  if (profiles.length < 2) failures.push(record.activity + ": body-profile matrix did not vary");
+  if (variedTraits < 3) failures.push(record.activity + ": fewer than three seeded traits varied materially");
   return {
     activity: record.activity,
     decision: record.decision,
     visualSentence: record.visualSentence,
     cueCount: record.cues.length,
-    identityCount: new Set(samples.map((sample) => sample.identity.seed)).size,
+    identityCount,
     bodyProfiles: profiles,
+    variedTraits,
     traitRanges: traits,
     phases: [...new Set(samples.flatMap((sample) => sample.phases))],
     exitActivities: [...new Set(samples.map((sample) => sample.transition?.to).filter(Boolean))],
@@ -230,7 +238,7 @@ for (const record of PHASE_7_FINAL_VOCABULARY.filter((item) => item.showcase)) {
   const samples = SEED_LABELS
     .map((label) => observeScenario(scenario, hashSeed(label), failures))
     .filter(Boolean);
-  activities.push(summarizeActivity(record, scenario, samples));
+  activities.push(summarizeActivity(record, scenario, samples, failures));
 }
 
 const allSamples = activities.flatMap((activity) => activity.samples);
@@ -259,6 +267,16 @@ const summary = {
 
 await writeFile(output + "/phase-7-7-audit.json", JSON.stringify(summary, null, 2) + "\n");
 await writeFile(output + "/phase-7-7-audit.md", markdown(summary));
+for (const row of activities) {
+  console.log([
+    row.activity,
+    "identities=" + row.identityCount,
+    "bodies=" + row.bodyProfiles.length + " (" + row.bodyProfiles.join(",") + ")",
+    "variedTraits=" + row.variedTraits,
+    "exits=" + (row.exitActivities.join(",") || "continuous"),
+    "peakStep=" + row.peakFrameStep,
+  ].join(" "));
+}
 console.log(JSON.stringify({
   commit: summary.commit,
   activities: activities.length,

@@ -46,7 +46,7 @@ jobs:
   phase7-evidence:
     if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
