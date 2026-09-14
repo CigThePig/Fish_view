@@ -34,7 +34,7 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 7.3 | Playful chase — complete arc and ending | Done | [phase 7.3](phase-7-3-playful-chase-complete-arc.md) |
 | 7.4 | Plant weave — route and geometry redesign | Done | [phase 7.4](phase-7-4-plant-weave-route-and-geometry.md) |
 | 7.5 | Plant vocabulary separation and polish | Done | [phase 7.5](phase-7-5-plant-vocabulary-separation-and-polish.md) |
-| 7.6 | Remaining behavior readability audit | Ready | [7.5 handoff](phase-7-5-plant-vocabulary-separation-and-polish.md#phase-76-handoff) |
+| 7.6 | Remaining behavior readability audit | Done | [phase 7.6](phase-7-6-remaining-behavior-readability.md) |
 | 7.7 | Cross-behavior readability validation and freeze | Not started | — |
 | 8 | Scene salience and anti-synchronisation | Not started | — |
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
@@ -105,6 +105,16 @@ for each behavior complete the authored arc, the difficult regression fixtures
 now finish naturally, and the exact visual comparison keeps weave energetic and
 spatial while investigation stays local and shelter becomes nearly still. See
 the [Phase 7.5 report](phase-7-5-plant-vocabulary-separation-and-polish.md).
+
+Phase 7.6 audits the remaining vocabulary and fixes two demonstrated weaknesses.
+Companions now travel together and separate gently, and surface visits physically
+ascend, probe and descend toward reachable local targets. The temporary post-7.5
+relationship diagnostic is reconciled and removed; available low-energy fish can
+volunteer while actual rest and feeding remain protected. Other individual
+choreography stays frozen. Unsolicited glass-to-person attribution is explicitly
+deferred to Phase 8 scene salience and context. See the
+[Phase 7.6 PASS report](phase-7-6-remaining-behavior-readability.md). Phase 7.7 is
+next, but has not started.
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
