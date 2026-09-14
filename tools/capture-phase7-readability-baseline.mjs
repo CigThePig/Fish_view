@@ -8,6 +8,7 @@ import {
   tickShowcase,
 } from "../src/dev/behavior-showcase.js";
 import { PHASE_7_BASELINE_BY_ACTIVITY } from "../src/dev/phase-7-readability-baseline.js";
+import { PHASE_7_FINAL_BY_ACTIVITY } from "../src/dev/phase-7-behavior-vocabulary.js";
 import { hashSeed, mix32 } from "../src/sim/prng.js";
 import { CanvasSceneRenderer } from "../src/render/canvas-renderer.js";
 import { render } from "../src/render/render.js";
@@ -50,14 +51,17 @@ function parseOptions(argumentsList) {
   if (!Number.isFinite(scale) || scale < 0.2 || scale > 1) {
     throw new Error("--scale must be between 0.2 and 1");
   }
+  const contract = optionValue(argumentsList, "--contract", "baseline");
+  if (!["baseline", "final"].includes(contract)) throw new Error("--contract must be baseline or final");
   return {
+    contract,
     scale,
     output: path.resolve(optionValue(argumentsList, "--output", DEFAULT_OUTPUT)),
   };
 }
 
-function blindOrder(scenario) {
-  return mix32(hashSeed("phase-7-1-blind-order") ^ hashSeed(scenario.id));
+function blindOrder(scenario, contract) {
+  return mix32(hashSeed("phase-7-" + contract + "-blind-order") ^ hashSeed(scenario.id));
 }
 
 function sampleName(index) {
@@ -90,7 +94,7 @@ async function captureBlindSheet(canvasModule, options) {
   const frameLabelHeight = 22;
   const columns = 4;
   const scenarios = [...SHOWCASE_SCENARIOS].sort((left, right) => (
-    blindOrder(left) - blindOrder(right) || left.id.localeCompare(right.id)
+    blindOrder(left, options.contract) - blindOrder(right, options.contract) || left.id.localeCompare(right.id)
   ));
   const rowHeight = headerHeight + frameLabelHeight + frame.height;
   const sheet = createCanvas(frame.width * columns, rowHeight * scenarios.length);
@@ -140,25 +144,31 @@ async function captureBlindSheet(canvasModule, options) {
       renderer.draw(render(state));
     }
 
-    const baseline = PHASE_7_BASELINE_BY_ACTIVITY[scenario.id];
+    const record = options.contract === "final"
+      ? PHASE_7_FINAL_BY_ACTIVITY[scenario.id]
+      : PHASE_7_BASELINE_BY_ACTIVITY[scenario.id];
     key.push({
       sample,
       activity: scenario.id,
       label: scenario.label,
-      status: baseline?.status ?? null,
-      policy: baseline?.policy ?? null,
-      visualSentence: baseline?.visualSentence ?? null,
-      cues: baseline?.cues ?? [],
-      nearestNeighbors: baseline?.nearestNeighbors ?? [],
-      owner: baseline?.owner ?? null,
+      status: record?.status ?? null,
+      policy: record?.policy ?? null,
+      visualSentence: record?.visualSentence ?? null,
+      cues: record?.cues ?? [],
+      nearestNeighbors: record?.nearestNeighbors ?? [],
+      owner: record?.owner ?? null,
+      decision: record?.decision ?? null,
+      frozen: record?.frozen ?? false,
     });
   }
 
-  const sheetFile = "phase-7-1-blind-contact-sheet.png";
-  const keyFile = "phase-7-1-blind-key.json";
+  const prefix = options.contract === "final" ? "phase-7-7-final" : "phase-7-1";
+  const sheetFile = prefix + "-blind-contact-sheet.png";
+  const keyFile = prefix + "-blind-key.json";
   await writeFile(path.join(options.output, sheetFile), sheet.toBuffer("image/png"));
   await writeFile(path.join(options.output, keyFile), `${JSON.stringify({
-    version: 1,
+    version: options.contract === "final" ? 2 : 1,
+    contract: options.contract,
     purpose: "Review motion readability without behavior names or choreography-phase labels on the image.",
     stepSeconds: STEP_SECONDS,
     scale: options.scale,
@@ -174,7 +184,7 @@ const canvasModule = await loadCanvasModule();
 await mkdir(options.output, { recursive: true });
 const result = await captureBlindSheet(canvasModule, options);
 
-console.log(`Wrote Phase 7.1 blind readability baseline to ${options.output}`);
+console.log("Wrote Phase 7 " + options.contract + " blind readability evidence to " + options.output);
 console.log(`- ${result.sheetFile}`);
 console.log(`- ${result.keyFile}`);
 console.log(`- ${result.sampleCount} behavior samples`);

@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Persistent 800 \u00d7 480 landscape ASCII aquarium.",
+  "description": "Persistent 800 × 480 landscape ASCII aquarium.",
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test",
-    "verify": "npm test && npm run audit:simulation && npm run audit:persistence -- --cases=200 && npm run audit:render && npm run measure:feeding && npm run measure:relationship",
+    "verify": "npm test && npm run audit:simulation && npm run audit:persistence -- --cases=200 && npm run audit:render && npm run measure:feeding && npm run measure:relationship && npm run measure:readability",
     "audit:simulation": "node tools/audit-simulation.mjs",
     "audit:render": "node tools/audit-render.mjs",
     "audit:persistence": "node tools/audit-persistence.mjs",
@@ -31,7 +31,9 @@
     "dev": "node tools/serve.mjs",
     "build:pages": "node tools/build-pages.mjs",
     "measure:remaining-vocabulary": "node tools/audit-remaining-vocabulary.mjs",
-    "capture:episode": "node tools/capture-vocabulary-episode.mjs"
+    "capture:episode": "node tools/capture-vocabulary-episode.mjs",
+    "audit:phase7-vocabulary": "node tools/audit-phase7-vocabulary.mjs",
+    "capture:phase7-final": "node tools/capture-phase7-readability-baseline.mjs --contract=final"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.100"
