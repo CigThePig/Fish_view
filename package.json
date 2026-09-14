@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Persistent 800 × 480 landscape ASCII aquarium.",
+  "description": "Persistent 800 \u00d7 480 landscape ASCII aquarium.",
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test",
@@ -29,7 +29,9 @@
     "measure:living": "node tools/measure-living-aquarium.mjs",
     "preview:branch": "node tools/branch-preview-url.mjs",
     "dev": "node tools/serve.mjs",
-    "build:pages": "node tools/build-pages.mjs"
+    "build:pages": "node tools/build-pages.mjs",
+    "measure:remaining-vocabulary": "node tools/audit-remaining-vocabulary.mjs",
+    "capture:episode": "node tools/capture-vocabulary-episode.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.100"

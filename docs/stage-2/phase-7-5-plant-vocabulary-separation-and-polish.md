@@ -75,6 +75,23 @@ The exact evidence capture contains animated GIFs for `plant-investigate`, `plan
 
 The motion signatures are visibly distinct: investigation stays local to one specimen, weave travels through the vegetation field at much higher speed and with side crossings, and shelter deliberately collapses into near-stillness before leaving cover.
 
+## Post-closure diagnostic reconciliation (2026-09-14)
+
+`10ece367c5553eb3ef33532d1c3494f5db421309` added only a temporary
+relationship-diagnosis workflow. It did not change the plant implementation or
+invalidate the plant visual PASS. Its two-/six-hour missing bold visitor was
+an independent Phase 6 eligibility defect: the mature selected fish (seed
+1763545983) balances at energy 0.273–0.274 while spending 5,200 of 7,200 seconds
+in available school-follow. A redundant 0.3 energy veto excluded all of those
+opportunities. Actual activity commitment already protects rest and feeding.
+
+The veto was removed, retaining those activity guards, and the temporary
+workflow was deleted. The unchanged two-hour production measurement now records
+13 bold visits (5.47% occupancy), 8 cautious (3.20%) and 16 attentive (7.18%).
+The normal measurement assertions pass; they were neither bypassed nor relaxed.
+A focused regression checks low-energy availability and continued rest/shelter
+exclusion. See [relationship evidence](../assets/stage-2/phase-7-6/relationship.json).
+
 ## Phase 7.6 handoff
 
 Phase 7.6 may audit the remaining behavior vocabulary. Treat the completed plant trio, playful chase, bubble investigation, substrate feeding, and the other previously frozen behaviors as references unless new visual evidence demonstrates a concrete regression. Do not reopen the plant trio merely to make metrics more different.

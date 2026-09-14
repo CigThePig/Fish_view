@@ -235,6 +235,9 @@ export function createActivityState(current = ACTIVITIES.cruise, previous = curr
     // Three bounded beats used only by plant investigation and shelter.
     plantVisitStage: 0,
     plantVisitStageStartedAt: 0,
+    // Surface arrival is physical; only the short probe hold is timed.
+    surfaceStage: 0,
+    surfaceStageStartedAt: 0,
     // The two strikes that last put a mouth in the sand, by their own event
     // seeds. Silt is something a strike did, so the tail it leaves has to
     // belong to one - and a tail outlives the peck that raised it by half a
@@ -285,6 +288,9 @@ function normalizedActivity(fish) {
     plantVisitStageStartedAt: Number.isFinite(source?.plantVisitStageStartedAt)
       ? Math.max(0, source.plantVisitStageStartedAt)
       : 0,
+    surfaceStage: Number.isInteger(source?.surfaceStage) ? clamp(source.surfaceStage, 0, 2) : 0,
+    surfaceStageStartedAt: Number.isFinite(source?.surfaceStageStartedAt)
+      ? Math.max(0, source.surfaceStageStartedAt) : 0,
     contactSeed: Number.isSafeInteger(source?.contactSeed) ? source.contactSeed : null,
     priorContactSeed: Number.isSafeInteger(source?.priorContactSeed) ? source.priorContactSeed : null,
     contactX: Number.isFinite(source?.contactX) ? source.contactX : null,
@@ -662,6 +668,9 @@ function activityChoices(fish, index, state, {
         + continuity(ACTIVITIES.schoolFollow) + jitter(ACTIVITIES.schoolFollow),
       { targetType: "school" },
     )];
+    // One school-follow bout after company gives the pair a gentle separation
+    // instead of immediately renewing the same formation or trailing partner.
+    if (fish.activity?.current === ACTIVITIES.companionCruise) return choices;
     if (companion) {
       choices.push(choice(
         ACTIVITIES.individualFollow,
@@ -716,7 +725,8 @@ function activityChoices(fish, index, state, {
     // Completed/invalid vegetation visits deliberately exit into open water
     // for one readable route before the same favourite can win again.
     if (fish.activity?.current === ACTIVITIES.plantWeave
-      || fish.activity?.current === ACTIVITIES.plantInvestigate) return choices;
+      || fish.activity?.current === ACTIVITIES.plantInvestigate
+      || fish.activity?.current === ACTIVITIES.surfaceInvestigate) return choices;
 
     if (fish.activity?.current === ACTIVITIES.driftingInspect) return choices;
     const tuft = livingWorldRecords(state).filter((r) => r.kind === 'tuft'
@@ -785,9 +795,14 @@ function activityChoices(fish, index, state, {
       const broken = consequenceIsVisible(nearestBreak) ? nearestBreak : null;
       const reach = broken ? consequenceReach(state, fish, "surface-break") : 0;
       if (cycle <= window || broken) {
-        const point = broken
-          ? { x: broken.x, y: surfaceSafeY(fish, state, broken.x) }
+        const suggested = broken
+          ? { x: broken.x }
           : waypointFor(fish, index, state, traits, affinities, "surface");
+        // A spontaneous surface trip should ascend, not spend its entire bout
+        // crossing the tank toward a distant waypoint. Keep an actual broken
+        // patch as its target; otherwise inspect the nearby meniscus.
+        const x = broken ? suggested.x : clamp(suggested.x, fish.x - 3.2, fish.x + 3.2);
+        const point = { x, y: surfaceSafeY(fish, state, x) };
         choices.push(choice(
           ACTIVITIES.surfaceInvestigate,
           0.24 + affinities.surface * 0.86 + traits.curiosity * 0.18
@@ -826,6 +841,8 @@ export function selectActivity(fish, index, state, context = {}) {
     weaveStageStartedAt: 0,
     plantVisitStage: 0,
     plantVisitStageStartedAt: 0,
+    surfaceStage: 0,
+    surfaceStageStartedAt: 0,
   };
 }
 
@@ -857,21 +874,23 @@ function companionOffset(fish, companion, activity, state) {
   const mutualCompanion = activity === ACTIVITIES.companionCruise
     && companion.activity?.current === ACTIVITIES.companionCruise
     && companion.activity?.targetId === fish.seed;
-  const existingSide = (fish.x - companion.x) * basePerpendicular.x
-    + (fish.y - companion.y) * basePerpendicular.y;
-  // Once a pair already has an above/below ordering, preserve it. Crossing
-  // both ASCII bodies merely to reach a seed-selected slot reads as collision,
-  // not cooperation. A near-tie still uses the stable pair seed.
-  const side = mutualCompanion && Math.abs(existingSide) > 0.18
-    ? Math.sign(existingSide)
-    : seededSide;
+  // Keep mutual spacing in the tank's vertical frame. Rotating each slot by
+  // the other fish's correction heading creates a feedback orbit: neither
+  // animal supplies an independent forward reference.
+  if (mutualCompanion) {
+    const side = Math.abs(fish.y - companion.y) > 0.18 ? Math.sign(fish.y - companion.y) : seededSide;
+    return {
+      x: companion.x,
+      y: companion.y + side * sampleRange(pairSeed, 8501, tuning.besideMinRows, tuning.besideMaxRows),
+    };
+  }
+  const side = seededSide;
   const perpendicular = {
     x: basePerpendicular.x * side,
     y: basePerpendicular.y * side,
   };
-  // Mutual companions each steer to the same full center spacing. A unilateral
-  // cruiser uses that visible spacing too. Both cases keep the authored
-  // ASCII bodies adjacent rather than compositing them into one tangled fish.
+  // A unilateral cruiser keeps the same visible body spacing while a
+  // follower stays in the smaller rear-offset slot.
   const beside = sampleRange(pairSeed, 8501, tuning.besideMinRows, tuning.besideMaxRows);
   return {
     x: companion.x - velocity.x * trailing + perpendicular.x * beside,
@@ -1422,16 +1441,27 @@ export function resolveActivityTarget(fish, index, state, activity, {
   if (activity.current === ACTIVITIES.surfaceInvestigate) {
     if (index < 3 || !Number.isFinite(activity.targetX)) return null;
     const tuning = sceneTuning(state, ACTIVITIES.surfaceInvestigate);
+    const stage = activity.surfaceStage ?? 0;
     const lateralPhase = activity.ageRealSeconds * (0.5 + traits.curiosity * 0.18)
       + sampleRange(fish.seed, 8200, 0, TAU);
     const halfWidth = spriteHalfWidth(fish);
     const x = clamp(
-      activity.targetX + Math.sin(lateralPhase) * (tuning.sweepColumns + affinities.surface * 0.72),
+      activity.targetX + (stage === 1 ? Math.sin(lateralPhase) * (tuning.sweepColumns + affinities.surface * 0.72) : 0),
       halfWidth,
       state.cols - halfWidth,
     );
     const safeY = surfaceSafeY(fish, state, x);
-    const near = Math.abs(fish.y - safeY) < 1.12;
+    if (stage === 2) {
+      return choreographed(state, activity.current, {
+        x,
+        y: Math.min(substrateSafeY(fish, state, x), safeY + 3.2),
+        speed: tuning.ascendSpeed,
+        postureBias: 8,
+        surfaceInspect: true,
+        choreographyPhase: "descend",
+      });
+    }
+    const near = stage === 1;
     const probe = near ? Math.max(0, Math.sin(activity.ageRealSeconds * 2.35
       + sampleRange(fish.seed, 8201, 0, TAU))) : 0;
     return choreographed(state, activity.current, {
@@ -1529,12 +1559,30 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const mutualCompanion = activity.current === ACTIVITIES.companionCruise
       && companion.activity?.current === ACTIVITIES.companionCruise
       && companion.activity?.targetId === fish.seed;
+    if (activity.current === ACTIVITIES.companionCruise
+      && activity.ageRealSeconds >= activityDwell(fish, activity.current).maximum - 4) {
+      const forward = fish.vx < 0 ? -1 : 1;
+      const side = fish.y < companion.y ? -1 : 1;
+      const departure = boundedPlantPoint(fish, state, fish.x + forward * 4, fish.y + side * 2);
+      return choreographed(state, activity.current, {
+        ...departure, speed: tuning.speedBase, postureBias: 0,
+        choreographyPhase: "separate",
+      });
+    }
+    // A mutual pair needs a shared travel velocity as well as spacing. Pure
+    // reciprocal matching decays into two stationary fish keeping each other
+    // company. Their mean heading supplies travel; neither copies the other's pose.
+    const guide = fish.seed < companion.seed ? fish : companion;
+    const forward = mutualCompanion ? {
+      x: fish.vx + companion.vx < 0 ? -1 : 1,
+      y: Math.sin(state.elapsedRealSeconds / 11 + sampleRange(guide.seed, 8502, 0, TAU)) * 0.08,
+    } : null;
     return choreographed(state, activity.current, {
       x: point.x,
       y: point.y,
       speed: tuning.speedBase + traits.sociability * tuning.speedSociability,
-      velocityX: companion.vx,
-      velocityY: companion.vy,
+      velocityX: mutualCompanion ? forward.x * tuning.speedBase : companion.vx,
+      velocityY: mutualCompanion ? forward.y * tuning.speedBase : companion.vy,
       postureBias: 0,
       companionTarget: true,
       mutualCompanion,
@@ -1688,7 +1736,7 @@ function naturalCompletion(fish, activity, target, dwell) {
     return activity.weaveStage >= WEAVE_ROUTE_LAST_STAGE
       && distance <= WEAVE_ARRIVAL_RADIUS;
   }
-  if (activity.current === ACTIVITIES.surfaceInvestigate) return distance < 0.72;
+  if (activity.current === ACTIVITIES.surfaceInvestigate) return activity.surfaceStage === 2 && distance < 0.72;
   if (activity.current === ACTIVITIES.arrivalEnter) return distance < 0.9;
   return false;
 }/**
@@ -1786,7 +1834,7 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
         && resume.current !== ACTIVITIES.touchReact
         && activityMatchesBehavior(resume.current, fish.behavior?.current);
       const resumed = resumable
-        ? { ...resume, ageRealSeconds: 0, weaveStageStartedAt: 0, plantVisitStageStartedAt: 0 }
+        ? { ...resume, ageRealSeconds: 0, weaveStageStartedAt: 0, plantVisitStageStartedAt: 0, surfaceStageStartedAt: 0 }
         : null;
       if (resumed && resolve(resumed, null)) activity = resumed;
     }
@@ -1795,7 +1843,8 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);
   const committedPlantVisit = [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]
     .includes(activity.current);
-  if (!compatible && !committedPlantVisit) {
+  const committedSurfaceVisit = activity.current === ACTIVITIES.surfaceInvestigate;
+  if (!compatible && !committedPlantVisit && !committedSurfaceVisit) {
     activity = selectActivity(fish, index, state, { ...context, traits, affinities });
   } else if (activity !== previous) activity = { ...activity };
   else activity = { ...activity, ageRealSeconds: activity.ageRealSeconds + realDelta };
@@ -1806,15 +1855,25 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   activity = advanceWeaveProgress(fish, state, activity);
   activity = advancePlantVisitProgress(fish, state, activity);
 
+  if (activity.current === ACTIVITIES.surfaceInvestigate) {
+    const stage = activity.surfaceStage ?? 0;
+    const surfaceY = surfaceSafeY(fish, state, activity.targetX ?? fish.x);
+    const arrived = Math.abs(fish.y - surfaceY) < 1.12
+      && Math.abs(fish.x - activity.targetX) < 2;
+    const held = activity.ageRealSeconds - (activity.surfaceStageStartedAt ?? 0);
+    if ((stage === 0 && arrived) || (stage === 1 && held >= 2.8)) {
+      activity = { ...activity, surfaceStage: stage + 1, surfaceStageStartedAt: activity.ageRealSeconds };
+    }
+  }
   let target = resolve(activity, attention);
   const dwell = activityDwell(fish, activity.current);
-  const plantVisitSafetyMaximum = activity.current === ACTIVITIES.plantInvestigate
+  const activitySafetyMaximum = activity.current === ACTIVITIES.plantInvestigate
     ? Math.max(dwell.maximum, 42)
     : activity.current === ACTIVITIES.plantShelter
       ? Math.max(dwell.maximum, 52)
-      : dwell.maximum;
+      : activity.current === ACTIVITIES.surfaceInvestigate ? 35 : dwell.maximum;
   if (!target
-    || activity.ageRealSeconds >= plantVisitSafetyMaximum
+    || activity.ageRealSeconds >= activitySafetyMaximum
     || naturalCompletion(fish, activity, target, dwell)) {
     activity = selectActivity({ ...fish, activity }, index, state, { ...context, traits, affinities });
     target = resolve(activity, attention);

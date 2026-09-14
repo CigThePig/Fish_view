@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -62,10 +63,13 @@ function parseList(value, allowed, allValue = "all") {
 
 function parseOptions(argumentsList) {
   const scenarioIds = SHOWCASE_SCENARIOS.map((scenario) => scenario.id);
-  const scenarios = parseList(
+  let scenarios = parseList(
     optionValue(argumentsList, "--scenario", "all"),
     scenarioIds,
   ).map((id) => SHOWCASE_SCENARIOS.find((scenario) => scenario.id === id));
+  const seconds = Number(optionValue(argumentsList, "--seconds", 0));
+  if (seconds && (!Number.isFinite(seconds) || seconds < 1 || seconds > 90)) throw new Error("--seconds must be 1–90");
+  if (seconds) scenarios = scenarios.map(scenario => ({ ...scenario, loopSeconds: seconds }));
   const scale = Number(optionValue(argumentsList, "--scale", DEFAULT_SCALE));
   if (!Number.isFinite(scale) || scale < 0.2 || scale > 1) {
     throw new Error("--scale must be between 0.2 and 1");
@@ -183,12 +187,10 @@ function semanticSnapshotTimes(scenario) {
     times = [0, search * 0.52, peck, recovery];
   } else if (scenario.id === "surface-investigate") {
     const probe = phaseTime("probe", scenario.loopSeconds * 0.78);
-    times = [0, probe * 0.5, probe, firstTimeAfter(
-      timeline,
-      probe + 0.8,
-      (metadata) => metadata.phase === "probe",
-      scenario.loopSeconds * 0.94,
-    )];
+    times = [0, probe, phaseTime("descend", probe + 2.8),
+      firstTimeAfter(timeline, probe + 3, (metadata) => metadata.phase === "travel", scenario.loopSeconds * 0.94)];
+  } else if (scenario.id === "companion-cruise") {
+    times = [0, 8, phaseTime("separate", scenario.loopSeconds * 0.8), scenario.loopSeconds * 0.97];
   } else if (scenario.id === "plant-investigate") {
     const inspect = phaseTime("inspect", scenario.loopSeconds * 0.4);
     const lateInspect = firstTimeAfter(
@@ -345,6 +347,8 @@ const canvasModule = await loadCanvasModule();
 await mkdir(options.output, { recursive: true });
 const manifest = {
   version: 1,
+  commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  dirty: Boolean(execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim()),
   stepSeconds: STEP_SECONDS,
   scale: options.scale,
   captures: [],

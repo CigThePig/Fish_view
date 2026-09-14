@@ -152,7 +152,6 @@ function invitationScore(fish, epoch, nowSeconds) {
   if (profile.familiarity < GLASS_VISIT_MIN_FAMILIARITY) return null;
   if (viewerSaturationFor(fish, nowSeconds) > GLASS_VISIT_MAX_SATURATION) return null;
   if (!biologicallyAvailable(fish) || fish.attention) return null;
-  if ((fish.drives?.energy ?? 0.5) < 0.3) return null;
 
   // Hunger is deliberately not a second hard gate here. The behavior scheduler
   // already decides whether appetite wins this fish's current bout, and actual
@@ -161,6 +160,9 @@ function invitationScore(fish, epoch, nowSeconds) {
   // at all, so vetoing invitations directly from the raw hunger scalar would
   // eventually lock those fish out of glass visits forever even while their
   // normal scheduler chose calm locomotion.
+  // Energy follows the same rule: a mature fish can balance near 0.27 while
+  // freely choosing school-follow between rests. A second 0.3 cutoff would
+  // exclude it forever. Actual rest/shelter still blocks and cancels visits.
 
   // Bold, attentive, glass-oriented fish volunteer more readily, but high
   // familiarity can still carry a cautious fish over the line. The roll is per

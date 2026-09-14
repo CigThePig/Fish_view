@@ -1,0 +1,469 @@
+{
+  "archetypes": [
+    {
+      "name": "bold",
+      "personality": {
+        "seed": 1763545983,
+        "boldness": 0.5992,
+        "curiosity": 0.2837,
+        "glassAffinity": 0.7674,
+        "confidence": 0.6463,
+        "attentiveness": 0.4578
+      },
+      "levels": [
+        {
+          "label": "unfamiliar",
+          "familiarity": 0,
+          "trust": 0,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.4,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "early",
+          "familiarity": 0.2,
+          "trust": 0.1602,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4762,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4762,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.3246,
+            "durationSeconds": 1.4762,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "medium",
+          "familiarity": 0.5,
+          "trust": 0.4005,
+          "watch": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.5905,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.5905,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.2114,
+            "durationSeconds": 1.5905,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "high",
+          "familiarity": 0.9,
+          "trust": 0.7208,
+          "watch": {
+            "role": "investigate",
+            "delaySeconds": 0,
+            "durationSeconds": 1.7429,
+            "standoff": 0
+          },
+          "approach": {
+            "role": "investigate",
+            "delaySeconds": 0,
+            "durationSeconds": 1.7429,
+            "standoff": 0
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.0606,
+            "durationSeconds": 1.7429,
+            "standoff": 2.7
+          }
+        }
+      ]
+    },
+    {
+      "name": "cautious",
+      "personality": {
+        "seed": 3131822386,
+        "boldness": 0.2758,
+        "curiosity": 0.4118,
+        "glassAffinity": 0.2535,
+        "confidence": 0.2696,
+        "attentiveness": 0.3548
+      },
+      "levels": [
+        {
+          "label": "unfamiliar",
+          "familiarity": 0,
+          "trust": 0,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.4,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "early",
+          "familiarity": 0.2,
+          "trust": 0.1406,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4715,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4715,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.3471,
+            "durationSeconds": 1.4715,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "medium",
+          "familiarity": 0.5,
+          "trust": 0.3516,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.5788,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.5788,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.2678,
+            "durationSeconds": 1.5788,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "high",
+          "familiarity": 0.9,
+          "trust": 0.6329,
+          "watch": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.7219,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.7219,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.1621,
+            "durationSeconds": 1.7219,
+            "standoff": 2.7
+          }
+        }
+      ]
+    },
+    {
+      "name": "attentive",
+      "personality": {
+        "seed": 46810761,
+        "boldness": 0.3412,
+        "curiosity": 0.912,
+        "glassAffinity": 0.4141,
+        "confidence": 0.3616,
+        "attentiveness": 0.7328
+      },
+      "levels": [
+        {
+          "label": "unfamiliar",
+          "familiarity": 0,
+          "trust": 0,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.4,
+            "durationSeconds": 1.4,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "early",
+          "familiarity": 0.2,
+          "trust": 0.1684,
+          "watch": {
+            "role": "watch",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4887,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.4887,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.3328,
+            "durationSeconds": 1.4887,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "medium",
+          "familiarity": 0.5,
+          "trust": 0.4209,
+          "watch": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.6217,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.6217,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.232,
+            "durationSeconds": 1.6217,
+            "standoff": 2.7
+          }
+        },
+        {
+          "label": "high",
+          "familiarity": 0.9,
+          "trust": 0.7576,
+          "watch": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.7991,
+            "standoff": 2.7
+          },
+          "approach": {
+            "role": "approach",
+            "delaySeconds": 0,
+            "durationSeconds": 1.7991,
+            "standoff": 2.7
+          },
+          "delayed": {
+            "role": "delayed",
+            "delaySeconds": 1.0976,
+            "durationSeconds": 1.7991,
+            "standoff": 2.7
+          }
+        }
+      ]
+    }
+  ],
+  "productionGrowth": {
+    "seed": 2450898018,
+    "milestones": [
+      {
+        "day": 0,
+        "familiarity": 0
+      },
+      {
+        "day": 1,
+        "familiarity": 0.003158
+      },
+      {
+        "day": 7,
+        "familiarity": 0.021941
+      },
+      {
+        "day": 30,
+        "familiarity": 0.089947
+      },
+      {
+        "day": 60,
+        "familiarity": 0.161724
+      },
+      {
+        "day": 90,
+        "familiarity": 0.217172
+      },
+      {
+        "day": 120,
+        "familiarity": 0.268505
+      },
+      {
+        "day": 180,
+        "familiarity": 0.356124
+      }
+    ],
+    "saveBytes": [
+      {
+        "day": 1,
+        "bytes": 8585
+      },
+      {
+        "day": 7,
+        "bytes": 8570
+      },
+      {
+        "day": 30,
+        "bytes": 9796
+      },
+      {
+        "day": 60,
+        "bytes": 11939
+      },
+      {
+        "day": 90,
+        "bytes": 13325
+      },
+      {
+        "day": 120,
+        "bytes": 15448
+      },
+      {
+        "day": 180,
+        "bytes": 18881
+      }
+    ]
+  },
+  "rapidSpam": {
+    "seed": 2450898018,
+    "milestones": [
+      {
+        "interactions": 1,
+        "familiarity": 0.0022
+      },
+      {
+        "interactions": 5,
+        "familiarity": 0.004978
+      },
+      {
+        "interactions": 10,
+        "familiarity": 0.005153
+      },
+      {
+        "interactions": 20,
+        "familiarity": 0.005501
+      },
+      {
+        "interactions": 40,
+        "familiarity": 0.006198
+      }
+    ]
+  },
+  "visits": [
+    {
+      "archetype": "bold",
+      "selectedSeed": 1763545983,
+      "firstInvitation": {
+        "seconds": 400,
+        "seed": 1763545983,
+        "durationSeconds": 37.7142
+      }
+    },
+    {
+      "archetype": "cautious",
+      "selectedSeed": 3131822386,
+      "firstInvitation": {
+        "seconds": 944,
+        "seed": 3131822386,
+        "durationSeconds": 41.2214
+      }
+    },
+    {
+      "archetype": "attentive",
+      "selectedSeed": 46810761,
+      "firstInvitation": {
+        "seconds": 400,
+        "seed": 46810761,
+        "durationSeconds": 41.5341
+      }
+    }
+  ],
+  "naturalVisits": [
+    {
+      "archetype": "bold",
+      "selectedSeed": 1763545983,
+      "observedSeconds": 7200,
+      "starts": 13,
+      "firstInvitationSeconds": 253.5,
+      "activeSeconds": 394,
+      "activeFraction": 0.0547
+    },
+    {
+      "archetype": "cautious",
+      "selectedSeed": 3131822386,
+      "observedSeconds": 7200,
+      "starts": 8,
+      "firstInvitationSeconds": 1068.25,
+      "activeSeconds": 230.25,
+      "activeFraction": 0.032
+    },
+    {
+      "archetype": "attentive",
+      "selectedSeed": 46810761,
+      "observedSeconds": 7200,
+      "starts": 16,
+      "firstInvitationSeconds": 253.5,
+      "activeSeconds": 517,
+      "activeFraction": 0.0718
+    }
+  ]
+}

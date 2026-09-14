@@ -129,6 +129,24 @@ test("high-commitment activities and biological priorities outrank an invitation
   assert.equal(findStartedVisit(blocked, { end: 2400 }), null);
 });
 
+test("low-energy calm locomotion can volunteer but actual rest cannot", () => {
+  const initial = readyState(1);
+  const state = { ...initial, individuals: initial.individuals.map(fish => ({
+    ...fish,
+    drives: { ...fish.drives, energy: 0.274 },
+    behavior: { ...fish.behavior, current: "social" },
+    activity: { ...fish.activity, current: "school-follow" },
+  })) };
+  assert.ok(findStartedVisit(state), "raw energy must not veto available locomotion");
+  for (const activity of ["open-water-rest", "plant-shelter"]) {
+    const resting = { ...state, individuals: state.individuals.map(fish => ({
+      ...fish, behavior: { ...fish.behavior, current: "rest" },
+      activity: { ...fish.activity, current: activity },
+    })) };
+    assert.equal(findStartedVisit(resting), null);
+  }
+});
+
 test("defensive arbitration keeps at most one active visitor", () => {
   const state = stockedAquarium({ seed: 0x6dca57, wallClockHours: 12 });
   const individuals = state.individuals.map((fish, index) => {

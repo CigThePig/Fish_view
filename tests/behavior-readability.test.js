@@ -544,7 +544,7 @@ test("surface investigation ascends, probes the safe meniscus, and remains below
       ...source,
       x: source.activity.targetX,
       y: safe,
-      activity: { ...source.activity, ageRealSeconds: age },
+      activity: { ...source.activity, ageRealSeconds: age, surfaceStage: 1, surfaceStageStartedAt: 0 },
     };
     const target = resolveActivityTarget(fish, index, base, fish.activity);
     if (!probe || target.surfaceProbe > probe.target.surfaceProbe) probe = { fish, target };
