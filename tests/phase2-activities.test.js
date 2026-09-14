@@ -368,7 +368,11 @@ test("glass affinity changes deterministic approach style without allowing refus
 test("familiar energetic fish can select a brief bounded playful chase", () => {
   const base = stockedAquarium({ seed: 773 });
   const fish = withBehavior(base.individuals[4], "social");
-  const companion = base.individuals[5];
+  const companion = {
+    ...base.individuals[5],
+    x: fish.x + 2,
+    y: fish.y,
+  };
   const history = {
     ...fish.history,
     socialMemory: [{ seed: companion.seed, familiarity: 0.95, lastSeenSeconds: 0 }],
@@ -383,7 +387,9 @@ test("familiar energetic fish can select a brief bounded playful chase", () => {
     const state = {
       ...base,
       elapsedRealSeconds: seconds,
-      individuals: base.individuals.map((value, index) => index === 4 ? prepared : value),
+      individuals: base.individuals.map((value, index) => (
+        index === 4 ? prepared : index === 5 ? companion : value
+      )),
     };
     const utilities = activityUtilities(prepared, 4, state, {
       affinities: affinities({ play: 0.98, companion: 0.92 }),
