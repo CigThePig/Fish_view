@@ -35,8 +35,8 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 7.4 | Plant weave — route and geometry redesign | Done | [phase 7.4](phase-7-4-plant-weave-route-and-geometry.md) |
 | 7.5 | Plant vocabulary separation and polish | Done | [phase 7.5](phase-7-5-plant-vocabulary-separation-and-polish.md) |
 | 7.6 | Remaining behavior readability audit | Done | [phase 7.6](phase-7-6-remaining-behavior-readability.md) |
-| 7.7 | Cross-behavior readability validation and freeze | Not started | — |
-| 8 | Scene salience and anti-synchronisation | Not started | — |
+| 7.7 | Cross-behavior readability validation and freeze | Done | [phase 7.7](phase-7-7-cross-behavior-readability-validation.md) |
+| 8 | Scene salience and anti-synchronisation | Ready | [Phase 8 handoff](phase-7-7-cross-behavior-readability-validation.md#phase-8-handoff) |
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
@@ -113,8 +113,18 @@ relationship diagnostic is reconciled and removed; available low-energy fish can
 volunteer while actual rest and feeding remain protected. Other individual
 choreography stays frozen. Unsolicited glass-to-person attribution is explicitly
 deferred to Phase 8 scene salience and context. See the
-[Phase 7.6 PASS report](phase-7-6-remaining-behavior-readability.md). Phase 7.7 is
-next, but has not started.
+[Phase 7.6 PASS report](phase-7-6-remaining-behavior-readability.md).
+
+Phase 7.7 validates the vocabulary as one system and freezes it. A fifteen-pair
+confusion matrix covers every final entry, a shuffled captionless capture keeps
+labels out of the judgement, and 96 showcase observations span six identities,
+five body profiles and all five seeded traits without a teleport-like seam or
+full redraw. Natural production observation reaches every recurring category.
+The one accepted limitation is familiar-glass person-attribution in a busy scene;
+its motion is frozen and Phase 8 owns the missing context. See the
+[Phase 7.7 PASS report](phase-7-7-cross-behavior-readability-validation.md) and
+[final vocabulary](phase-7-final-behavior-vocabulary.md). Phase 7 is complete;
+Phase 8 is Ready.
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.
