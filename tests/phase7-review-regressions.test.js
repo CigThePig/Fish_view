@@ -33,6 +33,9 @@ test("resolved chase target carries live timing into steering", () => {
   assert.ok(SHOWCASE_SCENARIOS.some(({ id }) => id === ACTIVITIES.playfulChase));
   const base = createShowcaseState({ scenario: ACTIVITIES.playfulChase });
   const initial = showcaseSubjects(base, ACTIVITIES.playfulChase)[0];
+  const companionIndex = base.individuals.findIndex(({ seed }) => seed === initial.fish.activity.targetId);
+  assert.ok(companionIndex >= 0, "showcase chase is missing its target fish");
+
   const fish = {
     ...initial.fish,
     vx: 0.5,
@@ -42,9 +45,16 @@ test("resolved chase target carries live timing into steering", () => {
       ageRealSeconds: 3.4,
     },
   };
+  const companion = {
+    ...base.individuals[companionIndex],
+    x: fish.x + 2,
+    y: fish.y,
+  };
   const state = {
     ...base,
-    individuals: base.individuals.map((entry, index) => index === initial.index ? fish : entry),
+    individuals: base.individuals.map((entry, index) => (
+      index === initial.index ? fish : index === companionIndex ? companion : entry
+    )),
     choreographyTuning: {
       ...(base.choreographyTuning ?? {}),
       scene: {
