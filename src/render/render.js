@@ -88,21 +88,14 @@ const BAYER_4 = Object.freeze([
 export function bodyMotionForFish(fish) {
   const base = BODY_MOTION_BY_ACTIVITY[fish.activity?.current]
     ?? BODY_MOTION_BY_ACTIVITY.cruise;
-  // vx is measured in logical columns/s while vy is logical rows/s. The panel
-  // cells are intentionally non-square, so cadence follows visible movement.
-  const visibleSpeed = Math.hypot(
-    (fish.vx ?? 0) * (DISPLAY.pixelWidth / DISPLAY.cols),
-    (fish.vy ?? 0) * (DISPLAY.pixelHeight / DISPLAY.rows),
-  );
-  const speedLift = clamp((visibleSpeed - 1.6) / 7.5, 0, 1);
+  const speed = Math.hypot(fish.vx ?? 0, fish.vy ?? 0);
   const energetic = fish.activity?.current === "playful-chase"
     || fish.activity?.current === "bubble-investigate"
     || fish.activity?.current === "touch-react";
-  const rateScale = 0.86 + speedLift * 0.34;
-  const deformationScale = 0.94 + speedLift * 0.12;
+  const speedLift = energetic ? clamp((speed - 0.42) / 0.48, 0, 1) : 0;
   return {
-    rate: base.rate * rateScale + (energetic ? speedLift * 0.08 : 0),
-    deformation: base.deformation * deformationScale + (energetic ? speedLift * 0.05 : 0),
+    rate: base.rate + speedLift * 0.16,
+    deformation: base.deformation + speedLift * 0.1,
     bob: base.bob,
   };
 }
