@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { CHASE_ARC_PHASES, chaseArcPhase } from "../src/sim/chase-arc.js";
 import { ACTIVITIES, createActivityState } from "../src/sim/fish-activities.js";
 import {
   chaseEvasionForFish,
   locomotionPaceForFish,
   steerActivityVelocity,
 } from "../src/sim/fish-choreography.js";
+import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import { DISPLAY } from "../src/sim/config.js";
 import { tick } from "../src/sim/tick.js";
 import { stockedAquarium } from "./support/aquarium.js";
@@ -186,7 +188,7 @@ test("locomotion temperament changes steering for identical activity geometry", 
   );
 });
 
-test("playful-chase evader can burst toward four rows per second without living there", () => {
+test("playful-chase evader can burst toward four rows per second while the chaser surge stays bounded", () => {
   const base = stockedAquarium({ seed: 2020, wallClockHours: 12 });
   const chaserSource = base.individuals[0];
   const chasedSource = base.individuals[1];
@@ -208,18 +210,29 @@ test("playful-chase evader can burst toward four rows per second without living 
   };
 
   const evasionRuns = [];
+  const interceptChaserSpeeds = [];
   let currentRun = [];
-  for (let frame = 0; frame < 36; frame += 1) {
+  // Start at activity age 1s and observe long enough to cross the 4.6-6.2s
+  // intercept window, the authored break and the beginning of recovery.
+  for (let frame = 0; frame < 90; frame += 1) {
     state = tick(state, STEP_SECONDS);
+    const liveChaser = state.individuals[0];
     const evader = state.individuals[1];
+    const gap = Math.hypot(evader.x - liveChaser.x, evader.y - liveChaser.y);
+    const tuning = sceneTuning(state, ACTIVITIES.playfulChase);
+    const semanticPhase = liveChaser.activity?.current === ACTIVITIES.playfulChase
+      ? chaseArcPhase(liveChaser.activity.ageRealSeconds, gap, tuning)
+      : null;
+    if (semanticPhase === CHASE_ARC_PHASES.intercept) {
+      interceptChaserSpeeds.push(logicalSpeedOf(liveChaser));
+    }
+
     const evasion = chaseEvasionForFish(evader, state);
     if (evasion) {
       currentRun.push({
         panelSpeed: visiblePanelSpeedOf(evader),
         logicalSpeed: logicalSpeedOf(evader),
         evasionCeiling: evasion.maximumSpeed,
-        chaserPanelSpeed: visiblePanelSpeedOf(state.individuals[0]),
-        chaserLogicalSpeed: logicalSpeedOf(state.individuals[0]),
       });
     } else if (currentRun.length) {
       evasionRuns.push(currentRun);
@@ -233,10 +246,13 @@ test("playful-chase evader can burst toward four rows per second without living 
     longest.length >= 12,
     `playful chase only sustained ${longest.length} consecutive evasion frames (${(longest.length * STEP_SECONDS).toFixed(1)}s)`,
   );
+  assert.ok(
+    interceptChaserSpeeds.length >= 6,
+    `playful chase exposed only ${interceptChaserSpeeds.length} intercept frames to the chaser ceiling check`,
+  );
 
   const panelSpeeds = longest.map((sample) => sample.panelSpeed);
   const logicalSpeeds = longest.map((sample) => sample.logicalSpeed);
-  const chaserLogicalSpeeds = longest.map((sample) => sample.chaserLogicalSpeed);
   const averagePanel = mean(panelSpeeds);
   const medianPanel = percentile(panelSpeeds, 0.5);
   const peakPanel = Math.max(...panelSpeeds);
@@ -244,8 +260,8 @@ test("playful-chase evader can burst toward four rows per second without living 
   const peakLogical = Math.max(...logicalSpeeds);
   const burstFrames = logicalSpeeds.filter((speed) => speed >= 2.5).length;
   const peakEvasionCeiling = Math.max(...longest.map((sample) => sample.evasionCeiling));
-  const averageChaserPanel = mean(longest.map((sample) => sample.chaserPanelSpeed));
-  const peakChaserLogical = Math.max(...chaserLogicalSpeeds);
+  const averageInterceptChaser = mean(interceptChaserSpeeds);
+  const peakInterceptChaser = Math.max(...interceptChaserSpeeds);
 
   console.log(
     `[speed-readability] playful-chase evader continuous=${longest.length} frames/`
@@ -253,7 +269,7 @@ test("playful-chase evader can burst toward four rows per second without living 
     + `(${(averagePanel * PHONE_SCALE).toFixed(2)} px/s @390px), median=${medianPanel.toFixed(2)} `
     + `peak=${peakPanel.toFixed(2)} px/s, logical avg/peak=${averageLogical.toFixed(3)}/${peakLogical.toFixed(3)}, `
     + `>=2.5 rows/s frames=${burstFrames}, evasion ceiling=${peakEvasionCeiling.toFixed(2)}, `
-    + `chaser avg=${averageChaserPanel.toFixed(2)} px/s peak=${peakChaserLogical.toFixed(3)} rows/s`,
+    + `intercept chaser avg/peak=${averageInterceptChaser.toFixed(3)}/${peakInterceptChaser.toFixed(3)} rows/s`,
   );
 
   assert.ok(averagePanel >= 8, `chased fish averaged only ${averagePanel.toFixed(2)} visible px/s during evasion`);
@@ -265,5 +281,12 @@ test("playful-chase evader can burst toward four rows per second without living 
   );
   assert.ok(burstFrames >= 2, `the >2.5 rows/s escape lasted only ${burstFrames} frames`);
   assert.ok(peakLogical <= 4.01, `chased fish exceeded its 4 rows/s escape ceiling at ${peakLogical.toFixed(3)}`);
-  assert.ok(peakChaserLogical <= 3.01, `chaser exceeded its lower 3 rows/s ceiling at ${peakChaserLogical.toFixed(3)}`);
+  assert.ok(
+    peakInterceptChaser >= 2.4,
+    `chaser never exercised the authored intercept surge; peak was ${peakInterceptChaser.toFixed(3)} rows/s`,
+  );
+  assert.ok(
+    peakInterceptChaser <= 3.01,
+    `chaser exceeded its 3 rows/s intercept ceiling at ${peakInterceptChaser.toFixed(3)}`,
+  );
 });
