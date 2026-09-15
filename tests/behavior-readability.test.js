@@ -195,7 +195,7 @@ test("bubble pursuit predicts a real rising bubble and produces a readable ascen
   assert.ok(strongestPitch < -18);
 });
 
-test("playful chase is faster than following and gives the chased fish a bounded evasive response", () => {
+test("playful chase gives the evader the first beat, then accelerates beyond following", () => {
   const base = stockedAquarium({ seed: 2020, wallClockHours: 12 });
   const chaserSource = base.individuals[0];
   const chasedSource = base.individuals[1];
@@ -210,16 +210,16 @@ test("playful chase is faster than following and gives the chased fish a bounded
     vx: 0.2,
     vy: 0,
   };
-  // Close enough to bolt. A chased fish that flees the moment it is noticed -
-  // five rows out, further than any chaser can close - keeps a fixed gap, and a
-  // constant gap is a formation rather than a chase. The break comes late and
-  // hard instead, which is what makes the distance visibly open and shut.
+  // Close enough to bolt. Recognition is not the same as panic: once the pair
+  // is genuinely close the evader gets the first acceleration beat and the
+  // chaser briefly glides instead of matching it instantly. Pursuit then comes
+  // back faster and sharper than ordinary following.
   const chased = { ...chasedSource, x: 21.6, y: 8, vx: 0.2, vy: 0 };
   const state = {
     ...base,
     individuals: base.individuals.map((fish, index) => index === 0 ? chaser : index === 1 ? chased : fish),
   };
-  const chaseTarget = resolveActivityTarget(chaser, 0, state, chaser.activity);
+  const escapeTarget = resolveActivityTarget(chaser, 0, state, chaser.activity);
   const following = {
     ...chaser,
     activity: {
@@ -230,8 +230,26 @@ test("playful chase is faster than following and gives the chased fish a bounded
     },
   };
   const followTarget = resolveActivityTarget(following, 0, state, following.activity);
-  assert.ok(chaseTarget.speed > followTarget.speed * 1.35);
-  assert.ok(chaseTarget.choreography.turningResponse > followTarget.choreography.turningResponse * 2);
+  assert.equal(escapeTarget.choreographyPhase, "break");
+  assert.ok(escapeTarget.speed < followTarget.speed);
+
+  const pursuitChaser = {
+    ...chaser,
+    activity: { ...chaser.activity, ageRealSeconds: 4 },
+  };
+  const pursuitState = {
+    ...state,
+    individuals: state.individuals.map((fish, index) => index === 0 ? pursuitChaser : fish),
+  };
+  const pursuitTarget = resolveActivityTarget(
+    pursuitChaser,
+    0,
+    pursuitState,
+    pursuitChaser.activity,
+  );
+  assert.equal(pursuitTarget.choreographyPhase, "pursuit");
+  assert.ok(pursuitTarget.speed > followTarget.speed * 1.35);
+  assert.ok(pursuitTarget.choreography.turningResponse > followTarget.choreography.turningResponse * 2);
 
   const evasion = chaseEvasionForFish(chased, state);
   assert.ok(evasion && evasion.strength > 0.8);
@@ -251,13 +269,27 @@ test("playful chase is faster than following and gives the chased fish a bounded
     "the chased fish bolted from further away than the chaser can close",
   );
 
+  const initialGap = Math.hypot(chaser.x - chased.x, chaser.y - chased.y);
   let chasedState = state;
   for (let frame = 0; frame < 8; frame += 1) chasedState = tick(chasedState, 0.1);
-  const movedChaser = chasedState.individuals[0];
-  const movedChased = chasedState.individuals[1];
-  assert.ok(Math.hypot(movedChaser.vx, movedChaser.vy) > 0.7);
-  assert.ok(Math.hypot(movedChased.vx, movedChased.vy) > 0.62);
-  assert.ok(Math.abs(movedChased.vy) > 0.08, "the chased fish did not make a visible vertical dodge");
+  const escapedChaser = chasedState.individuals[0];
+  const escapedFish = chasedState.individuals[1];
+  const escapedGap = Math.hypot(
+    escapedChaser.x - escapedFish.x,
+    escapedChaser.y - escapedFish.y,
+  );
+  assert.ok(Math.hypot(escapedChaser.vx, escapedChaser.vy) < 0.35);
+  assert.ok(Math.hypot(escapedFish.vx, escapedFish.vy) > 0.9);
+  assert.ok(Math.abs(escapedFish.vy) > 0.08, "the chased fish did not make a visible vertical dodge");
+  assert.ok(escapedGap > initialGap + 0.35, "the first escape beat did not visibly open the gap");
+
+  // Once the escape beat has had room to read, the chaser must answer rather
+  // than remaining in the glide envelope. This checks realised motion, not just
+  // the target speed above.
+  for (let frame = 0; frame < 24; frame += 1) chasedState = tick(chasedState, 0.1);
+  const answeringChaser = chasedState.individuals[0];
+  assert.equal(answeringChaser.activity.current, ACTIVITIES.playfulChase);
+  assert.ok(Math.hypot(answeringChaser.vx, answeringChaser.vy) > 0.8);
 
   const breakingChaser = {
     ...chaser,
@@ -427,7 +459,7 @@ test("the peck meets the substrate crest without burying the fish", () => {
   }
 });
 
-test("plant inspection hovers around one specimen while weaving alternates route sides", () => {
+test("plant inspection stays local while weaving alternates route sides", () => {
   const base = stockedAquarium({ seed: 614, wallClockHours: 12 });
   const index = 4;
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
@@ -437,7 +469,17 @@ test("plant inspection hovers around one specimen while weaving alternates route
     targetId: plant.seed,
   });
   const anchor = plantTargetPosition(source, plant, base);
-  const near = { ...source, x: anchor.x, y: anchor.y, activity: { ...source.activity, ageRealSeconds: 3.1 } };
+  const near = {
+    ...source,
+    x: anchor.x,
+    y: anchor.y,
+    activity: {
+      ...source.activity,
+      ageRealSeconds: 3.1,
+      plantVisitStage: 1,
+      plantVisitStageStartedAt: 0,
+    },
+  };
   const inspect = resolveActivityTarget(near, index, base, near.activity);
   // The head sweep and the hover are sines with seeded phases, so two arbitrary
   // instants can land on the same point however lively the inspection is. What
@@ -473,8 +515,12 @@ test("plant inspection hovers around one specimen while weaving alternates route
       targetId: plant.seed,
     },
   };
-  const first = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 0 });
-  const second = resolveActivityTarget(weaving, index, base, { ...weaving.activity, ageRealSeconds: 3.2 });
+  // Phase 7.4 made route progression spatial. Compare two authored route
+  // legs directly rather than advancing the retired timer in a synthetic target.
+  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };
+  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };
+  const first = resolveActivityTarget(weaving, index, base, firstActivity);
+  const second = resolveActivityTarget(weaving, index, base, secondActivity);
   assert.ok((first.x - plant.x) * (second.x - plant.x) < 0, "weave route never crossed the plant");
   assert.ok(Math.abs(first.y - second.y) > 0.45);
 });
@@ -498,7 +544,7 @@ test("surface investigation ascends, probes the safe meniscus, and remains below
       ...source,
       x: source.activity.targetX,
       y: safe,
-      activity: { ...source.activity, ageRealSeconds: age },
+      activity: { ...source.activity, ageRealSeconds: age, surfaceStage: 1, surfaceStageStartedAt: 0 },
     };
     const target = resolveActivityTarget(fish, index, base, fish.activity);
     if (!probe || target.surfaceProbe > probe.target.surfaceProbe) probe = { fish, target };

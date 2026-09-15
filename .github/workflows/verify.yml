@@ -3,15 +3,21 @@ name: Verify aquarium
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "phase-*"
 
 permissions:
   contents: read
 
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
@@ -25,10 +31,84 @@ jobs:
       - run: npm run audit:render
       - run: npm run measure:feeding
       - run: npm run measure:relationship
+      - run: npm run measure:readability
+      - name: Guard frozen Phase 7 vocabulary after Phase 7
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        run: npm run audit:phase7-vocabulary -- --output=.audit-output/phase7-frozen-audit
+      - name: Observe frozen vocabulary on production path after Phase 7
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        run: npm run measure:remaining-vocabulary -- --seconds=1800 --output=.audit-output/phase7-frozen-natural
       - run: npm run capture:relationship -- --scale=0.25 --output=.audit-output/relationship-captures
       - uses: actions/upload-artifact@v4
         with:
           name: phase6-relationship-captures
           path: .audit-output/relationship-captures
+          if-no-files-found: error
+          retention-days: 14
+
+  # Visual/readability evidence is intentionally separate from the core verify
+  # job. It may render GIFs and static-site artifacts, but it cannot consume the
+  # verification job's timeout budget or replace the live Pages deployment.
+  phase7-evidence:
+    if: startsWith(github.ref_name, 'phase-7') || startsWith(github.head_ref, 'phase-7')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Measure Phase 7 chase telemetry
+        run: npm run measure:chase-readiness -- --output=.audit-output/chase-readiness
+
+      - name: Capture chase and nearest visual neighbor
+        run: npm run capture:behaviors -- --scenario=playful-chase,individual-follow --scale=0.35 --gif --output=.audit-output/chase-captures
+
+      # The "before" capture must execute the code that existed when Phase 7.1
+      # froze the vocabulary. Running the baseline command from final HEAD would
+      # simply recapture final choreography under baseline labels.
+      - name: Checkout preserved Phase 7.1 baseline source
+        uses: actions/checkout@v6
+        with:
+          ref: bd78dccca7d05a95f5674b3a683a45c12de940e0
+          path: .phase7-baseline-source
+
+      - name: Capture preserved blind Phase 7 baseline
+        working-directory: .phase7-baseline-source
+        run: |
+          npm ci
+          npm run capture:phase7-baseline -- --scale=0.25 --output="$GITHUB_WORKSPACE/.audit-output/phase7-baseline"
+
+      - name: Audit final Phase 7 vocabulary across identities and body profiles
+        run: npm run audit:phase7-vocabulary -- --output=.audit-output/phase7-final-audit
+
+      - name: Observe natural remaining-vocabulary episodes
+        run: npm run measure:remaining-vocabulary -- --seconds=1800 --output=.audit-output/phase7-natural
+
+      - name: Capture shuffled blind Phase 7 final vocabulary
+        run: npm run capture:phase7-final -- --scale=0.25 --output=.audit-output/phase7-final-blind
+
+      - name: Build branch-accurate static site
+        run: npm run build:pages
+
+      - name: Record exact-commit interactive preview
+        run: npm run preview:branch -- --ref="$GITHUB_SHA" --page=behaviors.html --activity=playful-chase > .audit-output/preview-links.txt
+
+      - name: Upload Phase 7 working-branch evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase7-working-branch-${{ github.run_id }}
+          path: |
+            .audit-output/chase-readiness
+            .audit-output/chase-captures
+            .audit-output/phase7-baseline
+            .audit-output/phase7-final-audit
+            .audit-output/phase7-natural
+            .audit-output/phase7-final-blind
+            .audit-output/preview-links.txt
+            _site
           if-no-files-found: error
           retention-days: 14

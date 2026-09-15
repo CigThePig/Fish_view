@@ -196,8 +196,14 @@ test("a passive response is visible without interrupting the fish", () => {
   const index = touched.individuals.findIndex((fish) => isPassiveRole(fish.attention?.role));
   assert.ok(index >= 0, "no fish gave a passive response");
 
-  const control = run(base, 1.2);
-  const responding = run(touched, 1.2);
+  // Sample while this particular response is alive. The settled aquarium can
+  // legitimately hand the first passive slot to an acknowledgement, whose
+  // whole point is to be a short flick. Sampling every role at a fixed 1.2 s
+  // could measure it only after it had correctly finished.
+  const response = touched.individuals[index].attention;
+  const sampleSeconds = Math.min(0.6, Math.max(0.1, response.durationSeconds * 0.5));
+  const control = run(base, sampleSeconds);
+  const responding = run(touched, sampleSeconds);
   const before = base.individuals[index];
   const quiet = control.individuals[index];
   const answered = responding.individuals[index];
@@ -208,7 +214,7 @@ test("a passive response is visible without interrupting the fish", () => {
   const movedDifferently = Math.hypot(answered.x - quiet.x, answered.y - quiet.y) > 0.02
     || Math.abs(Math.hypot(answered.vx, answered.vy) - Math.hypot(quiet.vx, quiet.vy)) > 0.01
     || Math.abs((answered.visual.pitch ?? 0) - (quiet.visual.pitch ?? 0)) > 0.5;
-  assert.ok(movedDifferently, "a passive response had no visible correlate");
+  assert.ok(movedDifferently, "a passive response had no visible correlate while active");
 });
 
 test("a responder comes back to what it was doing", () => {

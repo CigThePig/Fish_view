@@ -1,0 +1,245 @@
+// Phase 7.1 is an observation and scope-control pass. Nothing in this file is
+// read by the production aquarium. It records what a viewer should be able to
+// infer from each autonomous activity before the choreography overhaul begins,
+// which activities are deliberately protected from opportunistic retuning, and
+// which later Phase 7 slice owns any change.
+//
+// Keep this declarative. Later Phase 7 work may update a classification only
+// when its phase report carries visual evidence for doing so.
+
+export const READABILITY_BASELINE_STATUS = Object.freeze({
+  strong: "strong",
+  provisional: "provisionally-acceptable",
+  priority: "priority-rework",
+  review: "review-before-change",
+});
+
+export const READABILITY_CHANGE_POLICY = Object.freeze({
+  freeze: "freeze",
+  provisionalFreeze: "provisional-freeze",
+  scheduledRework: "scheduled-rework",
+  reviewBeforeChange: "review-before-change",
+});
+
+function entry({
+  activity,
+  label,
+  status,
+  policy,
+  visualSentence,
+  cues,
+  nearestNeighbors,
+  owner,
+  note,
+}) {
+  return Object.freeze({
+    activity,
+    label,
+    status,
+    policy,
+    visualSentence,
+    cues: Object.freeze([...cues]),
+    nearestNeighbors: Object.freeze([...nearestNeighbors]),
+    owner,
+    note,
+  });
+}
+
+export const PHASE_7_READABILITY_BASELINE = Object.freeze([
+  entry({
+    activity: "cruise",
+    label: "Cruise",
+    status: READABILITY_BASELINE_STATUS.provisional,
+    policy: READABILITY_CHANGE_POLICY.provisionalFreeze,
+    visualSentence: "the fish is calmly going somewhere without investigating a specific thing",
+    cues: ["steady low/moderate speed", "broad gentle turns", "level relaxed posture"],
+    nearestNeighbors: ["open-water-wander", "companion-cruise"],
+    owner: "7.6",
+    note: "Likely already readable. Audit before changing; do not tune merely to make Phase 7 look busy.",
+  }),
+  entry({
+    activity: "open-water-wander",
+    label: "Open-water wander",
+    status: READABILITY_BASELINE_STATUS.provisional,
+    policy: READABILITY_CHANGE_POLICY.provisionalFreeze,
+    visualSentence: "the fish is exploring open water rather than travelling on a simple cruise line",
+    cues: ["more varied path geometry than cruise", "visible vertical exploration", "unhurried target changes"],
+    nearestNeighbors: ["cruise", "plant-investigate"],
+    owner: "7.6",
+    note: "Likely acceptable; preserve unless comparison evidence shows it aliases cruise or investigation.",
+  }),
+  entry({
+    activity: "bubble-investigate",
+    label: "Bubble investigation",
+    status: READABILITY_BASELINE_STATUS.strong,
+    policy: READABILITY_CHANGE_POLICY.freeze,
+    visualSentence: "the fish noticed that bubble and is deliberately intercepting it",
+    cues: ["quick upward interception", "nose-up pursuit posture", "slowdown/standoff at the bubble", "search or leave after the bubble disappears"],
+    nearestNeighbors: ["surface-investigate", "touch-react"],
+    owner: "7.7",
+    note: "Reference-quality behavior. Treat it as a quality bar, not a Phase 7 tuning target.",
+  }),
+  entry({
+    activity: "plant-investigate",
+    label: "Plant investigation",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "the fish deliberately approached a plant feature to inspect it",
+    cues: ["curved/local approach", "plant-facing orientation", "slow stable inspection", "deliberate retreat"],
+    nearestNeighbors: ["plant-weave", "open-water-wander"],
+    owner: "7.5",
+    note: "Review alongside weave after the weave route is fixed; do not pre-emptively retune it.",
+  }),
+  entry({
+    activity: "plant-weave",
+    label: "Plant weave",
+    status: READABILITY_BASELINE_STATUS.priority,
+    policy: READABILITY_CHANGE_POLICY.scheduledRework,
+    visualSentence: "the fish is deliberately threading through and around plant structure",
+    cues: ["alternating movement around stems", "visible crossing through plant structure", "continuous forward progression", "clear emergence from vegetation"],
+    nearestNeighbors: ["plant-investigate", "plant-shelter"],
+    owner: "7.4",
+    note: "Top-priority rework. Current timed waypoint route is not assumed visually sufficient.",
+  }),
+  entry({
+    activity: "school-follow",
+    label: "School follow",
+    status: READABILITY_BASELINE_STATUS.provisional,
+    policy: READABILITY_CHANGE_POLICY.provisionalFreeze,
+    visualSentence: "this individual is joining or following the school",
+    cues: ["approach toward school edge", "velocity matching", "adjustment into group spacing"],
+    nearestNeighbors: ["individual-follow", "cruise"],
+    owner: "7.6",
+    note: "Likely acceptable; audit social-neighbor aliasing before changing it.",
+  }),
+  entry({
+    activity: "individual-follow",
+    label: "Individual follow",
+    status: READABILITY_BASELINE_STATUS.provisional,
+    policy: READABILITY_CHANGE_POLICY.provisionalFreeze,
+    visualSentence: "one fish is deliberately following another fish",
+    cues: ["consistent rear offset", "leader less affected than follower", "moderate follower corrections", "eventual peel-away"],
+    nearestNeighbors: ["playful-chase", "companion-cruise", "school-follow"],
+    owner: "7.6",
+    note: "Likely acceptable. Its most important job in Phase 7 is to remain visually distinct from chase.",
+  }),
+  entry({
+    activity: "companion-cruise",
+    label: "Companion cruise",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "these two fish are intentionally spending calm time together",
+    cues: ["low/moderate matched speed", "relaxed side-by-side offset", "stable pair proximity", "coordinated but non-identical turning"],
+    nearestNeighbors: ["individual-follow", "cruise"],
+    owner: "7.6",
+    note: "Subtle behavior. Review blind before deciding whether it needs motion changes.",
+  }),
+  entry({
+    activity: "playful-chase",
+    label: "Playful chase",
+    status: READABILITY_BASELINE_STATUS.priority,
+    policy: READABILITY_CHANGE_POLICY.scheduledRework,
+    visualSentence: "that fish is unmistakably chasing that fish",
+    cues: ["escape and pursuit speed bursts", "changing pair spacing", "strong trajectory cuts or overshoot", "explicit break on different headings"],
+    nearestNeighbors: ["individual-follow", "companion-cruise"],
+    owner: "7.2",
+    note: "Top-priority rework. Phase 7.2 owns pursuit readability; Phase 7.3 owns the complete chase arc and ending.",
+  }),
+  entry({
+    activity: "substrate-search",
+    label: "Substrate search / feeding",
+    status: READABILITY_BASELINE_STATUS.strong,
+    policy: READABILITY_CHANGE_POLICY.freeze,
+    visualSentence: "the fish is deliberately working the substrate for food",
+    cues: ["purposeful descent to substrate", "nose-down grazing posture", "slow bottom sweep", "clustered visible pecks and recovery"],
+    nearestNeighbors: ["surface-investigate", "open-water-wander"],
+    owner: "7.7",
+    note: "Reference-quality behavior. Protect the existing feeding choreography during unrelated Phase 7 work.",
+  }),
+  entry({
+    activity: "surface-investigate",
+    label: "Surface investigation",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "the fish intentionally rose to probe the water surface",
+    cues: ["sustained ascent", "nose-up posture", "waterline probe/linger", "clear descent or departure"],
+    nearestNeighbors: ["bubble-investigate", "open-water-wander"],
+    owner: "7.6",
+    note: "Review against the strong bubble investigation reference before changing it.",
+  }),
+  entry({
+    activity: "open-water-rest",
+    label: "Open-water rest",
+    status: READABILITY_BASELINE_STATUS.provisional,
+    policy: READABILITY_CHANGE_POLICY.provisionalFreeze,
+    visualSentence: "the fish is resting quietly in open water",
+    cues: ["very low speed", "gentle drift", "level quiet posture", "gradual wake-up"],
+    nearestNeighbors: ["plant-shelter", "cruise"],
+    owner: "7.6",
+    note: "Likely acceptable; preserve its calmness while checking separation from plant shelter.",
+  }),
+  entry({
+    activity: "plant-shelter",
+    label: "Plant shelter",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "the fish deliberately entered plant cover to become quiet there",
+    cues: ["movement into dense cover", "extremely low speed inside vegetation", "confined protected location", "slow emergence"],
+    nearestNeighbors: ["open-water-rest", "plant-weave"],
+    owner: "7.5",
+    note: "Review with the plant vocabulary after weave is rebuilt so shelter does not become another kind of weaving.",
+  }),
+  entry({
+    activity: "touch-react",
+    label: "Human / glass investigation",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "the fish is responding to something at the front glass rather than an autonomous aquarium target",
+    cues: ["glass-local target relationship", "response timing tied to the interaction", "approach/watch/standoff choreography distinct from autonomous investigation"],
+    nearestNeighbors: ["bubble-investigate", "plant-investigate"],
+    owner: "7.7",
+    note: "Interaction behavior already has its own Stage 2 architecture. Phase 7 should validate distinction, not casually rewrite it.",
+  }),
+  entry({
+    activity: "drifting-inspect",
+    label: "Drifting-object inspection",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "the fish noticed and is inspecting a drifting object",
+    cues: ["moving-object interception", "target-relative corrections", "slowdown near the drifting object"],
+    nearestNeighbors: ["bubble-investigate", "open-water-wander"],
+    owner: "7.6",
+    note: "Required Phase 7 signature, but not a current priority unless blind comparison shows aliasing.",
+  }),
+  entry({
+    activity: "arrival-enter",
+    label: "Arrival entry",
+    status: READABILITY_BASELINE_STATUS.review,
+    policy: READABILITY_CHANGE_POLICY.reviewBeforeChange,
+    visualSentence: "a new fish is entering and settling into the aquarium for the first time",
+    cues: ["edge-originating entry path", "committed inward travel", "settling transition into ordinary activity"],
+    nearestNeighbors: ["cruise", "open-water-wander"],
+    owner: "7.6",
+    note: "Required Phase 7 signature, but lower priority than recurring daily behavior.",
+  }),
+]);
+
+export const PHASE_7_BASELINE_BY_ACTIVITY = Object.freeze(Object.fromEntries(
+  PHASE_7_READABILITY_BASELINE.map((record) => [record.activity, record]),
+));
+
+export const PHASE_7_PRIORITY_COMPARISONS = Object.freeze([
+  Object.freeze(["playful-chase", "individual-follow"]),
+  Object.freeze(["individual-follow", "companion-cruise"]),
+  Object.freeze(["companion-cruise", "cruise"]),
+  Object.freeze(["open-water-rest", "plant-shelter"]),
+  Object.freeze(["plant-investigate", "plant-weave"]),
+  Object.freeze(["bubble-investigate", "surface-investigate"]),
+  Object.freeze(["substrate-search", "open-water-wander"]),
+  Object.freeze(["touch-react", "bubble-investigate"]),
+  Object.freeze(["touch-react", "plant-investigate"]),
+]);
+
+export function readabilityBaselineFor(activity) {
+  return PHASE_7_BASELINE_BY_ACTIVITY[activity] ?? null;
+}

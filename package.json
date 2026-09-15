@@ -7,11 +7,12 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test",
-    "verify": "npm test && npm run audit:simulation && npm run audit:persistence -- --cases=200 && npm run audit:render && npm run measure:feeding && npm run measure:relationship",
+    "verify": "npm test && npm run audit:simulation && npm run audit:persistence -- --cases=200 && npm run audit:render && npm run measure:feeding && npm run measure:relationship && npm run measure:readability",
     "audit:simulation": "node tools/audit-simulation.mjs",
     "audit:render": "node tools/audit-render.mjs",
     "audit:persistence": "node tools/audit-persistence.mjs",
     "measure:readability": "node tools/measure-behavior-readability.mjs",
+    "measure:chase-readiness": "node tools/measure-chase-readiness.mjs",
     "measure:stage2-baseline": "node tools/measure-stage2-baseline.mjs",
     "measure:water": "node tools/measure-water-response.mjs",
     "measure:environment": "node tools/measure-environment-response.mjs",
@@ -20,13 +21,19 @@
     "measure:feeding": "node tools/measure-substrate-feeding.mjs",
     "measure:relationship": "node tools/measure-viewer-relationship.mjs",
     "capture:behaviors": "node tools/capture-behavior-showcase.mjs",
+    "capture:phase7-baseline": "node tools/capture-phase7-readability-baseline.mjs",
     "capture:interaction": "node tools/capture-interaction.mjs",
     "capture:relationship": "node tools/capture-viewer-relationship.mjs",
     "capture:depth": "node tools/capture-habitat-depth.mjs",
     "capture:living": "node tools/capture-living-aquarium.mjs",
     "measure:living": "node tools/measure-living-aquarium.mjs",
+    "preview:branch": "node tools/branch-preview-url.mjs",
     "dev": "node tools/serve.mjs",
-    "build:pages": "node tools/build-pages.mjs"
+    "build:pages": "node tools/build-pages.mjs",
+    "measure:remaining-vocabulary": "node tools/audit-remaining-vocabulary.mjs",
+    "capture:episode": "node tools/capture-vocabulary-episode.mjs",
+    "audit:phase7-vocabulary": "node tools/audit-phase7-vocabulary.mjs",
+    "capture:phase7-final": "node tools/capture-phase7-readability-baseline.mjs --contract=final"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.100"

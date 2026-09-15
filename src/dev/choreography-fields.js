@@ -44,6 +44,10 @@ export const STEERING_FIELDS = Object.freeze([
   field("turnDuration", "Turn duration", "seconds to swing through a facing change", 0.2, 1.5, 0.01),
 ]);
 
+const PLAYFUL_CHASE_STEERING_FIELDS = Object.freeze([
+  field("pursuitVerticalGain", "Pursuit vertical cut", "multiplier on vertical correction once the chase commits", 0.5, 2.5, 0.01),
+]);
+
 // minimumSpeed and maximumSpeed describe one interval. The controller used to
 // silently collapse an inverted interval at runtime, leaving the lab and its
 // copied source claiming a value the fish could not use. Move the other end
@@ -59,7 +63,8 @@ export function constrainedSteeringEdit(profile, key, value) {
 }
 
 const SCENE_INTERVAL_PAIRS = Object.freeze([
-  Object.freeze(["stageSecondsMin", "stageSecondsMax"]),
+  Object.freeze(["inspectSecondsMin", "inspectSecondsMax"]),
+  Object.freeze(["quietSecondsMin", "quietSecondsMax"]),
   Object.freeze(["trailingMinRows", "trailingMaxRows"]),
   Object.freeze(["besideMinRows", "besideMaxRows"]),
   Object.freeze(["panicNearRows", "panicFarRows"]),
@@ -113,19 +118,23 @@ export const SCENE_FIELDS = Object.freeze({
   "plant-investigate": Object.freeze([
     field("approachSpeed", "Approach speed", "rows/s crossing to the plant", 0.02, 1.2, 0.005),
     field("approachCuriosity", "Approach · curiosity", "rows/s added by a curious fish", 0, 1, 0.005),
-    field("inspectSpeed", "Inspect speed", "rows/s once it is reading the plant", 0.01, 0.8, 0.005),
+    field("inspectSpeed", "Inspect speed", "rows/s while reading one local feature", 0.01, 0.8, 0.005),
     field("inspectCuriosity", "Inspect · curiosity", "rows/s added by a curious fish", 0, 0.5, 0.005),
     field("inspectAffinity", "Inspect · plant affinity", "rows/s added by a plant lover", 0, 0.5, 0.005),
-    field("headSweepColumns", "Head sweep", "columns the nose sweeps across the leaf", 0, 2, 0.01),
-    field("hoverRows", "Hover", "rows the body rises and falls while reading", 0, 1.5, 0.01),
-    field("stationSeconds", "Station dwell", "seconds before it moves to the next spot", 0.5, 8, 0.05),
+    field("inspectPitchDegrees", "Inspect pitch", "degrees of planted-looking body bias", -12, 12, 0.25),
+    field("headSweepColumns", "Head sweep", "columns the nose sweeps across the feature", 0, 1.2, 0.01),
+    field("hoverRows", "Hover", "rows the body rises and falls while inspecting", 0, 0.8, 0.01),
+    field("inspectSecondsMin", "Inspect time · min", "seconds held on the local inspection beat", 1, 8, 0.05),
+    field("inspectSecondsMax", "Inspect time · max", "seconds held on the local inspection beat", 1, 8, 0.05),
+    field("retreatSpeed", "Retreat speed", "rows/s leaving the plant after inspection", 0.02, 1.2, 0.005),
+    field("retreatActivity", "Retreat · activity", "rows/s added by an energetic fish", 0, 0.6, 0.005),
+    field("retreatColumns", "Retreat distance", "minimum columns moved clear of the plant", 1, 6, 0.05),
+    field("retreatRows", "Retreat vertical variation", "rows of seeded vertical offset on departure", 0, 2, 0.01),
   ]),
   "plant-weave": Object.freeze([
     field("speedBase", "Speed", "rows/s through the weave", 0.05, 1.4, 0.005),
     field("speedActivity", "Speed · activity", "rows/s added by an energetic fish", 0, 1, 0.005),
     field("speedAffinity", "Speed · plant affinity", "rows/s added by a plant lover", 0, 0.5, 0.005),
-    field("stageSecondsMin", "Stage dwell · min", "seconds on each waypoint", 0.5, 8, 0.05),
-    field("stageSecondsMax", "Stage dwell · max", "seconds on each waypoint", 0.5, 8, 0.05),
     field("asymmetryRows", "Route asymmetry", "rows of per-fish variation in the route", 0, 1.5, 0.01),
   ]),
   "bubble-investigate": Object.freeze([
@@ -180,6 +189,8 @@ export const SCENE_FIELDS = Object.freeze({
     field("lungeSpeedGain", "Chaser lunge", "rows/s added at the top of each lunge", 0, 1, 0.005),
     field("evasionSpeed", "Evader speed", "rows/s the chased fish bolts at", 0.05, 1.6, 0.005),
     field("evasionProximityGain", "Evader panic", "rows/s added as the chaser closes", 0, 1, 0.005),
+    field("evasionSideRows", "Evader sidestep", "lateral escape strength during the dodge pulse", 0, 2, 0.01),
+    field("evasionBurstGain", "Evader dodge burst", "rows/s added at the top of the dodge pulse", 0, 0.5, 0.005),
     field("approachLeadSeconds", "Lead · approach", "seconds ahead of the companion it aims", 0, 3, 0.01),
     field("pursuitLeadSeconds", "Lead · pursuit", "seconds ahead of the companion it aims", 0, 3, 0.01),
     field("approachStandoffRows", "Standoff · approach", "rows short of the companion", 0, 5, 0.01),
@@ -217,6 +228,21 @@ export const SCENE_FIELDS = Object.freeze({
     field("driftAmplitudeRows", "Drift · horizontal", "columns of idle sway", 0, 1, 0.005),
     field("driftVerticalRows", "Drift · vertical", "rows of idle rise and fall", 0, 1, 0.005),
   ]),
+  "plant-shelter": Object.freeze([
+    field("enterSpeed", "Entry speed", "rows/s entering plant cover", 0.02, 0.8, 0.005),
+    field("enterActivity", "Entry · activity", "rows/s added by an energetic fish", 0, 0.5, 0.005),
+    field("quietSpeed", "Quiet speed", "rows/s while settled in cover", 0.005, 0.2, 0.002),
+    field("quietActivity", "Quiet · activity", "small activity contribution while sheltered", 0, 0.1, 0.002),
+    field("quietPitchDegrees", "Quiet pitch", "degrees of body bias while sheltered", -10, 10, 0.25),
+    field("quietSecondsMin", "Quiet time · min", "seconds visibly settled in cover", 2, 12, 0.05),
+    field("quietSecondsMax", "Quiet time · max", "seconds visibly settled in cover", 2, 12, 0.05),
+    field("quietDriftColumns", "Quiet drift · horizontal", "columns of tiny sheltered drift", 0, 0.5, 0.005),
+    field("quietDriftRows", "Quiet drift · vertical", "rows of tiny sheltered drift", 0, 0.5, 0.005),
+    field("emergeSpeed", "Emergence speed", "rows/s leaving cover", 0.02, 1, 0.005),
+    field("emergeActivity", "Emergence · activity", "rows/s added by an energetic fish", 0, 0.5, 0.005),
+    field("emergeColumns", "Emergence distance", "minimum columns moved clear of cover", 1, 6, 0.05),
+    field("emergeRiseRows", "Emergence rise", "rows lifted while leaving cover", 0, 2, 0.01),
+  ]),
 });
 
 // A phase profile is keyed "<activity>:<phase>" and only lists what it changes.
@@ -233,9 +259,12 @@ const VELOCITY_TARGET_ACTIVITIES = new Set([
 
 export function steeringFieldsFor(key) {
   const activity = key.split(":")[0];
-  return STEERING_FIELDS.filter((definition) => (
+  const common = STEERING_FIELDS.filter((definition) => (
     definition.key !== "velocityMatch" || VELOCITY_TARGET_ACTIVITIES.has(activity)
   ));
+  return key === ACTIVITIES.playfulChase
+    ? [...common, ...PLAYFUL_CHASE_STEERING_FIELDS]
+    : common;
 }
 
 export function steeringKeyLabel(key) {

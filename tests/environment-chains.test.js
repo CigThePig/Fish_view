@@ -347,11 +347,12 @@ test("a patch of broken surface opens a trip that otherwise comes round once a m
   // Only the fish that can see it. A break is a patch of water, not an
   // announcement: it carries its own radius like every other stimulus, and a
   // fish at the bottom of the tank is simply somewhere else.
-  // The explore branch deliberately lets a fish finish a vegetation visit or a
+  // The explore branch deliberately lets a fish finish a vegetation/surface visit or a
   // drifting inspection before it is offered anything else, so those are not
   // fish the break failed to reach.
   const committed = new Set([
     ACTIVITIES.driftingInspect,
+    ACTIVITIES.surfaceInvestigate,
     ACTIVITIES.plantWeave,
     ACTIVITIES.plantInvestigate,
   ]);

@@ -39,11 +39,11 @@ export const SHOWCASE_SCENARIOS = Object.freeze([
   Object.freeze({ id: "cruise", label: "Cruise", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
   Object.freeze({ id: "open-water-wander", label: "Open-water wander", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
   Object.freeze({ id: "bubble-investigate", label: "Bubble investigation", subjects: [SUBJECT_INDEX], loopSeconds: 8.3 }),
-  Object.freeze({ id: "plant-investigate", label: "Plant investigation", subjects: [SUBJECT_INDEX], loopSeconds: 8.2 }),
-  Object.freeze({ id: "plant-weave", label: "Plant weave", subjects: [SUBJECT_INDEX], loopSeconds: 9.5 }),
+  Object.freeze({ id: "plant-investigate", label: "Plant investigation", subjects: [SUBJECT_INDEX], loopSeconds: 24 }),
+  Object.freeze({ id: "plant-weave", label: "Plant weave", subjects: [SUBJECT_INDEX], loopSeconds: 26 }),
   Object.freeze({ id: "school-follow", label: "School follow", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
   Object.freeze({ id: "individual-follow", label: "Individual follow", subjects: [SUBJECT_INDEX, COMPANION_INDEX], loopSeconds: 10 }),
-  Object.freeze({ id: "companion-cruise", label: "Companion cruise", subjects: [SUBJECT_INDEX, COMPANION_INDEX], loopSeconds: 10 }),
+  Object.freeze({ id: "companion-cruise", label: "Companion cruise", subjects: [SUBJECT_INDEX, COMPANION_INDEX], loopSeconds: 38 }),
   // Long enough to show the whole arc: the closing run, the break when the
   // chaser arrives, and the two fish drifting apart again.
   Object.freeze({ id: "playful-chase", label: "Playful chase", subjects: [SUBJECT_INDEX, COMPANION_INDEX], loopSeconds: 9.5 }),
@@ -51,12 +51,12 @@ export const SHOWCASE_SCENARIOS = Object.freeze([
   // the mouth: a visible final descent, the arrival, and enough of the creep
   // along the sand for several strikes.
   Object.freeze({ id: "substrate-search", label: "Substrate search", subjects: [SUBJECT_INDEX], loopSeconds: 20 }),
-  Object.freeze({ id: "surface-investigate", label: "Surface investigation", subjects: [SUBJECT_INDEX], loopSeconds: 13 }),
+  Object.freeze({ id: "surface-investigate", label: "Surface investigation", subjects: [SUBJECT_INDEX], loopSeconds: 22 }),
   Object.freeze({ id: "open-water-rest", label: "Open-water rest", subjects: [SUBJECT_INDEX], loopSeconds: 9 }),
-  Object.freeze({ id: "plant-shelter", label: "Plant shelter", subjects: [SUBJECT_INDEX], loopSeconds: 10 }),
+  Object.freeze({ id: "plant-shelter", label: "Plant shelter", subjects: [SUBJECT_INDEX], loopSeconds: 26 }),
   Object.freeze({ id: "touch-react", label: "Touch reaction", subjects: [SUBJECT_INDEX], loopSeconds: 3 }),
-  Object.freeze({ id: "drifting-inspect", label: "Drifting seed inspection", subjects: [SUBJECT_INDEX], loopSeconds: 14 }),
-  Object.freeze({ id: "arrival-enter", label: "Arrival entry", subjects: [SUBJECT_INDEX], loopSeconds: 8 }),
+  Object.freeze({ id: "drifting-inspect", label: "Drifting seed inspection", subjects: [SUBJECT_INDEX], loopSeconds: 20 }),
+  Object.freeze({ id: "arrival-enter", label: "Arrival entry", subjects: [SUBJECT_INDEX], loopSeconds: 18 }),
 ]);
 
 const SCENARIO_BY_ID = new Map(SHOWCASE_SCENARIOS.map((scenario) => [scenario.id, scenario]));
@@ -84,6 +84,10 @@ function activityState(current, target = {}, source = null) {
     targetId: target.targetId ?? null,
     targetX: target.targetX ?? null,
     targetY: target.targetY ?? null,
+    weaveStage: source?.weaveStage ?? 0,
+    weaveStageStartedAt: source?.weaveStageStartedAt ?? 0,
+    plantVisitStage: source?.plantVisitStage ?? 0,
+    plantVisitStageStartedAt: source?.plantVisitStageStartedAt ?? 0,
   };
 }
 

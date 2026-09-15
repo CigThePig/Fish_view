@@ -1,8 +1,11 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
+import { CHASE_ARC_PHASES, chaseArcPhase } from "../src/sim/chase-arc.js";
+import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import {
   SHOWCASE_SCENARIOS,
   createShowcaseState,
@@ -60,10 +63,13 @@ function parseList(value, allowed, allValue = "all") {
 
 function parseOptions(argumentsList) {
   const scenarioIds = SHOWCASE_SCENARIOS.map((scenario) => scenario.id);
-  const scenarios = parseList(
+  let scenarios = parseList(
     optionValue(argumentsList, "--scenario", "all"),
     scenarioIds,
   ).map((id) => SHOWCASE_SCENARIOS.find((scenario) => scenario.id === id));
+  const seconds = Number(optionValue(argumentsList, "--seconds", 0));
+  if (seconds && (!Number.isFinite(seconds) || seconds < 1 || seconds > 90)) throw new Error("--seconds must be 1–90");
+  if (seconds) scenarios = scenarios.map(scenario => ({ ...scenario, loopSeconds: seconds }));
   const scale = Number(optionValue(argumentsList, "--scale", DEFAULT_SCALE));
   if (!Number.isFinite(scale) || scale < 0.2 || scale > 1) {
     throw new Error("--scale must be between 0.2 and 1");
@@ -89,9 +95,17 @@ function snapshotMetadata(state, scenario, elapsed) {
   const forage = scenario.id === "substrate-search" && lead
     ? forageActivity(lead, subjects[0].index, state)
     : null;
+  // Playful chase deliberately reuses the broad break/glide steering envelope
+  // during its semantic escape beat so the evader moves first. A capture that
+  // labels that envelope "break" makes the authored arc appear to run backward.
+  // The showcase elapsed clock is stable even after the production activity
+  // peels away, so use the same semantic phase function as the chase observer.
+  const phase = scenario.id === "playful-chase" && lead && spacing !== null
+    ? chaseArcPhase(elapsed, spacing, sceneTuning(state, "playful-chase"))
+    : target?.choreographyPhase ?? lead?.activity?.current ?? null;
   return {
     seconds: Number(elapsed.toFixed(1)),
-    phase: target?.choreographyPhase ?? lead?.activity?.current ?? null,
+    phase,
     speed: lead ? Number(Math.hypot(lead.vx, lead.vy).toFixed(2)) : null,
     pitch: lead ? Number((lead.visual?.pitch ?? 0).toFixed(1)) : null,
     spacing: spacing === null ? null : Number(spacing.toFixed(2)),
@@ -148,9 +162,15 @@ function semanticSnapshotTimes(scenario) {
       scenario.loopSeconds * 0.94,
     )];
   } else if (scenario.id === "playful-chase") {
-    const pursuit = phaseTime("pursuit", scenario.loopSeconds * 0.35);
-    const breaking = phaseTime("break", scenario.loopSeconds * 0.8);
-    times = [phaseTime("approach", 0), pursuit, (pursuit + breaking) / 2, breaking];
+    // Four stills cannot show every beat, so keep the most diagnostic arc:
+    // setup, first escape, near-miss/intercept, and aftermath. The animated GIF
+    // between them carries the pursuit itself.
+    times = [
+      phaseTime(CHASE_ARC_PHASES.engage, 0),
+      phaseTime(CHASE_ARC_PHASES.escape, scenario.loopSeconds * 0.32),
+      phaseTime(CHASE_ARC_PHASES.intercept, scenario.loopSeconds * 0.52),
+      phaseTime(CHASE_ARC_PHASES.recover, scenario.loopSeconds * 0.76),
+    ];
   } else if (scenario.id === "substrate-search") {
     const search = firstTime(
       timeline,
@@ -167,17 +187,32 @@ function semanticSnapshotTimes(scenario) {
     times = [0, search * 0.52, peck, recovery];
   } else if (scenario.id === "surface-investigate") {
     const probe = phaseTime("probe", scenario.loopSeconds * 0.78);
-    times = [0, probe * 0.5, probe, firstTimeAfter(
-      timeline,
-      probe + 0.8,
-      (metadata) => metadata.phase === "probe",
-      scenario.loopSeconds * 0.94,
-    )];
+    times = [0, probe, phaseTime("descend", probe + 2.8),
+      firstTimeAfter(timeline, probe + 3, (metadata) => metadata.phase === "travel", scenario.loopSeconds * 0.94)];
+  } else if (scenario.id === "companion-cruise") {
+    times = [0, 8, phaseTime("separate", scenario.loopSeconds * 0.8), scenario.loopSeconds * 0.97];
   } else if (scenario.id === "plant-investigate") {
-    const inspect = phaseTime("inspect", scenario.loopSeconds * 0.45);
-    times = [0, inspect, Math.min(scenario.loopSeconds, inspect + 2.4), scenario.loopSeconds * 0.94];
+    const inspect = phaseTime("inspect", scenario.loopSeconds * 0.4);
+    const lateInspect = firstTimeAfter(
+      timeline,
+      inspect + 1.4,
+      (metadata) => metadata.phase === "inspect",
+      inspect,
+    );
+    times = [phaseTime("approach", 0), inspect, lateInspect, phaseTime("retreat", scenario.loopSeconds * 0.72)];
   } else if (scenario.id === "plant-weave") {
-    times = [1, 2, 3, 4].map((stage) => phaseTime(`weave-${stage}`, null));
+    // Entry, the first crossing, the second crossing, and emergence are the
+    // four stills that prove this is traversal rather than target hopping.
+    times = [1, 2, 4, 5].map((stage) => phaseTime(`weave-${stage}`, null));
+  } else if (scenario.id === "plant-shelter") {
+    const quiet = phaseTime("quiet", scenario.loopSeconds * 0.42);
+    const lateQuiet = firstTimeAfter(
+      timeline,
+      quiet + 2,
+      (metadata) => metadata.phase === "quiet",
+      quiet,
+    );
+    times = [phaseTime("enter", 0), quiet, lateQuiet, phaseTime("emerge", scenario.loopSeconds * 0.72)];
   } else {
     times = [];
   }
@@ -189,7 +224,7 @@ function metadataLabel(metadata) {
     `${metadata.seconds.toFixed(1)}s`,
     metadata.phase,
     `v ${metadata.speed?.toFixed(2) ?? "-"}`,
-    `pitch ${metadata.pitch?.toFixed(0) ?? "-"}\u00b0`,
+    `pitch ${metadata.pitch?.toFixed(0) ?? "-"}°`,
   ];
   if (metadata.spacing !== null) fields.push(`gap ${metadata.spacing.toFixed(1)}`);
   if (metadata.bubbleDistance !== null) fields.push(`bubble ${metadata.bubbleDistance.toFixed(1)}`);
@@ -249,7 +284,7 @@ async function captureAquarium(canvasModule, options) {
 
     drawLabel(
       sheetContext,
-      `${scenario.label}  \u2014  landscape`,
+      `${scenario.label}  —  landscape`,
       0,
       row * rowHeight,
       sheet.width,
@@ -312,6 +347,8 @@ const canvasModule = await loadCanvasModule();
 await mkdir(options.output, { recursive: true });
 const manifest = {
   version: 1,
+  commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  dirty: Boolean(execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim()),
   stepSeconds: STEP_SECONDS,
   scale: options.scale,
   captures: [],

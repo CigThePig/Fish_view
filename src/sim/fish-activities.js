@@ -47,6 +47,34 @@ import { mix32, sample01, sampleRange, sampleSigned } from "./prng.js";
 
 const TAU = Math.PI * 2;
 
+// Plant weave is a short deterministic route, not a timer animation. The
+// activity stores only a bounded cursor into this five-leg route plus the age
+// at which the current leg began. Every waypoint is reconstructed from fish +
+// plant identity, so no path history or per-frame route data can accumulate.
+export const WEAVE_ROUTE_STAGE_COUNT = 5;
+const WEAVE_ROUTE_LAST_STAGE = WEAVE_ROUTE_STAGE_COUNT - 1;
+const WEAVE_ARRIVAL_RADIUS = 0.62;
+const WEAVE_MIN_CLEARANCE_COLUMNS = 1.6;
+const WEAVE_MAX_CLEARANCE_COLUMNS = 2.55;
+const WEAVE_EMERGE_EXTRA_COLUMNS = 1.65;
+// A valid weave is allowed to outlive its ordinary activity dwell while it
+// physically finishes the route. This is only a pathological-stall escape:
+// ordinary completion is still the final reached emergence waypoint.
+const WEAVE_ROUTE_FAILURE_SECONDS = 120;
+const WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MIN = 11;
+const WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MAX = 14;
+// The follower spends the tail of its own dwell visibly leaving its rear
+// slot. Selection remains unchanged afterward, so social/chase frequency is
+// not distorted merely to make the sentence legible.
+const INDIVIDUAL_FOLLOW_PEEL_SECONDS = 3.2;
+
+// Investigation and shelter share a tiny three-beat visit cursor. The cursor is
+// bounded activity-local state, not a path: 0 is arrival, 1 is the local beat,
+// and 2 is the deliberate departure. Plant weave owns its separate five-leg
+// spatial route and is intentionally untouched by this Phase 7.5 vocabulary.
+const PLANT_VISIT_LAST_STAGE = 2;
+const PLANT_VISIT_ARRIVAL_RADIUS = 0.7;
+
 // Reach of a single school member's company, and how many such neighbors add
 // up to full engagement, so one passing stray is not a whole school.
 const SCHOOL_CONTACT_RADIUS = 4.6;
@@ -135,8 +163,9 @@ export function activityCommitment(activity) {
 export const DWELL_SECONDS = Object.freeze({
   [ACTIVITIES.cruise]: [6, 18, 28],
   [ACTIVITIES.wander]: [7, 18, 30],
-  [ACTIVITIES.plantInvestigate]: [6, 14, 23],
-  [ACTIVITIES.plantWeave]: [8, 15, 24],
+  // Long enough for approach -> stable inspection -> physically reached retreat.
+  [ACTIVITIES.plantInvestigate]: [6, 24, 32],
+  [ACTIVITIES.plantWeave]: [8, 55, 70],
   [ACTIVITIES.bubbleInvestigate]: [5, 12, 21],
   [ACTIVITIES.surfaceInvestigate]: [6, 12, 20],
   [ACTIVITIES.schoolFollow]: [7, 17, 28],
@@ -209,6 +238,16 @@ export function createActivityState(current = ACTIVITIES.cruise, previous = curr
     targetId: null,
     targetX: null,
     targetY: null,
+    // Spatial route progress for plant weave. These two scalars are ignored by
+    // every other activity and reset whenever a fresh activity is selected.
+    weaveStage: 0,
+    weaveStageStartedAt: 0,
+    // Three bounded beats used only by plant investigation and shelter.
+    plantVisitStage: 0,
+    plantVisitStageStartedAt: 0,
+    // Surface arrival is physical; only the short probe hold is timed.
+    surfaceStage: 0,
+    surfaceStageStartedAt: 0,
     // The two strikes that last put a mouth in the sand, by their own event
     // seeds. Silt is something a strike did, so the tail it leaves has to
     // belong to one - and a tail outlives the peck that raised it by half a
@@ -247,6 +286,21 @@ function normalizedActivity(fish) {
       : null,
     targetX: Number.isFinite(source?.targetX) ? source.targetX : null,
     targetY: Number.isFinite(source?.targetY) ? source.targetY : null,
+    weaveStage: Number.isInteger(source?.weaveStage)
+      ? clamp(source.weaveStage, 0, WEAVE_ROUTE_LAST_STAGE)
+      : 0,
+    weaveStageStartedAt: Number.isFinite(source?.weaveStageStartedAt)
+      ? Math.max(0, source.weaveStageStartedAt)
+      : 0,
+    plantVisitStage: Number.isInteger(source?.plantVisitStage)
+      ? clamp(source.plantVisitStage, 0, PLANT_VISIT_LAST_STAGE)
+      : 0,
+    plantVisitStageStartedAt: Number.isFinite(source?.plantVisitStageStartedAt)
+      ? Math.max(0, source.plantVisitStageStartedAt)
+      : 0,
+    surfaceStage: Number.isInteger(source?.surfaceStage) ? clamp(source.surfaceStage, 0, 2) : 0,
+    surfaceStageStartedAt: Number.isFinite(source?.surfaceStageStartedAt)
+      ? Math.max(0, source.surfaceStageStartedAt) : 0,
     contactSeed: Number.isSafeInteger(source?.contactSeed) ? source.contactSeed : null,
     priorContactSeed: Number.isSafeInteger(source?.priorContactSeed) ? source.priorContactSeed : null,
     contactX: Number.isFinite(source?.contactX) ? source.contactX : null,
@@ -372,7 +426,25 @@ function selectPlantTarget(fish, state, traits, affinities, { shelter = false } 
   return best;
 }
 
+function weaveClearanceColumns(fish) {
+  return clamp(
+    spriteHalfWidth(fish) * 0.48 + 0.65,
+    WEAVE_MIN_CLEARANCE_COLUMNS,
+    WEAVE_MAX_CLEARANCE_COLUMNS,
+  );
+}
+
 function secondWeavePlant(fish, first, state) {
+  // A second stem only helps the read if there is room for the fish centre to
+  // clear one plant before it threads toward the next. Picking the nearest
+  // specimen regardless of body size made two mathematically different sides
+  // collapse into the same on-screen body footprint.
+  const clearance = weaveClearanceColumns(fish);
+  const halfWidth = spriteHalfWidth(fish);
+  const outwardRoom = clearance + WEAVE_EMERGE_EXTRA_COLUMNS;
+  const minimumDistance = clearance * 2 + 0.8;
+  const maximumDistance = Math.max(8, state.cols * 0.2);
+  const idealDistance = Math.min(maximumDistance, minimumDistance + 2.7);
   const candidates = (state.plants ?? [])
     .filter((plant) => plant.seed !== first.seed && suitablePlant(plant))
     .map((plant) => ({
@@ -380,9 +452,15 @@ function secondWeavePlant(fish, first, state) {
       distance: Math.abs(plant.x - first.x),
       preference: favoritePlantScore(fish.seed, plant),
     }))
-    .filter((candidate) => candidate.distance <= Math.max(7, state.cols * 0.18))
+    .filter((candidate) => {
+      if (candidate.distance < minimumDistance || candidate.distance > maximumDistance) return false;
+      const travelSide = Math.sign(candidate.plant.x - first.x) || 1;
+      const emergeX = candidate.plant.x + travelSide * outwardRoom;
+      return emergeX >= halfWidth && emergeX <= state.cols - halfWidth;
+    })
     .sort((left, right) => (
-      (left.distance - left.preference * 2) - (right.distance - right.preference * 2)
+      (Math.abs(left.distance - idealDistance) - left.preference * 1.6)
+        - (Math.abs(right.distance - idealDistance) - right.preference * 1.6)
       || left.plant.seed - right.plant.seed
     ));
   return candidates[0]?.plant ?? null;
@@ -573,6 +651,9 @@ function activityChoices(fish, index, state, {
       0.43 + (1 - affinities.shelter) * 0.36 + continuity(ACTIVITIES.openWaterRest) + jitter(ACTIVITIES.openWaterRest),
       { targetType: "waypoint", targetX: openPoint.x, targetY: openPoint.y },
     )];
+    // A completed shelter visit must visibly leave cover before another
+    // shelter can win. One open-water rest route prevents an immediate U-turn.
+    if (fish.activity?.current === ACTIVITIES.plantShelter) return choices;
     const plant = selectPlantTarget(fish, state, traits, affinities, { shelter: true });
     if (plant) {
       choices.push(choice(
@@ -601,6 +682,9 @@ function activityChoices(fish, index, state, {
         + continuity(ACTIVITIES.schoolFollow) + jitter(ACTIVITIES.schoolFollow),
       { targetType: "school" },
     )];
+    // One school-follow bout after companion cruise gives the pair a gentle
+    // separation instead of immediately renewing the same formation.
+    if (fish.activity?.current === ACTIVITIES.companionCruise) return choices;
     if (companion) {
       choices.push(choice(
         ACTIVITIES.individualFollow,
@@ -624,13 +708,15 @@ function activityChoices(fish, index, state, {
       ) / playPeriod;
       const daylight = state.timeOfDayHours >= 6 && state.timeOfDayHours < 20;
       // A compatible fish met at close range can invite a first game. Long-
-      // term familiarity still chooses companions, but no longer gates every
-      // playful encounter in a new aquarium behind minutes of prior contact.
+      // term familiarity still chooses companions, but every chase begins with
+      // a companion that is physically inside the authored recognition range.
+      const chaseRecognitionRadius = sceneTuning(state, ACTIVITIES.playfulChase).recognitionRadiusRows;
       const firstMeeting = companion.distance < 4.5 && companion.compatibility > 0.65;
       const availableForPlay = companion.fish.behavior?.current !== 'rest'
         && companion.fish.behavior?.current !== 'forage';
       if (fish.activity?.current !== ACTIVITIES.playfulChase
-        && availableForPlay && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
+        && availableForPlay && companion.distance <= chaseRecognitionRadius
+        && daylight && playWindow < 0.22 && fish.drives.energy > 0.4
         && traits.activity > 0.38 && traits.sociability > 0.34
         && (companion.familiarity >= 0.018 || firstMeeting)) {
         choices.push(choice(
@@ -655,7 +741,8 @@ function activityChoices(fish, index, state, {
     // Completed/invalid vegetation visits deliberately exit into open water
     // for one readable route before the same favourite can win again.
     if (fish.activity?.current === ACTIVITIES.plantWeave
-      || fish.activity?.current === ACTIVITIES.plantInvestigate) return choices;
+      || fish.activity?.current === ACTIVITIES.plantInvestigate
+      || fish.activity?.current === ACTIVITIES.surfaceInvestigate) return choices;
 
     if (fish.activity?.current === ACTIVITIES.driftingInspect) return choices;
     const tuft = livingWorldRecords(state).filter((r) => r.kind === 'tuft'
@@ -677,7 +764,11 @@ function activityChoices(fish, index, state, {
           + continuity(ACTIVITIES.plantInvestigate) + jitter(ACTIVITIES.plantInvestigate),
         { targetType: "plant", targetId: plant.plant.seed },
       ));
-      if (secondWeavePlant(fish, plant.plant, state)) {
+      // Slots 0-2 are the permanent mid-water cast and are physically
+      // constrained to a shallower envelope by tickIndividual(). A plant
+      // route authored against the full substrate envelope can therefore
+      // contain unreachable waypoints for them, so they do not enter weave.
+      if (index >= 3 && secondWeavePlant(fish, plant.plant, state)) {
         const weavePeriod = sampleRange(fish.seed, 8380, 38, 62);
         const weavePhase = positiveModulo(
           state.elapsedRealSeconds + sampleRange(fish.seed, 8381, 0, weavePeriod),
@@ -724,9 +815,14 @@ function activityChoices(fish, index, state, {
       const broken = consequenceIsVisible(nearestBreak) ? nearestBreak : null;
       const reach = broken ? consequenceReach(state, fish, "surface-break") : 0;
       if (cycle <= window || broken) {
-        const point = broken
-          ? { x: broken.x, y: surfaceSafeY(fish, state, broken.x) }
+        const suggested = broken
+          ? { x: broken.x }
           : waypointFor(fish, index, state, traits, affinities, "surface");
+        // A spontaneous surface trip should ascend, not spend its entire bout
+        // crossing the tank toward a distant waypoint. Keep an actual broken
+        // patch as its target; otherwise inspect the nearby meniscus.
+        const x = broken ? suggested.x : clamp(suggested.x, fish.x - 3.2, fish.x + 3.2);
+        const point = { x, y: surfaceSafeY(fish, state, x) };
         choices.push(choice(
           ACTIVITIES.surfaceInvestigate,
           0.24 + affinities.surface * 0.86 + traits.curiosity * 0.18
@@ -761,6 +857,12 @@ export function selectActivity(fish, index, state, context = {}) {
     targetId: selected.targetId,
     targetX: selected.targetX,
     targetY: selected.targetY,
+    weaveStage: 0,
+    weaveStageStartedAt: 0,
+    plantVisitStage: 0,
+    plantVisitStageStartedAt: 0,
+    surfaceStage: 0,
+    surfaceStageStartedAt: 0,
   };
 }
 
@@ -792,21 +894,23 @@ function companionOffset(fish, companion, activity, state) {
   const mutualCompanion = activity === ACTIVITIES.companionCruise
     && companion.activity?.current === ACTIVITIES.companionCruise
     && companion.activity?.targetId === fish.seed;
-  const existingSide = (fish.x - companion.x) * basePerpendicular.x
-    + (fish.y - companion.y) * basePerpendicular.y;
-  // Once a pair already has an above/below ordering, preserve it. Crossing
-  // both ASCII bodies merely to reach a seed-selected slot reads as collision,
-  // not cooperation. A near-tie still uses the stable pair seed.
-  const side = mutualCompanion && Math.abs(existingSide) > 0.18
-    ? Math.sign(existingSide)
-    : seededSide;
+  // Keep mutual spacing in the tank's vertical frame. Rotating each slot by
+  // the other fish's correction heading creates a feedback orbit: neither
+  // animal supplies an independent forward reference.
+  if (mutualCompanion) {
+    const side = Math.abs(fish.y - companion.y) > 0.18 ? Math.sign(fish.y - companion.y) : seededSide;
+    return {
+      x: companion.x,
+      y: companion.y + side * sampleRange(pairSeed, 8501, tuning.besideMinRows, tuning.besideMaxRows),
+    };
+  }
+  const side = seededSide;
   const perpendicular = {
     x: basePerpendicular.x * side,
     y: basePerpendicular.y * side,
   };
-  // Mutual companions each steer to the same full center spacing. A unilateral
-  // cruiser uses that visible spacing too. Both cases keep the authored
-  // ASCII bodies adjacent rather than compositing them into one tangled fish.
+  // A unilateral cruiser keeps the same visible body spacing while a
+  // follower stays in the smaller rear-offset slot.
   const beside = sampleRange(pairSeed, 8501, tuning.besideMinRows, tuning.besideMaxRows);
   return {
     x: companion.x - velocity.x * trailing + perpendicular.x * beside,
@@ -826,53 +930,271 @@ function boundedPlantPoint(fish, state, x, y) {
   };
 }
 
+function plantVisitStage(activity) {
+  return clamp(
+    Number.isInteger(activity.plantVisitStage) ? activity.plantVisitStage : 0,
+    0,
+    PLANT_VISIT_LAST_STAGE,
+  );
+}
+
+function plantVisitStageAge(activity) {
+  return Math.max(0, activity.ageRealSeconds - (activity.plantVisitStageStartedAt ?? 0));
+}
+
+function plantPairSeed(fish, plant) {
+  return mix32((fish.seed >>> 0) ^ Math.imul(plant.seed >>> 0, 0xc2b2ae35));
+}
+
+function departureColumns(fish, authoredColumns) {
+  // Departure has to move the body, not merely the centre point. Adult sprites
+  // can be several columns wide, so a minimum authored distance grows modestly
+  // with body width while remaining tightly bounded.
+  return Math.max(authoredColumns, clamp(spriteHalfWidth(fish) * 0.7, authoredColumns, authoredColumns + 1.6));
+}
+
 function inspectionPoint(fish, plant, state, activity) {
   const tuning = sceneTuning(state, ACTIVITIES.plantInvestigate);
   const base = plantTargetPosition(fish, plant, state);
-  const distance = Math.hypot(base.x - fish.x, base.y - fish.y);
-  if (distance > 1.75 || activity.ageRealSeconds < 1.1) {
-    return { ...base, phase: "approach", distance };
+  const stage = plantVisitStage(activity);
+  const stageAge = plantVisitStageAge(activity);
+  const pairSeed = plantPairSeed(fish, plant);
+  const holdSeconds = sampleRange(
+    pairSeed,
+    8157,
+    tuning.inspectSecondsMin,
+    tuning.inspectSecondsMax,
+  );
+
+  if (stage === 0) {
+    return {
+      ...base,
+      stage,
+      phase: "approach",
+      arrivalRadius: PLANT_VISIT_ARRIVAL_RADIUS,
+      holdSeconds,
+      final: false,
+    };
   }
 
-  const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(plant.seed >>> 0, 0xc2b2ae35));
-  const inspectAge = Math.max(0, activity.ageRealSeconds - 1.1);
-  const station = Math.floor(inspectAge / tuning.stationSeconds);
-  const height = Math.min(1.2, Math.max(0.42, plantHeight(plant) * 0.16));
-  const verticalStation = sampleSigned(pairSeed, 8140 + positiveModulo(station, 11)) * height;
-  const headSweep = Math.sin(inspectAge * 2.25 + sampleRange(pairSeed, 8155, 0, TAU))
-    * tuning.headSweepColumns;
-  const hover = Math.sin(inspectAge * 1.18 + sampleRange(pairSeed, 8156, 0, TAU)) * tuning.hoverRows;
+  if (stage === 1) {
+    // One feature, actually inspected. The old target hopped vertically every
+    // few seconds; this keeps one seeded station and lets only the head/body
+    // make a small living sweep around it.
+    const height = Math.min(0.8, Math.max(0.34, plantHeight(plant) * 0.11));
+    const verticalStation = sampleSigned(pairSeed, 8140) * height;
+    const headSweep = Math.sin(stageAge * 1.7 + sampleRange(pairSeed, 8155, 0, TAU))
+      * tuning.headSweepColumns;
+    const hover = Math.sin(stageAge * 1.05 + sampleRange(pairSeed, 8156, 0, TAU))
+      * tuning.hoverRows;
+    return {
+      ...boundedPlantPoint(fish, state, base.x + headSweep, base.y + verticalStation + hover),
+      stage,
+      phase: "inspect",
+      arrivalRadius: PLANT_VISIT_ARRIVAL_RADIUS,
+      holdSeconds,
+      final: false,
+    };
+  }
+
+  const side = Math.sign(base.x - plant.x) || (sample01(pairSeed, 8158) < 0.5 ? -1 : 1);
+  const retreat = departureColumns(fish, tuning.retreatColumns);
+  // A departure directly behind the fish asks the shared graceful-turn controller
+  // for an almost exact reversal. That is correct for cruising, but here it can
+  // turn a three-beat inspection into a giant loop around the plant. Give every
+  // retreat a small deterministic vertical lane so the fish visibly peels away
+  // on the same side instead of crossing the stems or circling the tank.
+  const verticalSample = sampleSigned(pairSeed, 8159);
+  const verticalSign = verticalSample < 0 ? -1 : 1;
+  const vertical = verticalSign * (0.72 + Math.abs(verticalSample) * tuning.retreatRows);
   return {
-    ...boundedPlantPoint(fish, state, base.x + headSweep, base.y + verticalStation + hover),
-    phase: "inspect",
-    distance,
+    ...boundedPlantPoint(fish, state, base.x + side * retreat, base.y + vertical),
+    stage,
+    phase: "retreat",
+    arrivalRadius: PLANT_VISIT_ARRIVAL_RADIUS,
+    holdSeconds,
+    final: true,
   };
 }
 
-function weavePoint(fish, primary, state, activity) {
+function shelterPoint(fish, plant, state, activity) {
+  const tuning = sceneTuning(state, ACTIVITIES.plantShelter);
+  const base = plantTargetPosition(fish, plant, state, { shelter: true });
+  const stage = plantVisitStage(activity);
+  const stageAge = plantVisitStageAge(activity);
+  const pairSeed = plantPairSeed(fish, plant);
+  const holdSeconds = sampleRange(
+    pairSeed,
+    8181,
+    tuning.quietSecondsMin,
+    tuning.quietSecondsMax,
+  );
+
+  if (stage === 0) {
+    return {
+      ...base,
+      stage,
+      phase: "enter",
+      arrivalRadius: PLANT_VISIT_ARRIVAL_RADIUS,
+      holdSeconds,
+      final: false,
+    };
+  }
+
+  if (stage === 1) {
+    const driftPhase = stageAge * 0.52 + sampleRange(pairSeed, 8180, 0, TAU);
+    return {
+      ...boundedPlantPoint(
+        fish,
+        state,
+        base.x + Math.sin(driftPhase) * tuning.quietDriftColumns,
+        base.y + Math.sin(driftPhase * 0.71) * tuning.quietDriftRows,
+      ),
+      stage,
+      phase: "quiet",
+      arrivalRadius: PLANT_VISIT_ARRIVAL_RADIUS,
+      holdSeconds,
+      final: false,
+    };
+  }
+
+  const seededSide = Math.sign(base.x - plant.x) || (sample01(pairSeed, 8182) < 0.5 ? -1 : 1);
+  const emerge = departureColumns(fish, tuning.emergeColumns);
+  const halfWidth = spriteHalfWidth(fish);
+  const hasEmergenceRoom = (side) => {
+    const x = base.x + side * emerge;
+    return x >= halfWidth && x <= state.cols - halfWidth;
+  };
+  const side = hasEmergenceRoom(seededSide) ? seededSide : -seededSide;
+  return {
+    ...boundedPlantPoint(fish, state, base.x + side * emerge, base.y - tuning.emergeRiseRows),
+    stage,
+    phase: "emerge",
+    arrivalRadius: PLANT_VISIT_ARRIVAL_RADIUS,
+    holdSeconds,
+    final: true,
+  };
+}
+
+function weavePlantPoint(fish, plant, state, side, lift, distance) {
+  const base = plantTargetPosition(fish, plant, state);
+  return {
+    ...boundedPlantPoint(fish, state, plant.x + side * distance, base.y + lift),
+    plant,
+    side,
+  };
+}
+
+function weaveRoute(fish, primary, state) {
   const tuning = sceneTuning(state, ACTIVITIES.plantWeave);
   const secondary = secondWeavePlant(fish, primary, state);
   const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(primary.seed >>> 0, 0x85ebca6b));
-  const stageSeconds = sampleRange(pairSeed, 8160, tuning.stageSecondsMin, tuning.stageSecondsMax);
-  const stage = Math.floor(Math.max(0, activity.ageRealSeconds) / stageSeconds) % 5;
-  const route = [
-    { plant: primary, alternate: false, lift: -0.65 },
-    { plant: primary, alternate: true, lift: 0.55 },
-    { plant: secondary ?? primary, alternate: false, lift: -0.85 },
-    { plant: secondary ?? primary, alternate: true, lift: 0.28 },
-    { plant: primary, alternate: false, lift: 0.72 },
-  ];
-  const waypoint = route[stage];
-  const base = plantTargetPosition(fish, waypoint.plant, state, {
-    alternateSide: waypoint.alternate,
-  });
-  const asymmetry = sampleSigned(pairSeed, 8170 + stage) * tuning.asymmetryRows;
-  return {
-    ...boundedPlantPoint(fish, state, base.x, base.y + waypoint.lift + asymmetry),
-    stage,
-    stageSeconds,
-    plant: waypoint.plant,
+  const clearance = weaveClearanceColumns(fish);
+  const verticalSign = sample01(pairSeed, 8161) < 0.5 ? -1 : 1;
+  const seededTravel = sample01(pairSeed, 8162) < 0.5 ? -1 : 1;
+  const halfWidth = spriteHalfWidth(fish);
+  const emergeDistance = clearance + WEAVE_EMERGE_EXTRA_COLUMNS;
+  const hasEmergenceRoom = (plant, side) => {
+    const x = plant.x + side * emergeDistance;
+    return x >= halfWidth && x <= state.cols - halfWidth;
   };
+  const fallbackTravel = hasEmergenceRoom(primary, seededTravel)
+    ? seededTravel
+    : -seededTravel;
+  const travelSide = secondary
+    ? (Math.sign(secondary.x - primary.x) || fallbackTravel)
+    : fallbackTravel;
+  const entrySide = -travelSide;
+  const asymmetry = (stage) => sampleSigned(pairSeed, 8170 + stage) * tuning.asymmetryRows;
+  const point = (plant, side, lift, distance = clearance, leg) => ({
+    ...weavePlantPoint(
+      fish,
+      plant,
+      state,
+      side,
+      lift + asymmetry(leg.stage),
+      distance,
+    ),
+    leg: leg.name,
+  });
+
+  if (secondary) {
+    return [
+      point(primary, entrySide, verticalSign > 0 ? -0.35 : -1.35, clearance, { stage: 0, name: "entry-primary" }),
+      point(primary, travelSide, verticalSign > 0 ? -1.45 : -0.25, clearance, { stage: 1, name: "cross-primary" }),
+      point(secondary, -travelSide, verticalSign > 0 ? -0.62 : -1.08, clearance, { stage: 2, name: "thread-gap" }),
+      point(secondary, travelSide, verticalSign > 0 ? -1.58 : -0.32, clearance, { stage: 3, name: "cross-secondary" }),
+      point(
+        secondary,
+        travelSide,
+        -0.82,
+        clearance + WEAVE_EMERGE_EXTRA_COLUMNS,
+        { stage: 4, name: "emerge" },
+      ),
+    ];
+  }
+
+  // A stale save can outlive the secondary plant it originally chose. Keep a
+  // coherent one-plant fallback instead of invalidating the activity mid-swim:
+  // two alternating crossings followed by a clear exit on the travel side.
+  return [
+    point(primary, entrySide, verticalSign > 0 ? -0.35 : -1.35, clearance, { stage: 0, name: "entry-primary" }),
+    point(primary, travelSide, verticalSign > 0 ? -1.45 : -0.25, clearance, { stage: 1, name: "cross-primary" }),
+    point(primary, entrySide, verticalSign > 0 ? -0.62 : -1.08, clearance, { stage: 2, name: "cross-back" }),
+    point(primary, travelSide, verticalSign > 0 ? -1.58 : -0.32, clearance, { stage: 3, name: "cross-again" }),
+    point(
+      primary,
+      travelSide,
+      verticalSign * 0.08,
+      clearance + WEAVE_EMERGE_EXTRA_COLUMNS,
+      { stage: 4, name: "emerge" },
+    ),
+  ];
+}
+
+function weavePoint(fish, primary, state, activity) {
+  const route = weaveRoute(fish, primary, state);
+  const stage = clamp(
+    Number.isInteger(activity.weaveStage) ? activity.weaveStage : 0,
+    0,
+    WEAVE_ROUTE_LAST_STAGE,
+  );
+  const waypoint = route[stage];
+  const pairSeed = mix32((fish.seed >>> 0) ^ Math.imul(primary.seed >>> 0, 0x85ebca6b));
+  const timeoutSeconds = sampleRange(
+    pairSeed,
+    8190 + stage,
+    WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MIN,
+    WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MAX,
+  );
+  return {
+    ...waypoint,
+    stage,
+    timeoutSeconds,
+    arrivalRadius: WEAVE_ARRIVAL_RADIUS,
+    final: stage === WEAVE_ROUTE_LAST_STAGE,
+  };
+}
+
+function advanceWeaveProgress(fish, state, activity) {
+  if (activity.current !== ACTIVITIES.plantWeave) return activity;
+  const primary = findPlant(state, activity.targetId);
+  if (!primary || !suitablePlant(primary)) return activity;
+  const point = weavePoint(fish, primary, state, activity);
+  const distance = Math.hypot(point.x - fish.x, point.y - fish.y);
+  const arrived = distance <= point.arrivalRadius;
+  // A route cursor moves only when the body reaches the authored waypoint.
+  // The per-leg timeout remains telemetry for diagnosing slow geometry, but
+  // it must never erase a physical crossing by silently selecting the next
+  // target. A separate whole-route deadline below handles pathological stalls.
+  if (arrived && point.stage < WEAVE_ROUTE_LAST_STAGE) {
+    return {
+      ...activity,
+      weaveStage: point.stage + 1,
+      weaveStageStartedAt: activity.ageRealSeconds,
+    };
+  }
+  return activity;
 }
 
 /*
@@ -883,6 +1205,27 @@ function weavePoint(fish, primary, state, activity) {
  * the waterline, and an intercepting fish aims ahead of a finger that may be
  * heading for either.
  */
+function advancePlantVisitProgress(fish, state, activity) {
+  if (![ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter].includes(activity.current)) return activity;
+  const primary = findPlant(state, activity.targetId);
+  const shelter = activity.current === ACTIVITIES.plantShelter;
+  if (!primary || !suitablePlant(primary, { shelter })) return activity;
+  const point = shelter
+    ? shelterPoint(fish, primary, state, activity)
+    : inspectionPoint(fish, primary, state, activity);
+  const stageAge = plantVisitStageAge(activity);
+  const arrived = Math.hypot(point.x - fish.x, point.y - fish.y) <= point.arrivalRadius;
+  const completedBeat = point.stage === 0
+    ? arrived
+    : point.stage === 1 && stageAge >= point.holdSeconds;
+  if (!completedBeat || point.stage >= PLANT_VISIT_LAST_STAGE) return activity;
+  return {
+    ...activity,
+    plantVisitStage: point.stage + 1,
+    plantVisitStageStartedAt: activity.ageRealSeconds,
+  };
+}
+
 function clampToWater(state, point) {
   if (!point) return null;
   return {
@@ -1003,20 +1346,32 @@ export function resolveActivityTarget(fish, index, state, activity, {
       const tuning = sceneTuning(state, ACTIVITIES.plantInvestigate);
       const point = inspectionPoint(fish, primary, state, activity);
       const inspecting = point.phase === "inspect";
+      const retreating = point.phase === "retreat";
       return choreographed(state, activity.current, {
         x: point.x,
         y: point.y,
         speed: inspecting
           ? (tuning.inspectSpeed + traits.curiosity * tuning.inspectCuriosity
             + affinities.plant * tuning.inspectAffinity) * cautious
-          : (tuning.approachSpeed + traits.curiosity * tuning.approachCuriosity) * cautious,
-        postureBias: 0,
+          : retreating
+            ? (tuning.retreatSpeed + traits.activity * tuning.retreatActivity) * cautious
+            : (tuning.approachSpeed + traits.curiosity * tuning.approachCuriosity) * cautious,
+        postureBias: inspecting ? tuning.inspectPitchDegrees : 0,
         plantTarget: true,
+        plantVisitStage: point.stage,
+        plantVisitArrivalRadius: point.arrivalRadius,
+        plantVisitHoldSeconds: point.holdSeconds,
+        plantVisitFinal: point.final,
         choreographyPhase: point.phase,
-      }, inspecting ? "plant-investigate:inspect" : null);
+      }, inspecting
+        ? "plant-investigate:inspect"
+        : retreating ? "plant-investigate:retreat" : null);
     }
 
     if (activity.current === ACTIVITIES.plantWeave) {
+      // Repair stale/dev states too: the permanent mid-water cast cannot
+      // physically reach every route generated in the full plant envelope.
+      if (index < 3) return null;
       const tuning = sceneTuning(state, ACTIVITIES.plantWeave);
       const point = weavePoint(fish, primary, state, activity);
       return choreographed(state, activity.current, {
@@ -1027,30 +1382,37 @@ export function resolveActivityTarget(fish, index, state, activity, {
         postureBias: 0,
         plantTarget: true,
         weaveStage: point.stage,
+        weaveLeg: point.leg,
+        weavePlantSeed: point.plant.seed,
+        weavePlantX: point.plant.x,
+        weaveSide: point.side,
+        weaveArrivalRadius: point.arrivalRadius,
+        weaveLegTimeoutSeconds: point.timeoutSeconds,
+        weaveFinal: point.final,
         choreographyPhase: `weave-${point.stage + 1}`,
       });
     }
 
-    const point = plantTargetPosition(fish, primary, state, { shelter: true });
-    const distance = Math.hypot(point.x - fish.x, point.y - fish.y);
-    const settled = distance < 1.15;
-    const driftPhase = activity.ageRealSeconds * 0.52 + sampleRange(fish.seed, 8180, 0, TAU);
-    const restingPoint = settled
-      ? boundedPlantPoint(
-        fish,
-        state,
-        point.x + Math.sin(driftPhase) * 0.1,
-        point.y + Math.sin(driftPhase * 0.71) * 0.07,
-      )
-      : point;
+    const tuning = sceneTuning(state, ACTIVITIES.plantShelter);
+    const point = shelterPoint(fish, primary, state, activity);
+    const quiet = point.phase === "quiet";
+    const emerging = point.phase === "emerge";
     return choreographed(state, activity.current, {
-      x: restingPoint.x,
-      y: restingPoint.y,
-      speed: settled ? 0.032 + traits.activity * 0.025 : 0.15 + traits.activity * 0.09,
-      postureBias: 0,
+      x: point.x,
+      y: point.y,
+      speed: quiet
+        ? tuning.quietSpeed + traits.activity * tuning.quietActivity
+        : emerging
+          ? (tuning.emergeSpeed + traits.activity * tuning.emergeActivity) * cautious
+          : (tuning.enterSpeed + traits.activity * tuning.enterActivity) * cautious,
+      postureBias: quiet ? tuning.quietPitchDegrees : 0,
       plantTarget: true,
-      choreographyPhase: settled ? "shelter" : "settle",
-    }, settled ? null : "plant-shelter:settle");
+      plantVisitStage: point.stage,
+      plantVisitArrivalRadius: point.arrivalRadius,
+      plantVisitHoldSeconds: point.holdSeconds,
+      plantVisitFinal: point.final,
+      choreographyPhase: point.phase,
+    }, quiet ? null : emerging ? "plant-shelter:emerge" : "plant-shelter:settle");
   }
   if (activity.current === ACTIVITIES.bubbleInvestigate) {
     const tuning = sceneTuning(state, ACTIVITIES.bubbleInvestigate);
@@ -1113,16 +1475,27 @@ export function resolveActivityTarget(fish, index, state, activity, {
   if (activity.current === ACTIVITIES.surfaceInvestigate) {
     if (index < 3 || !Number.isFinite(activity.targetX)) return null;
     const tuning = sceneTuning(state, ACTIVITIES.surfaceInvestigate);
+    const stage = activity.surfaceStage ?? 0;
     const lateralPhase = activity.ageRealSeconds * (0.5 + traits.curiosity * 0.18)
       + sampleRange(fish.seed, 8200, 0, TAU);
     const halfWidth = spriteHalfWidth(fish);
     const x = clamp(
-      activity.targetX + Math.sin(lateralPhase) * (tuning.sweepColumns + affinities.surface * 0.72),
+      activity.targetX + (stage === 1 ? Math.sin(lateralPhase) * (tuning.sweepColumns + affinities.surface * 0.72) : 0),
       halfWidth,
       state.cols - halfWidth,
     );
     const safeY = surfaceSafeY(fish, state, x);
-    const near = Math.abs(fish.y - safeY) < 1.12;
+    if (stage === 2) {
+      return choreographed(state, activity.current, {
+        x,
+        y: Math.min(substrateSafeY(fish, state, x), safeY + 3.2),
+        speed: tuning.ascendSpeed,
+        postureBias: 8,
+        surfaceInspect: true,
+        choreographyPhase: "descend",
+      });
+    }
+    const near = stage === 1;
     const probe = near ? Math.max(0, Math.sin(activity.ageRealSeconds * 2.35
       + sampleRange(fish.seed, 8201, 0, TAU))) : 0;
     return choreographed(state, activity.current, {
@@ -1185,6 +1558,7 @@ export function resolveActivityTarget(fish, index, state, activity, {
           postureBias: 0,
           companionTarget: true,
           playfulChase: true,
+          chaseTuning: tuning,
           choreographyPhase: "break",
         }, "playful-chase:break");
       }
@@ -1212,20 +1586,84 @@ export function resolveActivityTarget(fish, index, state, activity, {
         postureBias: 0,
         companionTarget: true,
         playfulChase: true,
+        chaseTuning: tuning,
         choreographyPhase: phase,
       });
     }
-    const point = companionOffset(fish, companion, activity.current, state);
     const tuning = sceneTuning(state, activity.current);
+    if (activity.current === ACTIVITIES.individualFollow
+      && activity.ageRealSeconds >= activityDwell(fish, activity.current).maximum
+        - INDIVIDUAL_FOLLOW_PEEL_SECONDS) {
+      // Finish the sentence before the dwell boundary. Generate several
+      // short bounded exits and choose the one that actually opens the most
+      // space from the leader. This stays readable even when the obvious
+      // away vector points into a wall or the protected depth envelope.
+      const away = safeNormalize(
+        fish.x - companion.x,
+        fish.y - companion.y,
+        fish.seed < companion.seed ? -1 : 1,
+        0,
+      );
+      const tangent = { x: -away.y, y: away.x };
+      const candidates = [
+        boundedPlantPoint(fish, state, fish.x + away.x * 3.6, fish.y + away.y * 2.8),
+        boundedPlantPoint(
+          fish, state,
+          fish.x + away.x * 1.5 + tangent.x * 3.2,
+          fish.y + away.y * 1.2 + tangent.y * 2.5,
+        ),
+        boundedPlantPoint(
+          fish, state,
+          fish.x + away.x * 1.5 - tangent.x * 3.2,
+          fish.y + away.y * 1.2 - tangent.y * 2.5,
+        ),
+      ];
+      const currentGap = Math.hypot(fish.x - companion.x, fish.y - companion.y);
+      const departure = candidates.reduce((best, candidate) => {
+        const gap = Math.hypot(candidate.x - companion.x, candidate.y - companion.y);
+        return gap > best.gap ? { point: candidate, gap } : best;
+      }, { point: { x: fish.x, y: fish.y }, gap: currentGap }).point;
+      return choreographed(state, activity.current, {
+        ...departure,
+        speed: tuning.speedBase + traits.sociability * tuning.speedSociability * 0.55,
+        postureBias: 0,
+        companionTarget: true,
+        choreographyPhase: "peel-away",
+      });
+    }
+    const point = companionOffset(fish, companion, activity.current, state);
     const mutualCompanion = activity.current === ACTIVITIES.companionCruise
       && companion.activity?.current === ACTIVITIES.companionCruise
       && companion.activity?.targetId === fish.seed;
+    const ownSeparationReady = activity.current === ACTIVITIES.companionCruise
+      && activity.ageRealSeconds >= activityDwell(fish, activity.current).maximum - 4;
+    const companionSeparationReady = mutualCompanion
+      && Math.max(0, companion.activity?.ageRealSeconds ?? 0)
+        >= activityDwell(companion, ACTIVITIES.companionCruise).maximum - 4;
+    if (activity.current === ACTIVITIES.companionCruise
+      && (ownSeparationReady || companionSeparationReady)) {
+      const forward = fish.vx < 0 ? -1 : 1;
+      const side = fish.y < companion.y ? -1 : 1;
+      const departure = boundedPlantPoint(fish, state, fish.x + forward * 4, fish.y + side * 2);
+      return choreographed(state, activity.current, {
+        ...departure, speed: tuning.speedBase, postureBias: 0,
+        choreographyPhase: "separate",
+      });
+    }
+    // A mutual pair needs a shared travel velocity as well as spacing. Pure
+    // reciprocal matching decays into two stationary fish keeping each other
+    // company. Their mean heading supplies travel; neither copies the other's pose.
+    const guide = fish.seed < companion.seed ? fish : companion;
+    const forward = mutualCompanion ? {
+      x: fish.vx + companion.vx < 0 ? -1 : 1,
+      y: Math.sin(state.elapsedRealSeconds / 11 + sampleRange(guide.seed, 8502, 0, TAU)) * 0.08,
+    } : null;
     return choreographed(state, activity.current, {
       x: point.x,
       y: point.y,
       speed: tuning.speedBase + traits.sociability * tuning.speedSociability,
-      velocityX: companion.vx,
-      velocityY: companion.vy,
+      velocityX: mutualCompanion ? forward.x * tuning.speedBase : companion.vx,
+      velocityY: mutualCompanion ? forward.y * tuning.speedBase : companion.vy,
       postureBias: 0,
       companionTarget: true,
       mutualCompanion,
@@ -1367,17 +1805,22 @@ export function resolveActivityTarget(fish, index, state, activity, {
 }
 
 function naturalCompletion(fish, activity, target, dwell) {
-  if (activity.ageRealSeconds < dwell.minimum || !target) return false;
+  if (!target) return false;
   const distance = Math.hypot(target.x - fish.x, target.y - fish.y);
+  if ([ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter].includes(activity.current)) {
+    return activity.plantVisitStage >= PLANT_VISIT_LAST_STAGE
+      && distance <= (target.plantVisitArrivalRadius ?? PLANT_VISIT_ARRIVAL_RADIUS);
+  }
+  if (activity.ageRealSeconds < dwell.minimum) return false;
   if (activity.current === ACTIVITIES.wander || activity.current === ACTIVITIES.openWaterRest) return distance < 0.7;
-  if (activity.current === ACTIVITIES.plantInvestigate) return distance < 0.62;
-  if (activity.current === ACTIVITIES.plantWeave) return activity.ageRealSeconds > 9 && distance < 0.75;
-  if (activity.current === ACTIVITIES.surfaceInvestigate) return distance < 0.72;
+  if (activity.current === ACTIVITIES.plantWeave) {
+    return activity.weaveStage >= WEAVE_ROUTE_LAST_STAGE
+      && distance <= WEAVE_ARRIVAL_RADIUS;
+  }
+  if (activity.current === ACTIVITIES.surfaceInvestigate) return activity.surfaceStage === 2 && distance < 0.72;
   if (activity.current === ACTIVITIES.arrivalEnter) return distance < 0.9;
   return false;
-}
-
-/**
+}/**
  * What the press this fish just answered left in the water, if the fish would
  * rather look at that than go back to what it was doing.
  *
@@ -1471,19 +1914,55 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
       const resumable = resume
         && resume.current !== ACTIVITIES.touchReact
         && activityMatchesBehavior(resume.current, fish.behavior?.current);
-      const resumed = resumable ? { ...resume, ageRealSeconds: 0 } : null;
+      const resumed = resumable
+        ? { ...resume, ageRealSeconds: 0, weaveStageStartedAt: 0, plantVisitStageStartedAt: 0, surfaceStageStartedAt: 0 }
+        : null;
       if (resumed && resolve(resumed, null)) activity = resumed;
     }
   }
 
   const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);
-  if (!compatible) activity = selectActivity(fish, index, state, { ...context, traits, affinities });
-  else if (activity !== previous) activity = { ...activity };
+  const committedPlantVisit = [
+    ACTIVITIES.plantInvestigate,
+    ACTIVITIES.plantShelter,
+    ACTIVITIES.plantWeave,
+  ].includes(activity.current);
+  const committedSurfaceVisit = activity.current === ACTIVITIES.surfaceInvestigate;
+  if (!compatible && !committedPlantVisit && !committedSurfaceVisit) {
+    activity = selectActivity(fish, index, state, { ...context, traits, affinities });
+  } else if (activity !== previous) activity = { ...activity };
   else activity = { ...activity, ageRealSeconds: activity.ageRealSeconds + realDelta };
 
+  // Route progression is evaluated from the fish's current physical position
+  // before the next target is resolved. Elapsed time can rescue a stuck middle
+  // leg, but it cannot normally move the route cursor.
+  activity = advanceWeaveProgress(fish, state, activity);
+  activity = advancePlantVisitProgress(fish, state, activity);
+
+  if (activity.current === ACTIVITIES.surfaceInvestigate) {
+    const stage = activity.surfaceStage ?? 0;
+    const halfWidth = spriteHalfWidth(fish);
+    const targetX = clamp(activity.targetX ?? fish.x, halfWidth, state.cols - halfWidth);
+    const surfaceY = surfaceSafeY(fish, state, targetX);
+    const arrived = Math.abs(fish.y - surfaceY) < 1.12
+      && Math.abs(fish.x - targetX) < 2;
+    const held = activity.ageRealSeconds - (activity.surfaceStageStartedAt ?? 0);
+    if ((stage === 0 && arrived) || (stage === 1 && held >= 2.8)) {
+      activity = { ...activity, surfaceStage: stage + 1, surfaceStageStartedAt: activity.ageRealSeconds };
+    }
+  }
   let target = resolve(activity, attention);
   const dwell = activityDwell(fish, activity.current);
-  if (!target || activity.ageRealSeconds >= dwell.maximum || naturalCompletion(fish, activity, target, dwell)) {
+  const activitySafetyMaximum = activity.current === ACTIVITIES.plantInvestigate
+    ? Math.max(dwell.maximum, 42)
+    : activity.current === ACTIVITIES.plantShelter
+      ? Math.max(dwell.maximum, 52)
+      : activity.current === ACTIVITIES.plantWeave
+        ? WEAVE_ROUTE_FAILURE_SECONDS
+        : activity.current === ACTIVITIES.surfaceInvestigate ? 35 : dwell.maximum;
+  if (!target
+    || activity.ageRealSeconds >= activitySafetyMaximum
+    || naturalCompletion(fish, activity, target, dwell)) {
     activity = selectActivity({ ...fish, activity }, index, state, { ...context, traits, affinities });
     target = resolve(activity, attention);
   }

@@ -29,12 +29,102 @@ a passing test suite is not by itself a PASS for a visual or behavioural phase.
 | 4 | Drag, swipe and local water impulse | Done | [phase 4](phase-4-drag-swipe.md) |
 | 5 | Environmental interaction and causal chains | Done | [phase 5](phase-5-environment-and-chains.md) · [first slice](phase-5-water-and-plants.md) |
 | 6 | Persistent fish–viewer relationship | Done | [phase 6](phase-6-viewer-relationship-evidence.md) |
-| 7A | Flagship chase redesign | Not started | — |
-| 7B | Remaining behaviour readability pass | Not started | — |
-| 8 | Scene salience and anti-synchronisation | Not started | — |
+| 7.1 | Readability baseline and behavior freeze | Done | [phase 7.1](phase-7-1-readability-baseline.md) |
+| 7.2 | Playful chase — core pursuit choreography | Done | [phase 7.2](phase-7-2-playful-chase-core-pursuit.md) |
+| 7.3 | Playful chase — complete arc and ending | Done | [phase 7.3](phase-7-3-playful-chase-complete-arc.md) |
+| 7.4 | Plant weave — route and geometry redesign | Done | [phase 7.4](phase-7-4-plant-weave-route-and-geometry.md) |
+| 7.5 | Plant vocabulary separation and polish | Done | [phase 7.5](phase-7-5-plant-vocabulary-separation-and-polish.md) |
+| 7.6 | Remaining behavior readability audit | Done | [phase 7.6](phase-7-6-remaining-behavior-readability.md) |
+| 7.7 | Cross-behavior readability validation and freeze | Done | [phase 7.7](phase-7-7-cross-behavior-readability-validation.md) |
+| 8 | Scene salience and anti-synchronisation | Ready | [Phase 8 handoff](phase-7-7-cross-behavior-readability-validation.md#phase-8-handoff) |
 | 9 | Repetition, habituation and long-watch validation | Not started | — |
 | 10 | ESP32-oriented performance and memory budget | Not started | — |
 | 11 | Integrated product validation and polish | Not started | — |
+
+The root specification still describes Phase 7 as flagship chase work followed
+by the remaining behavior vocabulary. The numbered 7.1–7.7 rows above are the
+smaller reviewable execution slices used to carry that specification out without
+mixing several visual problems into one change.
+
+Phase 7.1 freezes the starting line before choreography changes begin. Bubble
+investigation and substrate feeding are explicit reference-quality behaviors;
+cruise, open-water wander, school follow, individual follow and open-water rest
+are provisionally frozen unless side-by-side evidence shows a real problem.
+Playful chase and plant weave are the only top-priority rework targets. Every
+required behavior now has a machine-readable visual sentence, at least three
+visible cues, nearest visual neighbors, a change policy and a later owning
+slice. A blind contact-sheet generator hides behavior names and phase labels so
+the motion has to communicate its own meaning. See the
+[Phase 7.1 report](phase-7-1-readability-baseline.md).
+
+Before Phase 7.2 changes chase motion, use the
+[Phase 7 visual tooling readiness guide](phase-7-tooling-readiness.md). The live
+GitHub Pages deployment is `main` and is therefore not valid evidence for a
+working branch. Phase branches now have exact-commit interactive preview links,
+branch CI artifacts containing the built static site and captures, and a
+reusable chase observer that records pair-distance, speed, turn-rate, evasion,
+break and personality/body-size evidence without grading today's choreography.
+
+Phase 7.2 turns playful chase from a fast follow into a visibly asymmetric
+pursuit without retuning `individual-follow`. The evader now makes a
+deterministic lateral dodge and burst, while the chaser receives sharper
+pursuit steering and vertical correction. Six-seed telemetry and branch renders
+show stronger evader turning, more pair-line separation and clearer post-chase
+gap growth; full repository verification remained green. Gap oscillation and a
+true near-miss / overshoot climax are intentionally still absent, because those
+belong to the complete chase arc in Phase 7.3. See the
+[Phase 7.2 report](phase-7-2-playful-chase-core-pursuit.md).
+
+Phase 7.3 gives that pursuit a complete motion sentence: engage, first escape,
+renewed pursuit, interception / near miss, decisive break and recovery. Across
+all six deterministic chase seeds the pair-distance direction changes three
+times, including two changes before the break, so the chase now visibly closes,
+releases and closes again instead of behaving like a fast formation. Closure
+also fixed a stale Phase 7.2-era readability assertion and made the capture tool
+report semantic chase phases rather than the broad steering envelope used under
+the hood. Normal repository verification and the exact-commit Phase 7 evidence
+job are green. See the [Phase 7.3 report](phase-7-3-playful-chase-complete-arc.md).
+
+Phase 7.4 turns plant weave into an actual route through vegetation. Five
+deterministic body-aware legs now advance from physical waypoint completion
+instead of a stage clock: entry, primary crossing, threading toward/through a
+second plant when available, another crossing, and a physically reached
+emergence. Intermediate timeouts exist only as bounded stuck recovery. A six-seed
+production-path regression proves the route is spatial, while a dedicated GIF
+comparison shows weave continuously traversing vegetation beside the much more
+local plant-investigation and quiet plant-shelter controls. Full verification,
+persistence and renderer audits remain green. See the
+[Phase 7.4 report](phase-7-4-plant-weave-route-and-geometry.md).
+
+Phase 7.5 separates the full plant vocabulary around that frozen traversal
+control. Plant investigation now reads approach → stable local inspect →
+same-side retreat, while shelter reads enter cover → quiet → emerge. Both use a
+bounded three-stage activity-local cursor and require physical arrival/departure
+rather than letting elapsed time stand in for motion. Six deterministic seeds
+for each behavior complete the authored arc, the difficult regression fixtures
+now finish naturally, and the exact visual comparison keeps weave energetic and
+spatial while investigation stays local and shelter becomes nearly still. See
+the [Phase 7.5 report](phase-7-5-plant-vocabulary-separation-and-polish.md).
+
+Phase 7.6 audits the remaining vocabulary and fixes two demonstrated weaknesses.
+Companions now travel together and separate gently, and surface visits physically
+ascend, probe and descend toward reachable local targets. The temporary post-7.5
+relationship diagnostic is reconciled and removed; available low-energy fish can
+volunteer while actual rest and feeding remain protected. Other individual
+choreography stays frozen. Unsolicited glass-to-person attribution is explicitly
+deferred to Phase 8 scene salience and context. See the
+[Phase 7.6 PASS report](phase-7-6-remaining-behavior-readability.md).
+
+Phase 7.7 validates the vocabulary as one system and freezes it. A fifteen-pair
+confusion matrix covers every final entry, a shuffled captionless capture keeps
+labels out of the judgement, and 96 showcase observations span six identities,
+five body profiles and all five seeded traits without a teleport-like seam or
+full redraw. Natural production observation reaches every recurring category.
+The one accepted limitation is familiar-glass person-attribution in a busy scene;
+its motion is frozen and Phase 8 owns the missing context. See the
+[Phase 7.7 PASS report](phase-7-7-cross-behavior-readability-validation.md) and
+[final vocabulary](phase-7-final-behavior-vocabulary.md). Phase 7 is complete;
+Phase 8 is Ready.
 
 Phase 6 gives each persistent fish one compact, bounded familiarity with the
 viewer while keeping seeded personality and short-term saturation separate.

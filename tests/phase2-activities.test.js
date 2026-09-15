@@ -19,6 +19,7 @@ import {
   favoritePlantScore,
   plantGrowthNovelty,
   plantTargetPosition,
+  resolveActivityTarget,
   tickFishActivity,
 } from "../src/sim/fish-activities.js";
 import { speciesCanBottomFeed } from "../src/sim/fish-growth.js";
@@ -256,21 +257,28 @@ test("completed plant visits return to open water before choosing vegetation aga
   const base = stockedAquarium({ seed: 614 });
   const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
   assert.ok(plant);
-  for (const activity of [ACTIVITIES.plantInvestigate, ACTIVITIES.plantWeave]) {
-    const fish = {
-      ...withBehavior(base.individuals[4], "explore"),
-      activity: {
-        ...createActivityState(activity),
-        ageRealSeconds: 40,
-        targetType: "plant",
-        targetId: plant.seed,
-      },
-    };
-    const state = { ...base, individuals: base.individuals.map((value, index) => index === 4 ? fish : value) };
-    const result = tickFishActivity(fish, 4, state, 0.1, { bubbles: [] });
-    assert.equal(result.activity.current, ACTIVITIES.wander);
-    assert.equal(result.activity.targetType, "waypoint");
-  }
+  const staged = {
+    ...withBehavior(base.individuals[4], "explore"),
+    activity: {
+      ...createActivityState(ACTIVITIES.plantInvestigate),
+      ageRealSeconds: 9,
+      targetType: "plant",
+      targetId: plant.seed,
+      plantVisitStage: 2,
+      plantVisitStageStartedAt: 6,
+    },
+  };
+  const stagedState = {
+    ...base,
+    individuals: base.individuals.map((value, index) => index === 4 ? staged : value),
+  };
+  const retreat = resolveActivityTarget(staged, 4, stagedState, staged.activity, { bubbles: [] });
+  assert.equal(retreat.choreographyPhase, "retreat");
+  const fish = { ...staged, x: retreat.x, y: retreat.y };
+  const state = { ...stagedState, individuals: stagedState.individuals.map((value, index) => index === 4 ? fish : value) };
+  const result = tickFishActivity(fish, 4, state, 0.1, { bubbles: [] });
+  assert.equal(result.activity.current, ACTIVITIES.wander);
+  assert.equal(result.activity.targetType, "waypoint");
 });
 
 test("a touch assigns response roles instead of overriding every activity", () => {
@@ -360,7 +368,11 @@ test("glass affinity changes deterministic approach style without allowing refus
 test("familiar energetic fish can select a brief bounded playful chase", () => {
   const base = stockedAquarium({ seed: 773 });
   const fish = withBehavior(base.individuals[4], "social");
-  const companion = base.individuals[5];
+  const companion = {
+    ...base.individuals[5],
+    x: fish.x + 2,
+    y: fish.y,
+  };
   const history = {
     ...fish.history,
     socialMemory: [{ seed: companion.seed, familiarity: 0.95, lastSeenSeconds: 0 }],
@@ -375,7 +387,9 @@ test("familiar energetic fish can select a brief bounded playful chase", () => {
     const state = {
       ...base,
       elapsedRealSeconds: seconds,
-      individuals: base.individuals.map((value, index) => index === 4 ? prepared : value),
+      individuals: base.individuals.map((value, index) => (
+        index === 4 ? prepared : index === 5 ? companion : value
+      )),
     };
     const utilities = activityUtilities(prepared, 4, state, {
       affinities: affinities({ play: 0.98, companion: 0.92 }),
