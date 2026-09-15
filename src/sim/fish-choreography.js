@@ -157,7 +157,18 @@ export function choreographyFor(state, activity, phase = null) {
 // phase names pass straight through the existing pursuit branch and are then
 // visible to steering and telemetry.
 export function chasePhase(ageRealSeconds, distance, tuning = null) {
-  return chaseMacroPhase(ageRealSeconds, distance, tuning);
+  const age = Math.max(0, Number.isFinite(ageRealSeconds) ? ageRealSeconds : 0);
+  const bounds = chaseArcBoundaries(tuning);
+  const phase = chaseMacroPhase(age, distance, tuning);
+  // A production playful-chase activity is only selected from a recognised
+  // companion. Once its opening escape/hesitation beat has started, a widening
+  // gap is evidence that the beat worked, not a reason to rewind the chaser to
+  // approach. The lower-level chaseArcPhase() intentionally keeps its stricter
+  // distance gate for hand-posed diagnostics that begin outside recognition.
+  if (phase === "approach" && age >= bounds.engageEnd && age < bounds.escapeEnd) {
+    return "break";
+  }
+  return phase;
 }
 
 // The chased fish keeps its own biological behavior and activity. This derived
@@ -224,11 +235,7 @@ export function chaseEvasionForFish(fish, state) {
       burstPulse = 0.45 + burst * 0.55;
       phaseSpeedBonus = 0.34 + burst * 0.3;
       phaseStrength = 0.06 + proximity * 0.78 + burst * 0.08;
-      // This is a startle bolt, not a gradual cruise acceleration. At 10 fps
-      // the semantic escape may only have a couple of useful frames before the
-      // newly opened gap crosses recognition range, so the evader must acquire
-      // the authored burst speed immediately rather than asymptotically.
-      accelerationResponse = 18 + burst * 4;
+      accelerationResponse = 7 + burst * 2.5;
       turningResponse = (3.8 + burst * 0.8) * agility;
       maximumSpeed = 4;
       // Escape is the one chase beat where the evader temporarily outranks its
@@ -493,6 +500,13 @@ export function steerActivityVelocity(fish, target, {
   const blendResponse = accelerationResponse * (0.72 + clamp(behaviorBlend, 0, 1) * 0.28);
   const accelerationEase = 1 - Math.exp(-delta * blendResponse);
   let speed = currentSpeed + (desiredSpeed - currentSpeed) * accelerationEase;
+  // The startle bolt is intentionally a one-beat exception to ordinary
+  // acceleration smoothing. Its window can close as soon as the evader opens
+  // enough space to leave the panic/recognition range; if the floor only shaped
+  // desiredSpeed, a 10 fps fish could leave that window before ever visibly
+  // reaching the authored burst. Apply the floor to realised speed only while
+  // the 4-row escape envelope is actually active.
+  if (evasionSpeedFloor > 0) speed = Math.max(speed, evasionSpeedFloor);
   const minimumSpeed = Math.min(
     maximumSpeed,
     Math.max(0, Number.isFinite(profile.minimumSpeed) ? profile.minimumSpeed : 0.055),
