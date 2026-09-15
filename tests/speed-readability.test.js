@@ -186,7 +186,7 @@ test("locomotion temperament changes steering for identical activity geometry", 
   );
 });
 
-test("playful-chase evader sustains a visibly fast escape instead of one brief spike", () => {
+test("playful-chase evader can burst toward four rows per second without living there", () => {
   const base = stockedAquarium({ seed: 2020, wallClockHours: 12 });
   const chaserSource = base.individuals[0];
   const chasedSource = base.individuals[1];
@@ -212,11 +212,14 @@ test("playful-chase evader sustains a visibly fast escape instead of one brief s
   for (let frame = 0; frame < 36; frame += 1) {
     state = tick(state, STEP_SECONDS);
     const evader = state.individuals[1];
-    if (chaseEvasionForFish(evader, state)) {
+    const evasion = chaseEvasionForFish(evader, state);
+    if (evasion) {
       currentRun.push({
         panelSpeed: visiblePanelSpeedOf(evader),
         logicalSpeed: logicalSpeedOf(evader),
+        evasionCeiling: evasion.maximumSpeed,
         chaserPanelSpeed: visiblePanelSpeedOf(state.individuals[0]),
+        chaserLogicalSpeed: logicalSpeedOf(state.individuals[0]),
       });
     } else if (currentRun.length) {
       evasionRuns.push(currentRun);
@@ -233,21 +236,34 @@ test("playful-chase evader sustains a visibly fast escape instead of one brief s
 
   const panelSpeeds = longest.map((sample) => sample.panelSpeed);
   const logicalSpeeds = longest.map((sample) => sample.logicalSpeed);
+  const chaserLogicalSpeeds = longest.map((sample) => sample.chaserLogicalSpeed);
   const averagePanel = mean(panelSpeeds);
   const medianPanel = percentile(panelSpeeds, 0.5);
   const peakPanel = Math.max(...panelSpeeds);
   const averageLogical = mean(logicalSpeeds);
+  const peakLogical = Math.max(...logicalSpeeds);
+  const burstFrames = logicalSpeeds.filter((speed) => speed >= 2.5).length;
+  const peakEvasionCeiling = Math.max(...longest.map((sample) => sample.evasionCeiling));
   const averageChaserPanel = mean(longest.map((sample) => sample.chaserPanelSpeed));
+  const peakChaserLogical = Math.max(...chaserLogicalSpeeds);
 
   console.log(
     `[speed-readability] playful-chase evader continuous=${longest.length} frames/`
     + `${(longest.length * STEP_SECONDS).toFixed(1)}s avg=${averagePanel.toFixed(2)} px/s panel `
     + `(${(averagePanel * PHONE_SCALE).toFixed(2)} px/s @390px), median=${medianPanel.toFixed(2)} `
-    + `peak=${peakPanel.toFixed(2)} px/s, logical-magnitude avg=${averageLogical.toFixed(3)}, `
-    + `chaser avg during same interval=${averageChaserPanel.toFixed(2)} px/s`,
+    + `peak=${peakPanel.toFixed(2)} px/s, logical avg/peak=${averageLogical.toFixed(3)}/${peakLogical.toFixed(3)}, `
+    + `>=2.5 rows/s frames=${burstFrames}, evasion ceiling=${peakEvasionCeiling.toFixed(2)}, `
+    + `chaser avg=${averageChaserPanel.toFixed(2)} px/s peak=${peakChaserLogical.toFixed(3)} rows/s`,
   );
 
   assert.ok(averagePanel >= 8, `chased fish averaged only ${averagePanel.toFixed(2)} visible px/s during evasion`);
   assert.ok(medianPanel >= 7.5, `chased fish median escape speed was only ${medianPanel.toFixed(2)} visible px/s`);
-  assert.ok(peakPanel >= 11, `chased fish never reached a clearly fast escape; peak was ${peakPanel.toFixed(2)} visible px/s`);
+  assert.equal(peakEvasionCeiling, 4, "the opening escape no longer exposes the authored 4 rows/s burst ceiling");
+  assert.ok(
+    peakLogical >= 2.5,
+    `chased fish never made a materially faster burst; logical peak was ${peakLogical.toFixed(3)} rows/s`,
+  );
+  assert.ok(burstFrames >= 2, `the >2.5 rows/s escape lasted only ${burstFrames} frames`);
+  assert.ok(peakLogical <= 4.01, `chased fish exceeded its 4 rows/s escape ceiling at ${peakLogical.toFixed(3)}`);
+  assert.ok(peakChaserLogical <= 3.01, `chaser exceeded its lower 3 rows/s ceiling at ${peakChaserLogical.toFixed(3)}`);
 });
