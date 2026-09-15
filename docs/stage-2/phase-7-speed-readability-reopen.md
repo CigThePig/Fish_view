@@ -2,9 +2,12 @@
 
 **Branch:** `diagnose-speed-readability`  
 **Baseline:** `313e5934a3c763414719be93e46daafde8ed5753`  
-**Date:** 2026-09-15
+**Date:** 2026-09-15  
+**Playful-chase follow-up:** [`phase-7-playful-chase-speed-retune.md`](phase-7-playful-chase-speed-retune.md)
 
 Phase 7 was reopened narrowly after direct production viewing exposed a regression that the original gate did not measure: individual fish had authored speed bands, but ordinary aquarium motion made those differences look absent or nearly absent. This is new visual evidence under the Phase 7 freeze rule, not an attempt to redesign the frozen motion vocabulary.
+
+> **Historical scope note:** this report records the first speed-readability reopen. Its ordinary-swimming measurements remain the baseline evidence for persistent fish-to-fish pace variation. The playful-chase measurements below are the pre-retune baseline only. A later direct-viewing follow-up deliberately reopened playful-chase amplitude and the minimum supporting spacing/controller details; its final evidence and gate decision live in the linked retune report.
 
 ## Changes made
 
@@ -13,7 +16,7 @@ Phase 7 was reopened narrowly after direct production viewing exposed a regressi
 - Measures identity pace only within shared activities so behavior choice cannot masquerade as personality.
 - Measures playful-chase evasion as a continuous run rather than collecting disconnected fast frames.
 - Added a deterministic locomotion temperament derived from each existing fish seed: approximately `0.84×..1.16×` for ordinary motion.
-- Playful chase/evasion receives only 45% of that identity multiplier so the already-frozen chase sentence remains governed primarily by its authored choreography.
+- Playful chase/evasion receives only 45% of that identity multiplier so the authored chase choreography remains the primary influence on the chase.
 - Kept all resulting speed requests inside the existing activity steering profiles and their speed clamps.
 - Rejected and removed an experimental renderer change that linked body-wave frequency directly to current speed. Review correctly identified that multiplying total elapsed uptime by a changing frequency could jump animation phase after long runtime. Renderer cadence is therefore unchanged by this reopen.
 - Repaired an unrelated interaction test fixture that assumed a hard-coded substrate coordinate could never contain a fish. The test now supplies the starting semantic context directly and tests the release-contact rule it actually owns.
@@ -22,7 +25,9 @@ Phase 7 was reopened narrowly after direct production viewing exposed a regressi
 
 The correction lives at the shared locomotion request layer in `src/sim/fish-choreography.js`. `locomotionPaceForFish(fish)` derives one stable value from the fish's existing seed, so identity remains deterministic without another persisted field. `steerActivityVelocity` applies that value before the existing profile clamps and acceleration/turning controller.
 
-This deliberately does **not** alter activity selection, activity durations, target geometry, plant routes, social relationship logic, save schema, renderer geometry, or the Phase 7 visual sentences. Social/chase choreography remains bounded by the same activity-specific profiles. The final Phase 7 vocabulary already permits personality differences in speed within the authored band; this reopen makes that permitted difference actually visible in ordinary production motion.
+At the close of this original reopen, activity selection, activity durations, target geometry, plant routes, social relationship logic, save schema, renderer geometry and the Phase 7 visual sentences were unchanged. The final Phase 7 vocabulary already permits personality differences in speed within the authored band; this reopen made that permitted difference visible in ordinary production motion.
+
+That statement is historical rather than a claim about the later playful-chase retune. The follow-up intentionally changed chase speed amplitude and made narrowly supporting adjustments to pursuit spacing, release control, phase monotonicity and evasion arbitration so the faster chase retained the same readable sentence without body pass-through or abrupt stopping.
 
 ## Visual result
 
@@ -43,7 +48,11 @@ With the corrected physical measurement and within-activity identity comparison,
 - bubble investigate mean: **8.6 px/s**;
 - substrate search mean: **5.1 px/s**.
 
-The playful-chase continuity check observed one uninterrupted **36-frame / 3.6-second** evasion run. The evader averaged **17.57 px/s**, with **17.42 px/s** median and **26.51 px/s** peak physical panel speed. The chaser averaged **6.54 px/s** during the same interval. This preserves a visibly different chase beat rather than proving the gate with one isolated velocity spike.
+### Superseded playful-chase baseline
+
+Before the later chase-specific retune, the continuity check observed one uninterrupted **36-frame / 3.6-second** evasion run. The evader averaged **17.57 px/s**, with **17.42 px/s** median and **26.51 px/s** peak physical panel speed. The chaser averaged **6.54 px/s** during the same interval.
+
+These numbers are retained only as the before-state for the follow-up. They no longer describe the playful chase shipped by PR #43. See `phase-7-playful-chase-speed-retune.md` for the final production-path and six-seed results.
 
 ## Evidence
 
@@ -53,10 +62,10 @@ The playful-chase continuity check observed one uninterrupted **36-frame / 3.6-s
 | Baseline production diagnostic (`bbeaeb2f…`) | Median visible p20-p80 spread 3.23 px/s panel / 1.58 px/s at 390 px. |
 | Corrected natural production watch | Median spread 4.61 px/s panel / 2.25 px/s at 390 px; 2.27× median p80/p20 ratio. |
 | Within-activity identity comparison | 1.19× p80/p20 persistent identity pace ratio. |
-| Continuous playful-chase observation | 3.6 s continuous evasion, 17.57 px/s average and 26.51 px/s peak. |
-| Existing Phase 7 vocabulary | Motion sentences, paths, posture cues and behavior ownership remain unchanged; only bounded pace personality is added. |
+| Pre-retune playful-chase observation | 3.6 s continuous evasion, 17.57 px/s average and 26.51 px/s peak; retained as historical baseline and superseded by the chase-retune report. |
+| Existing Phase 7 vocabulary at this reopen | Motion sentences, paths, posture cues and behavior ownership remained unchanged; bounded pace personality was added. |
 | Review follow-up | Non-square physical-cell measurement, within-activity identity comparison and continuous chase sampling corrected after Codex review. Unsafe uptime-scaled body cadence experiment removed. |
-| Full repository/Phase 7 production gates | Must pass on the final PR head before merge. |
+| Later chase-specific follow-up | See the linked retune report for the intentionally reopened chase amplitude/spacing/controller work and final PASS evidence. |
 
 ## Performance
 
@@ -74,4 +83,4 @@ No persistence schema change. Locomotion temperament is re-derived from the fish
 
 ## Gate decision
 
-**PASS, conditional only on the final PR head passing the repository's full automated and frozen-Phase-7 production-path gates.** The visual regression is demonstrated, the correction is narrow and bounded by the existing choreography profiles, persistence and renderer semantics are unchanged, and the measurement failures identified in review have been corrected.
+**PASS for the original natural-speed readability reopen.** Its ordinary-swimming evidence remains valid. Playful chase was subsequently reopened again based on new direct-viewing evidence; the final acceptance state for that behavior is documented separately in `phase-7-playful-chase-speed-retune.md`.
