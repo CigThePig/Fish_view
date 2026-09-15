@@ -310,7 +310,11 @@ export function chaseEvasionForFish(fish, state) {
     );
     const boundedEscape = clearanceAwareChaseEvasion(fish, state, rawDirection, rawSpeed);
     const strength = clamp(phaseStrength, 0, 1);
-    if (strength <= 0.001 || (best && best.strength >= strength)) continue;
+    const priority = endingPhase ? 0 : 1;
+    if (strength <= 0.001 || (best && (
+      best.priority > priority
+      || (best.priority === priority && best.strength >= strength)
+    ))) continue;
 
     best = {
       x: boundedEscape.x,
@@ -322,6 +326,7 @@ export function chaseEvasionForFish(fish, state) {
           ? 0.52 + strength * 0.36
           : 0.12 + strength * 0.78),
       strength,
+      priority,
       sourceSeed: chaser.seed,
       accelerationResponse,
       turningResponse,
@@ -440,11 +445,14 @@ export function steerActivityVelocity(fish, target, {
         desiredVy = rotated.y;
         accelerationResponse *= recovering ? 0.56 : 0.86;
         turningResponse *= (recovering ? 0.62 : 0.94) * agility;
-        // The profile's quiet 0.42 rows/s remains the destination, but its hard
-        // cap no longer applies on the first ending frame. Ramp the ceiling down
-        // across the authored break so a 3 rows/s intercept visibly decelerates
-        // instead of losing most of its velocity in one 100 ms step.
-        const breakFloor = Math.max(0.42, profile.maximumSpeed ?? 0.42);
+        // The resolved break profile is the ramp destination. Do not hard-code
+        // the production default here: the behavior lab deliberately exposes
+        // lower valid ceilings and exported profiles must reproduce what they
+        // say when pasted back into the simulation.
+        const breakFloor = Math.max(
+          0.02,
+          Number.isFinite(profile.maximumSpeed) ? profile.maximumSpeed : 0.42,
+        );
         const releaseCeiling = breakFloor + (3 - breakFloor) * (1 - breakProgress);
         maximumSpeed = Math.max(maximumSpeed, releaseCeiling * motionScale);
       }
