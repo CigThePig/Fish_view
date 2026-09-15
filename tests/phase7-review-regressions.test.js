@@ -102,3 +102,92 @@ test("surface arrival uses the same body-clamped x coordinate as its resolved ta
   const frame = tickFishActivity(fish, subject.index, state, 0.1);
   assert.equal(frame.activity.surfaceStage, 1);
 });
+
+
+test("plant weave remains committed through its authored emergence", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantWeave });
+  const subject = showcaseSubjects(base, ACTIVITIES.plantWeave)[0];
+  const fish = {
+    ...subject.fish,
+    behavior: { ...subject.fish.behavior, current: "social" },
+    activity: {
+      ...subject.fish.activity,
+      current: ACTIVITIES.plantWeave,
+      ageRealSeconds: 12,
+      weaveStage: 2,
+      weaveStageStartedAt: 10,
+    },
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : entry),
+  };
+  const frame = tickFishActivity(fish, subject.index, state, 0.1);
+  assert.equal(frame.activity.current, ACTIVITIES.plantWeave);
+});
+
+test("edge secondary plants cannot collapse weave crossing and emergence", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantWeave });
+  const subject = showcaseSubjects(base, ACTIVITIES.plantWeave)[0];
+  const originalPrimary = base.plants.find(({ seed }) => seed === subject.fish.activity.targetId);
+  assert.ok(originalPrimary, "showcase weave is missing its primary plant");
+  const primary = { ...originalPrimary, x: base.cols - 10 };
+  const edgeSecondary = { ...originalPrimary, seed: originalPrimary.seed + 1000003, x: base.cols - 0.5 };
+  const fish = {
+    ...subject.fish,
+    x: base.cols - 14,
+    activity: { ...subject.fish.activity, current: ACTIVITIES.plantWeave, targetId: primary.seed, ageRealSeconds: 10 },
+  };
+  const state = {
+    ...base,
+    plants: [primary, edgeSecondary],
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : entry),
+  };
+  const cross = resolveActivityTarget(fish, subject.index, state, { ...fish.activity, weaveStage: 3, weaveStageStartedAt: 8 });
+  const emerge = resolveActivityTarget(fish, subject.index, state, { ...fish.activity, weaveStage: 4, weaveStageStartedAt: 8 });
+  assert.ok(cross && emerge);
+  assert.equal(cross.weavePlantSeed, primary.seed, "edge secondary should be rejected");
+  assert.equal(emerge.weavePlantSeed, primary.seed, "fallback route should stay coherent");
+  assert.ok(Math.abs(emerge.x - cross.x) > 1, "crossing and emergence collapsed to the same body-clamped waypoint");
+});
+
+test("mutual companion cruise separates when either partner reaches the pair ending", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.companionCruise });
+  const subject = showcaseSubjects(base, ACTIVITIES.companionCruise)[0];
+  const companionIndex = base.individuals.findIndex(({ seed }) => seed === subject.fish.activity.targetId);
+  assert.ok(companionIndex >= 0, "showcase companion cruise is missing its partner");
+  const companionSource = base.individuals[companionIndex];
+  const fish = {
+    ...subject.fish,
+    activity: { ...subject.fish.activity, current: ACTIVITIES.companionCruise, targetId: companionSource.seed, ageRealSeconds: 0.5 },
+  };
+  const companion = {
+    ...companionSource,
+    activity: { ...companionSource.activity, current: ACTIVITIES.companionCruise, targetId: fish.seed, ageRealSeconds: 100 },
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : index === companionIndex ? companion : entry),
+  };
+  const target = resolveActivityTarget(fish, subject.index, state, fish.activity);
+  assert.ok(target);
+  assert.equal(target.choreographyPhase, "separate");
+});
+
+test("staged plant entry commits its heading through a constrained reversal", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantInvestigate });
+  const subject = showcaseSubjects(base, ACTIVITIES.plantInvestigate)[0];
+  const fish = { ...subject.fish, x: 24, y: 20, vx: 0.6, vy: 0 };
+  const target = {
+    x: 18,
+    y: 20,
+    speed: 0.55,
+    postureBias: 0,
+    plantTarget: true,
+    plantVisitStage: 0,
+    plantVisitFinal: false,
+    choreographyPhase: "enter",
+  };
+  const steered = steerActivityVelocity(fish, target, { realDelta: 0.1 });
+  assert.ok(steered.vx < 0, "plant entry kept swimming away during the reversal");
+});

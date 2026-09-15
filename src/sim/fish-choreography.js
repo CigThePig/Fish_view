@@ -344,19 +344,18 @@ export function steerActivityVelocity(fish, target, {
   const currentSpeed = Math.hypot(fish.vx, fish.vy);
   const currentDirection = safeNormalize(fish.vx, fish.vy, desiredDirection.x, desiredDirection.y);
   const turnEase = 1 - Math.exp(-delta * turningResponse);
-  // The final investigation beat is a deliberate back-away from the specimen,
-  // not ordinary roaming. Near the substrate, a graceful 180-degree steering
-  // arc can lose its vertical component to body/terrain clearance every frame;
-  // the fish then keeps travelling the wrong way until a wall finally turns it.
-  // The target already marks this one bounded beat explicitly, so let its motion
-  // heading commit to the authored retreat immediately while the existing
-  // acceleration and visual turn pose still soften the departure. No other
-  // activity, including plant weave and shelter, changes steering semantics.
-  const deliberatePlantRetreat = target?.plantTarget === true
-    && target?.plantVisitFinal === true
-    && target?.choreographyPhase === "retreat";
+  // A staged plant visit is a short authored sentence: arrive, inspect/settle,
+  // then leave. Near the substrate, a graceful 180-degree steering arc can lose
+  // its vertical component to body/terrain clearance every frame, so an entry
+  // or exit target directly behind the fish can otherwise turn into a tank-wide
+  // loop. Commit the simulation heading for the bounded transition beats while
+  // the existing acceleration and visual turn pose still soften what is drawn.
+  // The local inspect/quiet beats keep ordinary steering, as does plant weave.
+  const deliberatePlantVisitTurn = target?.plantTarget === true
+    && Number.isInteger(target?.plantVisitStage)
+    && ["approach", "enter", "retreat", "emerge"].includes(target?.choreographyPhase);
   const turnTarget = turnableDirection(currentDirection, desiredDirection, fish.seed);
-  const steeredDirection = deliberatePlantRetreat
+  const steeredDirection = deliberatePlantVisitTurn
     ? desiredDirection
     : safeNormalize(
       currentDirection.x + (turnTarget.x - currentDirection.x) * turnEase,

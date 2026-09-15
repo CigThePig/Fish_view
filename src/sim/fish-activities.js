@@ -430,6 +430,8 @@ function secondWeavePlant(fish, first, state) {
   // specimen regardless of body size made two mathematically different sides
   // collapse into the same on-screen body footprint.
   const clearance = weaveClearanceColumns(fish);
+  const halfWidth = spriteHalfWidth(fish);
+  const outwardRoom = clearance + WEAVE_EMERGE_EXTRA_COLUMNS;
   const minimumDistance = clearance * 2 + 0.8;
   const maximumDistance = Math.max(8, state.cols * 0.2);
   const idealDistance = Math.min(maximumDistance, minimumDistance + 2.7);
@@ -440,10 +442,12 @@ function secondWeavePlant(fish, first, state) {
       distance: Math.abs(plant.x - first.x),
       preference: favoritePlantScore(fish.seed, plant),
     }))
-    .filter((candidate) => (
-      candidate.distance >= minimumDistance
-      && candidate.distance <= maximumDistance
-    ))
+    .filter((candidate) => {
+      if (candidate.distance < minimumDistance || candidate.distance > maximumDistance) return false;
+      const travelSide = Math.sign(candidate.plant.x - first.x) || 1;
+      const emergeX = candidate.plant.x + travelSide * outwardRoom;
+      return emergeX >= halfWidth && emergeX <= state.cols - halfWidth;
+    })
     .sort((left, right) => (
       (Math.abs(left.distance - idealDistance) - left.preference * 1.6)
         - (Math.abs(right.distance - idealDistance) - right.preference * 1.6)
@@ -1068,9 +1072,18 @@ function weaveRoute(fish, primary, state) {
   const clearance = weaveClearanceColumns(fish);
   const verticalSign = sample01(pairSeed, 8161) < 0.5 ? -1 : 1;
   const seededTravel = sample01(pairSeed, 8162) < 0.5 ? -1 : 1;
+  const halfWidth = spriteHalfWidth(fish);
+  const emergeDistance = clearance + WEAVE_EMERGE_EXTRA_COLUMNS;
+  const hasEmergenceRoom = (plant, side) => {
+    const x = plant.x + side * emergeDistance;
+    return x >= halfWidth && x <= state.cols - halfWidth;
+  };
+  const fallbackTravel = hasEmergenceRoom(primary, seededTravel)
+    ? seededTravel
+    : -seededTravel;
   const travelSide = secondary
-    ? (Math.sign(secondary.x - primary.x) || seededTravel)
-    : seededTravel;
+    ? (Math.sign(secondary.x - primary.x) || fallbackTravel)
+    : fallbackTravel;
   const entrySide = -travelSide;
   const asymmetry = (stage) => sampleSigned(pairSeed, 8170 + stage) * tuning.asymmetryRows;
   const point = (plant, side, lift, distance = clearance, leg) => ({
@@ -1563,8 +1576,13 @@ export function resolveActivityTarget(fish, index, state, activity, {
     const mutualCompanion = activity.current === ACTIVITIES.companionCruise
       && companion.activity?.current === ACTIVITIES.companionCruise
       && companion.activity?.targetId === fish.seed;
+    const ownSeparationReady = activity.current === ACTIVITIES.companionCruise
+      && activity.ageRealSeconds >= activityDwell(fish, activity.current).maximum - 4;
+    const companionSeparationReady = mutualCompanion
+      && Math.max(0, companion.activity?.ageRealSeconds ?? 0)
+        >= activityDwell(companion, ACTIVITIES.companionCruise).maximum - 4;
     if (activity.current === ACTIVITIES.companionCruise
-      && activity.ageRealSeconds >= activityDwell(fish, activity.current).maximum - 4) {
+      && (ownSeparationReady || companionSeparationReady)) {
       const forward = fish.vx < 0 ? -1 : 1;
       const side = fish.y < companion.y ? -1 : 1;
       const departure = boundedPlantPoint(fish, state, fish.x + forward * 4, fish.y + side * 2);
@@ -1845,8 +1863,11 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
   }
 
   const compatible = activityMatchesBehavior(activity.current, fish.behavior?.current);
-  const committedPlantVisit = [ACTIVITIES.plantInvestigate, ACTIVITIES.plantShelter]
-    .includes(activity.current);
+  const committedPlantVisit = [
+    ACTIVITIES.plantInvestigate,
+    ACTIVITIES.plantShelter,
+    ACTIVITIES.plantWeave,
+  ].includes(activity.current);
   const committedSurfaceVisit = activity.current === ACTIVITIES.surfaceInvestigate;
   if (!compatible && !committedPlantVisit && !committedSurfaceVisit) {
     activity = selectActivity(fish, index, state, { ...context, traits, affinities });
