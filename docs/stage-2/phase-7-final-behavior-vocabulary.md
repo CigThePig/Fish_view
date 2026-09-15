@@ -1,14 +1,22 @@
 # Phase 7 final behavior vocabulary
 
-**Status:** Frozen after the Phase 7.7 PASS  
+**Status:** Frozen after the Phase 7.7 PASS; speed readability revalidated 2026-09-15  
 **Machine-readable contract:** `src/dev/phase-7-behavior-vocabulary.js`  
 **Evidence commit:** `13dcbe90e8f45f6c6d0f36ab3cb65e1706908881`  
+**Speed-readability reopen:** [`phase-7-speed-readability-reopen.md`](phase-7-speed-readability-reopen.md)  
 **Date:** 2026-09-14
 
 This is the definitive inventory of individual behavior vocabulary entering
 Phase 8. Phase 8 may alter scene-level timing, spatial distribution and focal
 pressure. It must not casually retune these individual motion sentences.
 Reopen one only when new rendered evidence demonstrates a real regression.
+
+On 2026-09-15, direct production viewing demonstrated one such regression:
+ordinary individual speeds appeared effectively uniform even though the
+activity vocabulary contained authored speed bands. Phase 7 was reopened only
+for bounded identity pace/readability. The visual sentences, route geometry,
+state-machine beats, posture cues and renderer were left frozen; see the linked
+reopen report for before/after production-path evidence and review corrections.
 
 | Activity | Frozen visual sentence | Key visible cues | Nearest visual neighbor | Final decision |
 | --- | --- | --- | --- | --- |
