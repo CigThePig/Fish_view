@@ -15,7 +15,7 @@ const seconds = Number(process.argv.find(s=>s.startsWith('--seconds='))?.slice(1
 if (!Number.isFinite(seconds) || seconds < 60 || seconds > 7200) throw new Error("--seconds must be 60–7200");
 await mkdir(output, {recursive:true});
 const dt=.25;
-const wanted=new Set(['companion-cruise','surface-investigate','drifting-inspect','arrival-enter','glass-visit']);
+const wanted=new Set(['companion-cruise','surface-investigate','drifting-inspect','arrival-enter','glass-visit','playful-chase']);
 function summary(state, index) {
  const f=state.individuals[index];
  const target=resolveActivityTarget(f,index,state,f.activity,{bubbles:createBubbleWorldRecords(state)});
