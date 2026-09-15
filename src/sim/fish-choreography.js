@@ -224,7 +224,11 @@ export function chaseEvasionForFish(fish, state) {
       burstPulse = 0.45 + burst * 0.55;
       phaseSpeedBonus = 0.34 + burst * 0.3;
       phaseStrength = 0.06 + proximity * 0.78 + burst * 0.08;
-      accelerationResponse = 7 + burst * 2.5;
+      // This is a startle bolt, not a gradual cruise acceleration. At 10 fps
+      // the semantic escape may only have a couple of useful frames before the
+      // newly opened gap crosses recognition range, so the evader must acquire
+      // the authored burst speed immediately rather than asymptotically.
+      accelerationResponse = 18 + burst * 4;
       turningResponse = (3.8 + burst * 0.8) * agility;
       maximumSpeed = 4;
       // Escape is the one chase beat where the evader temporarily outranks its
