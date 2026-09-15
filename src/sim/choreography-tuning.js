@@ -74,6 +74,7 @@ export const STEERING_PROFILES = Object.freeze({
     pitchScale: 0.72,
     turnDuration: 0.52,
   }),
+  // Close enough to read the plant: the fish trades reach for control.
   "plant-investigate:inspect": Object.freeze({
     approachRadius: 0.72,
     arrivalSpeedScale: 0.34,
@@ -81,6 +82,8 @@ export const STEERING_PROFILES = Object.freeze({
     turningResponse: 1.9,
     maximumSpeed: 0.34,
   }),
+  // Looking is over. A deliberate outward swim is the punctuation that makes
+  // inspection different from simply loitering beside vegetation.
   "plant-investigate:retreat": Object.freeze({
     accelerationResponse: 2.05,
     turningResponse: 4.8,
@@ -125,6 +128,7 @@ export const STEERING_PROFILES = Object.freeze({
     approachRadius: 0.9,
     arrivalSpeedScale: 0.38,
   }),
+  // The bubble is gone. The fish hunts the spot it burst at, slowly.
   "bubble-investigate:pop": Object.freeze({
     accelerationResponse: 0.8,
     turningResponse: 1.15,
@@ -195,6 +199,8 @@ export const STEERING_PROFILES = Object.freeze({
     pitchResponse: 2.7,
     turnDuration: 0.88,
   }),
+  // Both fish have chosen each other. They hold formation instead of correcting
+  // towards one another.
   "companion-cruise:mutual": Object.freeze({
     velocityMatch: 0.97,
     accelerationResponse: 0.82,
@@ -213,6 +219,8 @@ export const STEERING_PROFILES = Object.freeze({
     pitchResponse: 5.8,
     turnDuration: 0.31,
   }),
+  // The chaser has arrived and gives up. The glide away is what opens the gap
+  // again, so it is deliberately nothing like the pursuit.
   "playful-chase:break": Object.freeze({
     accelerationResponse: 0.85,
     turningResponse: 0.9,
@@ -235,6 +243,7 @@ export const STEERING_PROFILES = Object.freeze({
     pitchResponse: 4.7,
     turnDuration: 0.56,
   }),
+  // Working the substrate rather than dropping to it: a creep, not a descent.
   "substrate-search:graze": Object.freeze({
     accelerationResponse: 1.55,
     turningResponse: 1.5,
@@ -244,6 +253,11 @@ export const STEERING_PROFILES = Object.freeze({
     approachRadius: 0.65,
     arrivalSpeedScale: 0.42,
     pitchResponse: 5,
+    // A feeding fish holds its feeding posture. Inheriting the controller
+    // default let the climb angle answer at full strength, so the drift back up
+    // after each strike cancelled most of the authored lean and the fish spent
+    // a twentieth of its grazing drawn at eighteen degrees rather than
+    // twenty-six - nose off the sand its graze line had been computed for.
     pitchScale: 0.2,
   }),
   "open-water-rest": Object.freeze({
@@ -259,6 +273,8 @@ export const STEERING_PROFILES = Object.freeze({
     pitchResponse: 1.8,
     turnDuration: 1.2,
   }),
+  // Still travelling to the resting spot, which is a slow swim rather than the
+  // hover the profile above describes.
   "open-water-rest:settle": Object.freeze({
     accelerationResponse: 0.95,
     turningResponse: 0.9,
@@ -287,6 +303,8 @@ export const STEERING_PROFILES = Object.freeze({
     verticalSpeedScale: 0.7,
     turnDuration: 0.5,
   }),
+  // Leaving cover is a visible swim, not the resting controller drifting until
+  // another utility happens to win.
   "plant-shelter:emerge": Object.freeze({
     accelerationResponse: 1.85,
     turningResponse: 4.8,
@@ -321,6 +339,9 @@ export const STEERING_PROFILES = Object.freeze({
   }),
 });
 
+// Distances in rows or columns, speeds in rows per second, rotations in
+// degrees. Trait and affinity gains keep their own entries so the spread across
+// a school stays tunable separately from the value every fish starts at.
 export const SCENE_TUNING = Object.freeze({
   cruise: Object.freeze({
     speedBase: 0.2,
@@ -359,6 +380,8 @@ export const SCENE_TUNING = Object.freeze({
     pursueSpeed: 0.63,
     inspectSpeed: 0.16,
     standoffRows: 0.58,
+    // Close inspection already used a tighter 0.48-row distance. Naming it
+    // separately preserves that motion while making the inspect phase tunable.
     inspectStandoffRows: 0.48,
     lookAheadSeconds: 0.58,
     acquirePitchDegrees: -4,
@@ -400,6 +423,8 @@ export const SCENE_TUNING = Object.freeze({
     speedBase: 0.3,
     speedSociability: 0.14,
   }),
+  // Both fish, because a chase is read from the gap between them: the chaser's
+  // closing speed and the evader's burst are one setting in two halves.
   "playful-chase": Object.freeze({
     approachSpeed: 0.7,
     pursuitSpeed: 1.4,
@@ -418,6 +443,11 @@ export const SCENE_TUNING = Object.freeze({
     panicNearRows: 1.3,
     panicFarRows: 3.6,
   }),
+  // Rotation and distance are the whole read of bottom feeding: the nose has to
+  // point into the sand, and the mouth has to be close enough to reach it. The
+  // bite is what that costs - how far the underside may pass through the crest
+  // to put the mouth there - and the search band is a contact band, not an
+  // approach one, because everything downstream of it claims the fish is eating.
   "substrate-search": Object.freeze({
     grazePitchDegrees: 26,
     peckPitchDegrees: 6,
@@ -458,6 +488,9 @@ export const SCENE_TUNING = Object.freeze({
 export function steeringProfile(state, key) {
   const base = STEERING_PROFILES[key] ?? EMPTY;
   const override = state?.choreographyTuning?.steering?.[key];
+  // Production never carries an override map, and merging one frozen table into
+  // another every fish every tick would be pure waste, so the default path
+  // hands back the authored object itself.
   return override ? { ...base, ...override } : base;
 }
 
@@ -467,11 +500,17 @@ export function sceneTuning(state, activity) {
   return override ? { ...base, ...override } : base;
 }
 
+// "playful-chase:break" is a phase of "playful-chase" and only lists what it
+// changes, so everything it leaves out comes from the activity profile rather
+// than from the controller default.
 export function steeringParentKey(key) {
   const separator = key.indexOf(":");
   return separator < 0 ? null : key.slice(0, separator);
 }
 
+// What a profile would resolve to if it were deleted. This is the baseline the
+// lab compares against, so the source it prints back out lists exactly the
+// fields the profile is there to change.
 export function inheritedSteeringProfile(state, key) {
   const parent = steeringParentKey(key);
   return parent
@@ -487,6 +526,10 @@ export function resolvedSceneTuning(state, activity) {
   return { ...sceneTuning(state, activity) };
 }
 
+// What a profile is worth writing down: the fields it changes from what it
+// would otherwise inherit, plus the fields it already lists - a table entry that
+// deliberately restates an inherited value keeps saying so. This is what the lab
+// prints back out, so a copied profile is the same shape as the one it replaces.
 export function steeringDeviations(state, key) {
   const authored = STEERING_PROFILES[key] ?? EMPTY;
   const inherited = inheritedSteeringProfile(state, key);
