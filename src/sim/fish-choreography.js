@@ -224,9 +224,14 @@ export function chaseEvasionForFish(fish, state) {
       burstPulse = 0.45 + burst * 0.55;
       phaseSpeedBonus = 0.34 + burst * 0.3;
       phaseStrength = 0.06 + proximity * 0.78 + burst * 0.08;
-      accelerationResponse = 5.6 + burst * 1.2;
+      accelerationResponse = 7 + burst * 2.5;
       turningResponse = (3.8 + burst * 0.8) * agility;
       maximumSpeed = 4;
+      // Escape is the one chase beat where the evader temporarily outranks its
+      // own ordinary destination. Keep that destination in the turn direction,
+      // but do not let an unrelated cruise/wander vector numerically cancel the
+      // authored burst magnitude before the four-row ceiling can even matter.
+      weightOverride = 0.66 + burst * 0.24;
     } else if (arcPhase === CHASE_ARC_PHASES.pursuit) {
       // Brief pulses interrupt the closing run. They are deliberately short:
       // the chaser should regain the gap between them, creating the readable
@@ -370,9 +375,16 @@ export function steerActivityVelocity(fish, target, {
   // allowed to swing back. This response timing is what turns the same target
   // relationship into a chase arc rather than perfectly mirrored steering.
   if (target?.playfulChase) {
-    const age = Math.max(0, Number.isFinite(fish.activity?.ageRealSeconds)
+    // tickFishActivity() advances the activity before it resolves this target,
+    // while the fish object passed to steering still carries the pre-tick age.
+    // Advance the controller clock by the same bounded real delta so phase
+    // progress and the already-resolved target describe the same frame. Without
+    // this, the first ending-break target still read as pre-break here and the
+    // new release ramp was skipped for exactly one frame.
+    const priorAge = Math.max(0, Number.isFinite(fish.activity?.ageRealSeconds)
       ? fish.activity.ageRealSeconds
       : 0);
+    const age = priorAge + delta;
     const traits = traitsFromSeed(fish.seed, fish.history);
     const agility = chaseBodyAgility(fish);
 
@@ -428,6 +440,7 @@ export function steerActivityVelocity(fish, target, {
     }
   }
 
+  let evasionSpeedFloor = 0;
   if (evasion) {
     const weight = clamp(evasion.weight ?? 0, 0, 1);
     const escapeSpeed = Math.max(0, evasion.speed ?? 0) * motionScale * effectivePace;
@@ -436,9 +449,20 @@ export function steerActivityVelocity(fish, target, {
     accelerationResponse = Math.max(accelerationResponse, evasion.accelerationResponse ?? 0);
     turningResponse = Math.max(turningResponse, evasion.turningResponse ?? 0);
     maximumSpeed = Math.max(maximumSpeed, (evasion.maximumSpeed ?? 0) * motionScale);
+    // During the opening escape only, preserve the magnitude of the authored
+    // burst separately from direction blending. The ordinary activity can still
+    // bend the line, but it cannot subtract enough opposing velocity to turn a
+    // four-row escape request back into ordinary two-row motion.
+    if ((evasion.maximumSpeed ?? 0) >= 3.99) {
+      const burstDominance = 0.62 + weight * 0.38;
+      evasionSpeedFloor = Math.min(maximumSpeed, escapeSpeed * burstDominance);
+    }
   }
 
-  const desiredSpeed = Math.min(maximumSpeed, Math.hypot(desiredVx, desiredVy));
+  const desiredSpeed = Math.min(
+    maximumSpeed,
+    Math.max(Math.hypot(desiredVx, desiredVy), evasionSpeedFloor),
+  );
   const desiredDirection = safeNormalize(desiredVx, desiredVy, direction.x, direction.y);
   const currentSpeed = Math.hypot(fish.vx, fish.vy);
   const currentDirection = safeNormalize(fish.vx, fish.vy, desiredDirection.x, desiredDirection.y);
