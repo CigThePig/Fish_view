@@ -42,6 +42,7 @@ import {
   MAX_WAKE_IMPULSES,
   createImpulse,
   heldStimulus,
+  registerTouch,
   registerWake,
   releaseStimulus,
 } from "../src/sim/interaction-events.js";
@@ -396,7 +397,10 @@ test("fish chase a moving contact in more than one way", () => {
   assert.ok(places.size >= 2, "every fish aimed at the same place on a moving contact");
   const still = { ...moving, gesture: GESTURES.press };
   for (const fish of base.individuals) {
-    assert.deepEqual(stimulusFocus(still, record, fish), { x: record.x, y: record.y });
+    assert.deepEqual(
+      stimulusFocus(still, record, fish),
+      { x: record.x, y: record.y },
+    );
   }
 });
 
@@ -813,19 +817,22 @@ test("a response to a moving contact remembers where the contact is now", () => 
 // question about where the finger left - not about what the press landed on
 // twenty cells ago. Asking the stimulus's context instead raised a burst of
 // bubbles out of the gravel under a drag's mid-water endpoint, and left the
-// sand a drag ended on undisturbed.
+// sand a drag ended on undisturbed. This fixture supplies the starting semantic
+// context directly: fish legitimately take precedence in live hit testing, and
+// that unrelated occupancy must not decide whether this release-contact rule
+// passes.
 test("the ring a release leaves is rung where the finger left", () => {
   const base = settled(5);
   const floor = base.rows - TOUCH_FLOOR_ROWS;
   const ring = (stimulus) => releaseStimulus(base, stimulus).impulses
     .find((impulse) => impulse.id.startsWith("release:"));
 
-  const fromSand = { ...applyTouch(base, 20, floor).stimuli[0], x: 40, y: 8 };
-  assert.equal(fromSand.context, "substrate", "the fixture did not start on the sand");
+  const fromSand = { ...registerTouch(base, 20, floor, "substrate").stimulus, x: 40, y: 8 };
+  assert.equal(fromSand.context, "substrate");
   assert.equal(ring(fromSand).contact, "water", "a drag into open water rang the gravel it had left");
 
-  const toSand = { ...applyTouch(base, 40, 8).stimuli[0], x: 20, y: floor };
-  assert.notEqual(toSand.context, "substrate");
+  const toSand = { ...registerTouch(base, 40, 8, "open-water").stimulus, x: 20, y: floor };
+  assert.equal(toSand.context, "open-water");
   assert.equal(ring(toSand).contact, "substrate", "a drag onto the sand did not ring it");
 });
 
