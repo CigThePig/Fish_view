@@ -13,7 +13,7 @@
  * grows with aquarium age.
  */
 
-import { WATERLINE_ROWS } from "./config.js";
+import { DRIVE_MINIMUM, WATERLINE_ROWS } from "./config.js";
 import { clamp } from "./entities.js";
 import { fishSpriteWidth } from "./fish-growth.js";
 import { substrateSafeY, surfaceSafeY } from "./fish-motion.js";
@@ -26,6 +26,10 @@ import {
 export const GLASS_VISIT_MIN_FAMILIARITY = 0.3;
 export const GLASS_VISIT_RECENT_REGION_SECONDS = 10 * 60;
 export const GLASS_VISIT_MAX_SATURATION = 0.58;
+// Mature fish can normally cruise around 0.27 energy, so this guard sits
+// well below that band. It catches genuine exhaustion near the drive floor
+// without resurrecting the old 0.3 cutoff that excluded healthy visitors.
+export const GLASS_VISIT_MIN_ENERGY = DRIVE_MINIMUM + 0.06;
 export const GLASS_VISIT_OPPORTUNITY_MIN_SECONDS = 220;
 export const GLASS_VISIT_OPPORTUNITY_MAX_SECONDS = 340;
 export const GLASS_VISIT_OPPORTUNITY_WINDOW_SECONDS = 12;
@@ -151,6 +155,8 @@ function invitationScore(fish, epoch, nowSeconds) {
   const profile = relationshipResponseProfile(fish);
   if (profile.familiarity < GLASS_VISIT_MIN_FAMILIARITY) return null;
   if (viewerSaturationFor(fish, nowSeconds) > GLASS_VISIT_MAX_SATURATION) return null;
+  const energy = Number.isFinite(fish.drives?.energy) ? fish.drives.energy : DRIVE_MINIMUM;
+  if (energy < GLASS_VISIT_MIN_ENERGY) return null;
   if (!biologicallyAvailable(fish) || fish.attention) return null;
 
   // Hunger is deliberately not a second hard gate here. The behavior scheduler
@@ -160,9 +166,11 @@ function invitationScore(fish, epoch, nowSeconds) {
   // at all, so vetoing invitations directly from the raw hunger scalar would
   // eventually lock those fish out of glass visits forever even while their
   // normal scheduler chose calm locomotion.
-  // Energy follows the same rule: a mature fish can balance near 0.27 while
-  // freely choosing school-follow between rests. A second 0.3 cutoff would
-  // exclude it forever. Actual rest/shelter still blocks and cancels visits.
+  // Energy mostly follows the same rule: a mature fish can balance near 0.27
+  // while freely choosing school-follow between rests. The small exhaustion
+  // floor above exists only because behavior changes are real-time locked; it
+  // prevents a fish already at minimum energy from spending that lock on a
+  // new invitation. Actual rest/shelter still blocks and cancels visits.
 
   // Bold, attentive, glass-oriented fish volunteer more readily, but high
   // familiarity can still carry a cautious fish over the line. The roll is per

@@ -57,6 +57,14 @@ const WEAVE_ARRIVAL_RADIUS = 0.62;
 const WEAVE_MIN_CLEARANCE_COLUMNS = 1.6;
 const WEAVE_MAX_CLEARANCE_COLUMNS = 2.55;
 const WEAVE_EMERGE_EXTRA_COLUMNS = 1.65;
+// A valid weave is allowed to outlive its ordinary activity dwell while it
+// physically finishes the route. This is only a pathological-stall escape:
+// ordinary completion is still the final reached emergence waypoint.
+const WEAVE_ROUTE_FAILURE_SECONDS = 120;
+// The follower spends the tail of its own dwell visibly leaving its rear
+// slot. Selection remains unchanged afterward, so social/chase frequency is
+// not distorted merely to make the sentence legible.
+const INDIVIDUAL_FOLLOW_PEEL_SECONDS = 3.2;
 
 // Investigation and shelter share a tiny three-beat visit cursor. The cursor is
 // bounded activity-local state, not a path: 0 is arrival, 1 is the local beat,
@@ -672,8 +680,8 @@ function activityChoices(fish, index, state, {
         + continuity(ACTIVITIES.schoolFollow) + jitter(ACTIVITIES.schoolFollow),
       { targetType: "school" },
     )];
-    // One school-follow bout after company gives the pair a gentle separation
-    // instead of immediately renewing the same formation or trailing partner.
+    // One school-follow bout after companion cruise gives the pair a gentle
+    // separation instead of immediately renewing the same formation.
     if (fish.activity?.current === ACTIVITIES.companionCruise) return choices;
     if (companion) {
       choices.push(choice(
@@ -754,7 +762,11 @@ function activityChoices(fish, index, state, {
           + continuity(ACTIVITIES.plantInvestigate) + jitter(ACTIVITIES.plantInvestigate),
         { targetType: "plant", targetId: plant.plant.seed },
       ));
-      if (secondWeavePlant(fish, plant.plant, state)) {
+      // Slots 0-2 are the permanent mid-water cast and are physically
+      // constrained to a shallower envelope by tickIndividual(). A plant
+      // route authored against the full substrate envelope can therefore
+      // contain unreachable waypoints for them, so they do not enter weave.
+      if (index >= 3 && secondWeavePlant(fish, plant.plant, state)) {
         const weavePeriod = sampleRange(fish.seed, 8380, 38, 62);
         const weavePhase = positiveModulo(
           state.elapsedRealSeconds + sampleRange(fish.seed, 8381, 0, weavePeriod),
@@ -1163,15 +1175,12 @@ function advanceWeaveProgress(fish, state, activity) {
   if (!primary || !suitablePlant(primary)) return activity;
   const point = weavePoint(fish, primary, state, activity);
   const distance = Math.hypot(point.x - fish.x, point.y - fish.y);
-  const stageAge = Math.max(0, activity.ageRealSeconds - activity.weaveStageStartedAt);
   const arrived = distance <= point.arrivalRadius;
-  // Timeout is only a bounded escape hatch for intermediate legs. Entry and
-  // emergence must be physically reached; otherwise the route could still
-  // begin or end because a clock advanced, which is the Phase 7.4 defect.
-  const safetyAdvance = point.stage > 0
-    && point.stage < WEAVE_ROUTE_LAST_STAGE
-    && stageAge >= point.timeoutSeconds;
-  if ((arrived || safetyAdvance) && point.stage < WEAVE_ROUTE_LAST_STAGE) {
+  // A route cursor moves only when the body reaches the authored waypoint.
+  // The per-leg timeout remains telemetry for diagnosing slow geometry, but
+  // it must never erase a physical crossing by silently selecting the next
+  // target. A separate whole-route deadline below handles pathological stalls.
+  if (arrived && point.stage < WEAVE_ROUTE_LAST_STAGE) {
     return {
       ...activity,
       weaveStage: point.stage + 1,
@@ -1353,6 +1362,9 @@ export function resolveActivityTarget(fish, index, state, activity, {
     }
 
     if (activity.current === ACTIVITIES.plantWeave) {
+      // Repair stale/dev states too: the permanent mid-water cast cannot
+      // physically reach every route generated in the full plant envelope.
+      if (index < 3) return null;
       const tuning = sceneTuning(state, ACTIVITIES.plantWeave);
       const point = weavePoint(fish, primary, state, activity);
       return choreographed(state, activity.current, {
@@ -1571,8 +1583,48 @@ export function resolveActivityTarget(fish, index, state, activity, {
         choreographyPhase: phase,
       });
     }
-    const point = companionOffset(fish, companion, activity.current, state);
     const tuning = sceneTuning(state, activity.current);
+    if (activity.current === ACTIVITIES.individualFollow
+      && activity.ageRealSeconds >= activityDwell(fish, activity.current).maximum
+        - INDIVIDUAL_FOLLOW_PEEL_SECONDS) {
+      // Finish the sentence before the dwell boundary. Generate several
+      // short bounded exits and choose the one that actually opens the most
+      // space from the leader. This stays readable even when the obvious
+      // away vector points into a wall or the protected depth envelope.
+      const away = safeNormalize(
+        fish.x - companion.x,
+        fish.y - companion.y,
+        fish.seed < companion.seed ? -1 : 1,
+        0,
+      );
+      const tangent = { x: -away.y, y: away.x };
+      const candidates = [
+        boundedPlantPoint(fish, state, fish.x + away.x * 3.6, fish.y + away.y * 2.8),
+        boundedPlantPoint(
+          fish, state,
+          fish.x + away.x * 1.5 + tangent.x * 3.2,
+          fish.y + away.y * 1.2 + tangent.y * 2.5,
+        ),
+        boundedPlantPoint(
+          fish, state,
+          fish.x + away.x * 1.5 - tangent.x * 3.2,
+          fish.y + away.y * 1.2 - tangent.y * 2.5,
+        ),
+      ];
+      const currentGap = Math.hypot(fish.x - companion.x, fish.y - companion.y);
+      const departure = candidates.reduce((best, candidate) => {
+        const gap = Math.hypot(candidate.x - companion.x, candidate.y - companion.y);
+        return gap > best.gap ? { point: candidate, gap } : best;
+      }, { point: { x: fish.x, y: fish.y }, gap: currentGap }).point;
+      return choreographed(state, activity.current, {
+        ...departure,
+        speed: tuning.speedBase + traits.sociability * tuning.speedSociability * 0.55,
+        postureBias: 0,
+        companionTarget: true,
+        choreographyPhase: "peel-away",
+      });
+    }
+    const point = companionOffset(fish, companion, activity.current, state);
     const mutualCompanion = activity.current === ACTIVITIES.companionCruise
       && companion.activity?.current === ACTIVITIES.companionCruise
       && companion.activity?.targetId === fish.seed;
@@ -1898,7 +1950,9 @@ export function tickFishActivity(fish, index, state, realDelta, context = {}) {
     ? Math.max(dwell.maximum, 42)
     : activity.current === ACTIVITIES.plantShelter
       ? Math.max(dwell.maximum, 52)
-      : activity.current === ACTIVITIES.surfaceInvestigate ? 35 : dwell.maximum;
+      : activity.current === ACTIVITIES.plantWeave
+        ? WEAVE_ROUTE_FAILURE_SECONDS
+        : activity.current === ACTIVITIES.surfaceInvestigate ? 35 : dwell.maximum;
   if (!target
     || activity.ageRealSeconds >= activitySafetyMaximum
     || naturalCompletion(fish, activity, target, dwell)) {

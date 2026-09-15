@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { SHOWCASE_SCENARIOS } from "../src/dev/behavior-showcase.js";
@@ -69,4 +70,14 @@ test("the only Phase 8 context deferral is explicit and does not reopen glass-vi
   assert.deepEqual(ids(deferred), ["glass-visit"]);
   assert.match(deferred[0].limitation, /Phase 8/);
   assert.equal(deferred[0].frozen, true);
+});
+
+
+test("later branches rerun the frozen Phase 7 machine and production-path gates", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/verify.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Guard frozen Phase 7 vocabulary after Phase 7/);
+  assert.match(workflow, /npm run audit:phase7-vocabulary/);
+  assert.match(workflow, /Observe frozen vocabulary on production path after Phase 7/);
+  assert.match(workflow, /npm run measure:remaining-vocabulary/);
+  assert.match(workflow, /!startsWith\(github\.ref_name, 'phase-7'\)/);
 });

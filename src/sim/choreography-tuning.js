@@ -373,7 +373,8 @@ export const SCENE_TUNING = Object.freeze({
     speedBase: 0.68,
     speedActivity: 0.18,
     speedAffinity: 0.06,
-    // These are safety escapes only. Normal leg changes are position-driven.
+    // Diagnostic stall thresholds only. Route progression is position-driven;
+    // exceeding these values must never skip an unreached physical crossing.
     legTimeoutSecondsMin: 11,
     legTimeoutSecondsMax: 14,
     asymmetryRows: 0.22,

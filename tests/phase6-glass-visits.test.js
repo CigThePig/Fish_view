@@ -293,3 +293,18 @@ test("glass visit context is transient and never enlarges the save", () => {
   assert.ok(saved.individuals.every((fish) => !("viewerRelationship" in fish)));
   assert.ok(saved.individuals.every((fish) => !("activity" in fish)));
 });
+
+
+test("exhausted calm fish cannot start a glass visit while the behavior lock masks rest", () => {
+  const initial = readyState(1);
+  const state = {
+    ...initial,
+    individuals: initial.individuals.map((fish) => ({
+      ...fish,
+      drives: { ...fish.drives, energy: 0.15 },
+      behavior: { ...fish.behavior, current: "cruise", ageSeconds: 0, ageRealSeconds: 0 },
+      activity: { ...fish.activity, current: "cruise" },
+    })),
+  };
+  assert.equal(findStartedVisit(state), null);
+});

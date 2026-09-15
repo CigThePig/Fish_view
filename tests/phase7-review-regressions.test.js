@@ -14,6 +14,7 @@ import {
 import { steerActivityVelocity } from "../src/sim/fish-choreography.js";
 import {
   ACTIVITIES,
+  activityUtilities,
   resolveActivityTarget,
   tickFishActivity,
 } from "../src/sim/fish-activities.js";
@@ -190,4 +191,129 @@ test("staged plant entry commits its heading through a constrained reversal", ()
   };
   const steered = steerActivityVelocity(fish, target, { realDelta: 0.1 });
   assert.ok(steered.vx < 0, "plant entry kept swimming away during the reversal");
+});
+
+
+test("permanent mid-water fish cannot start or continue plant weave", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantWeave });
+  const weaveSubject = showcaseSubjects(base, ACTIVITIES.plantWeave)[0];
+  const source = base.individuals[0];
+  const fish = {
+    ...source,
+    behavior: { ...source.behavior, current: "explore" },
+    activity: {
+      ...source.activity,
+      current: ACTIVITIES.wander,
+      previous: ACTIVITIES.cruise,
+      ageRealSeconds: 2,
+    },
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((entry, index) => index === 0 ? fish : entry),
+  };
+  const utilities = activityUtilities(fish, 0, state);
+  assert.equal(utilities[ACTIVITIES.plantWeave], undefined);
+
+  const stale = {
+    ...fish,
+    activity: {
+      ...fish.activity,
+      current: ACTIVITIES.plantWeave,
+      targetType: "plant",
+      targetId: weaveSubject.fish.activity.targetId,
+      ageRealSeconds: 12,
+      weaveStage: 0,
+      weaveStageStartedAt: 0,
+    },
+  };
+  assert.equal(resolveActivityTarget(stale, 0, state, stale.activity), null);
+});
+
+test("plant weave timeout cannot skip an unreached intermediate crossing", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantWeave });
+  const subject = showcaseSubjects(base, ACTIVITIES.plantWeave)[0];
+  const probeActivity = {
+    ...subject.fish.activity,
+    current: ACTIVITIES.plantWeave,
+    ageRealSeconds: 10,
+    weaveStage: 1,
+    weaveStageStartedAt: 0,
+  };
+  const probe = resolveActivityTarget(subject.fish, subject.index, base, probeActivity);
+  assert.ok(probe);
+  const halfWidth = fishSpriteWidth(subject.fish) / 2;
+  const farX = probe.x < base.cols / 2 ? base.cols - halfWidth : halfWidth;
+  const fish = {
+    ...subject.fish,
+    x: farX,
+    y: probe.y,
+    behavior: { ...subject.fish.behavior, current: "explore" },
+    activity: {
+      ...probeActivity,
+      ageRealSeconds: probe.weaveLegTimeoutSeconds + 1,
+      weaveStageStartedAt: 0,
+    },
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : entry),
+  };
+  const frame = tickFishActivity(fish, subject.index, state, 0.1);
+  assert.equal(frame.activity.current, ACTIVITIES.plantWeave);
+  assert.equal(frame.activity.weaveStage, 1, "timer skipped a physical crossing");
+});
+
+test("valid plant weave survives the ordinary dwell ceiling until emergence", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantWeave });
+  const subject = showcaseSubjects(base, ACTIVITIES.plantWeave)[0];
+  const activity = {
+    ...subject.fish.activity,
+    current: ACTIVITIES.plantWeave,
+    ageRealSeconds: 80,
+    weaveStage: 3,
+    weaveStageStartedAt: 79,
+  };
+  const target = resolveActivityTarget(subject.fish, subject.index, base, activity);
+  assert.ok(target);
+  const halfWidth = fishSpriteWidth(subject.fish) / 2;
+  const fish = {
+    ...subject.fish,
+    x: target.x < base.cols / 2 ? base.cols - halfWidth : halfWidth,
+    y: target.y,
+    behavior: { ...subject.fish.behavior, current: "explore" },
+    activity,
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : entry),
+  };
+  const frame = tickFishActivity(fish, subject.index, state, 0.1);
+  assert.equal(frame.activity.current, ACTIVITIES.plantWeave);
+});
+
+test("individual follow has a visible peel-away before its dwell boundary", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.individualFollow });
+  const subject = showcaseSubjects(base, ACTIVITIES.individualFollow)[0];
+  const fish = {
+    ...subject.fish,
+    behavior: { ...subject.fish.behavior, current: "social" },
+    activity: {
+      ...subject.fish.activity,
+      current: ACTIVITIES.individualFollow,
+      ageRealSeconds: 23,
+    },
+  };
+  const state = {
+    ...base,
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : entry),
+  };
+  const target = resolveActivityTarget(fish, subject.index, state, fish.activity);
+  assert.ok(target);
+  assert.equal(target.choreographyPhase, "peel-away");
+  const companion = state.individuals.find((entry) => entry.seed === fish.activity.targetId);
+  assert.ok(companion);
+  const currentGap = Math.hypot(fish.x - companion.x, fish.y - companion.y);
+  const targetGap = Math.hypot(target.x - companion.x, target.y - companion.y);
+  assert.ok(targetGap > currentGap, "peel-away target did not open space from the leader");
 });
