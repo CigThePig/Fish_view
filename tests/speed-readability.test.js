@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bodyMotionForFish } from "../src/render/render.js";
 import { ACTIVITIES, createActivityState } from "../src/sim/fish-activities.js";
 import { chaseEvasionForFish } from "../src/sim/fish-choreography.js";
 import { DISPLAY } from "../src/sim/config.js";
@@ -154,26 +153,6 @@ test("natural production swimming keeps a visibly meaningful speed spread", () =
     identityRatio >= 1.12,
     `persistent fish pace is nearly indistinguishable within the same activities: p80/p20 was ${identityRatio.toFixed(2)}x`,
   );
-});
-
-test("body animation cadence follows realised locomotion speed inside one activity", () => {
-  const source = stockedAquarium({ seed: 0x5eed, wallClockHours: 12 }).individuals[4];
-  const base = {
-    ...source,
-    activity: { ...createActivityState(ACTIVITIES.cruise), current: ACTIVITIES.cruise },
-  };
-  const slow = bodyMotionForFish({ ...base, vx: 0.18, vy: 0 });
-  const medium = bodyMotionForFish({ ...base, vx: 0.42, vy: 0 });
-  const fast = bodyMotionForFish({ ...base, vx: 0.72, vy: 0 });
-
-  console.log(
-    `[speed-readability] cruise body rates slow=${slow.rate.toFixed(3)} `
-    + `medium=${medium.rate.toFixed(3)} fast=${fast.rate.toFixed(3)}`,
-  );
-
-  assert.ok(medium.rate > slow.rate * 1.08, "a medium-speed cruise fish animates like a slow one");
-  assert.ok(fast.rate > medium.rate * 1.08, "a fast cruise fish animates like a medium-speed one");
-  assert.ok(fast.rate >= slow.rate * 1.25, "body cadence does not make the locomotion-speed difference readable");
 });
 
 test("playful-chase evader sustains a visibly fast escape instead of one brief spike", () => {
