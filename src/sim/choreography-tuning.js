@@ -211,7 +211,7 @@ export const STEERING_PROFILES = Object.freeze({
     turningResponse: 4.35,
     verticalSpeedScale: 1.22,
     minimumSpeed: 0.16,
-    maximumSpeed: 1.1,
+    maximumSpeed: 2.7,
     approachRadius: 0.78,
     arrivalSpeedScale: 0.92,
     positionGain: 1.16,
@@ -424,20 +424,22 @@ export const SCENE_TUNING = Object.freeze({
     speedSociability: 0.14,
   }),
   // Both fish, because a chase is read from the gap between them: the chaser's
-  // closing speed and the evader's burst are one setting in two halves.
+  // closing speed and the evader's burst are one setting in two halves. The
+  // evader may touch four rows/second only at the crest of the opening escape;
+  // pursuit and the chaser remain lower so the burst reads as punctuation.
   "playful-chase": Object.freeze({
-    approachSpeed: 0.58,
-    pursuitSpeed: 0.82,
-    lungeSpeedGain: 0.34,
+    approachSpeed: 0.7,
+    pursuitSpeed: 1.4,
+    lungeSpeedGain: 1.05,
     approachLeadSeconds: 0.72,
     pursuitLeadSeconds: 1.02,
     approachStandoffRows: 0.9,
     pursuitStandoffRows: 1.12,
     breakGlideSpeed: 0.18,
-    evasionSpeed: 0.52,
-    evasionProximityGain: 0.5,
+    evasionSpeed: 0.8,
+    evasionProximityGain: 1,
     evasionSideRows: 0.72,
-    evasionBurstGain: 0.16,
+    evasionBurstGain: 1.4,
     recognitionRadiusRows: 4.9,
     breakSeconds: 6.2,
     panicNearRows: 1.3,
