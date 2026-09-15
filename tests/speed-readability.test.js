@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ACTIVITIES, createActivityState } from "../src/sim/fish-activities.js";
-import { chaseEvasionForFish } from "../src/sim/fish-choreography.js";
+import {
+  chaseEvasionForFish,
+  locomotionPaceForFish,
+  steerActivityVelocity,
+} from "../src/sim/fish-choreography.js";
 import { DISPLAY } from "../src/sim/config.js";
 import { tick } from "../src/sim/tick.js";
 import { stockedAquarium } from "./support/aquarium.js";
@@ -152,6 +156,33 @@ test("natural production swimming keeps a visibly meaningful speed spread", () =
   assert.ok(
     identityRatio >= 1.12,
     `persistent fish pace is nearly indistinguishable within the same activities: p80/p20 was ${identityRatio.toFixed(2)}x`,
+  );
+});
+
+test("locomotion temperament changes steering for identical activity geometry", () => {
+  const source = stockedAquarium({ seed: 0x5eed, wallClockHours: 12 }).individuals[4];
+  const candidates = Array.from({ length: 256 }, (_, index) => ({ ...source, seed: index + 1 }))
+    .sort((left, right) => locomotionPaceForFish(left) - locomotionPaceForFish(right));
+  const slow = { ...candidates[0], x: 10, y: 8, vx: 0, vy: 0 };
+  const fast = { ...candidates.at(-1), x: 10, y: 8, vx: 0, vy: 0 };
+  const target = { x: 50, y: 8, speed: 0.4 };
+  const steer = (fish) => steerActivityVelocity(fish, target, {
+    realDelta: 0.25,
+    motionScale: 1,
+    behaviorBlend: 1,
+  });
+  const slowSteering = steer(slow);
+  const fastSteering = steer(fast);
+  const slowSpeed = Math.hypot(slowSteering.vx, slowSteering.vy);
+  const fastSpeed = Math.hypot(fastSteering.vx, fastSteering.vy);
+
+  assert.ok(
+    fastSteering.locomotionPace >= slowSteering.locomotionPace * 1.25,
+    `selected pace seeds were too similar: ${slowSteering.locomotionPace.toFixed(3)} vs ${fastSteering.locomotionPace.toFixed(3)}`,
+  );
+  assert.ok(
+    fastSpeed >= slowSpeed * 1.2,
+    `identical steering geometry flattened pace temperament: ${slowSpeed.toFixed(3)} vs ${fastSpeed.toFixed(3)}`,
   );
 });
 
