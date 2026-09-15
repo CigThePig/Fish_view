@@ -14,7 +14,7 @@ import {
 } from "./chase-arc.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { fishSpriteWidth } from "./fish-growth.js";
-import { mix32 } from "./prng.js";
+import { mix32, sampleRange } from "./prng.js";
 
 // Activity selection says what a fish intends to do. How that intention should
 // feel in motion is data, not another state machine: the steering profiles and
@@ -62,6 +62,17 @@ function rotateVector(x, y, radians) {
 function chaseBodyAgility(fish) {
   const width = Math.max(1, fishSpriteWidth(fish));
   return clamp(1.17 - Math.max(0, width - 5) * 0.035, 0.8, 1.17);
+}
+
+// Pace is a fixed locomotion temperament reconstructed from identity. It costs
+// no persistence and never rerolls with learned history. The range is wide
+// enough for two fish doing the same ordinary activity to read differently,
+// but narrow enough that authored behavior bands still say what the fish is
+// doing. High-energy chase/escape motion receives only part of this variation
+// so a naturally slow fish cannot make a frozen chase sentence unreadable.
+export function locomotionPaceForFish(fish) {
+  const seed = Number.isFinite(fish?.seed) ? fish.seed >>> 0 : 0;
+  return sampleRange(seed, 9137, 0.84, 1.16);
 }
 
 // A componentwise blend cannot cross an exact reversal. With a turn ease below
@@ -247,7 +258,12 @@ export function steerActivityVelocity(fish, target, {
   const dy = (Number.isFinite(target?.y) ? target.y : fish.y) - fish.y;
   const distance = Math.hypot(dx, dy);
   const direction = safeNormalize(dx, dy, fallbackX, 0);
-  const requestedSpeed = Math.max(0, Number.isFinite(target?.speed) ? target.speed : 0.3) * motionScale;
+  const locomotionPace = locomotionPaceForFish(fish);
+  const paceInfluence = target?.playfulChase || evasion ? 0.45 : 1;
+  const effectivePace = 1 + (locomotionPace - 1) * paceInfluence;
+  const requestedSpeed = Math.max(0, Number.isFinite(target?.speed) ? target.speed : 0.3)
+    * motionScale
+    * effectivePace;
   const radius = Math.max(0, Number.isFinite(profile.approachRadius) ? profile.approachRadius : 0);
   const arrival = clamp(Number.isFinite(profile.arrivalSpeedScale) ? profile.arrivalSpeedScale : 1, 0, 1);
   const approach = radius > 0 ? smoothstep(0, radius, distance) : 1;
@@ -331,7 +347,7 @@ export function steerActivityVelocity(fish, target, {
 
   if (evasion) {
     const weight = clamp(evasion.weight ?? 0, 0, 1);
-    const escapeSpeed = Math.max(0, evasion.speed ?? 0) * motionScale;
+    const escapeSpeed = Math.max(0, evasion.speed ?? 0) * motionScale * effectivePace;
     desiredVx = desiredVx * (1 - weight) + (evasion.x ?? 0) * escapeSpeed * weight;
     desiredVy = desiredVy * (1 - weight) + (evasion.y ?? 0) * escapeSpeed * weight;
     accelerationResponse = Math.max(accelerationResponse, evasion.accelerationResponse ?? 0);
@@ -380,6 +396,7 @@ export function steerActivityVelocity(fish, target, {
     desiredSpeed,
     distance,
     choreography: profile,
+    locomotionPace,
     evading: Boolean(evasion),
   };
 }
