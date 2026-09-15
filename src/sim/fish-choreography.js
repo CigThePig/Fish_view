@@ -156,7 +156,7 @@ export function chaseEvasionForFish(fish, state) {
     let phaseSpeedBonus = 0;
     let accelerationResponse = 4.2;
     let turningResponse = 4.2 * agility;
-    let maximumSpeed = 1.12;
+    let maximumSpeed = 2.4;
 
     if (arcPhase === CHASE_ARC_PHASES.escape) {
       // This beat has to open the gap. A merely decorative sidestep still lets
@@ -164,7 +164,9 @@ export function chaseEvasionForFish(fish, state) {
       // short real acceleration advantage while the chaser hesitates below.
       // Recognition at the outside of the radius stays subtle: panic strength
       // is still governed by distance, so noticing a fish four rows away is not
-      // the same thing as bolting from it.
+      // the same thing as bolting from it. Four rows per second is an absolute
+      // burst ceiling, not a cruise rate: only the middle of this short escape
+      // beat can ask for it.
       const burst = Math.sin(progress * Math.PI);
       signedSide = dodgeSign;
       sideMagnitude = (0.26 + burst * (tuning.evasionSideRows * 0.72 + 0.2)) * agility;
@@ -173,7 +175,7 @@ export function chaseEvasionForFish(fish, state) {
       phaseStrength = 0.06 + proximity * 0.78 + burst * 0.08;
       accelerationResponse = 5.6 + burst * 1.2;
       turningResponse = (3.8 + burst * 0.8) * agility;
-      maximumSpeed = 1.22 + Math.max(0, agility - 1) * 0.08;
+      maximumSpeed = 4;
     } else if (arcPhase === CHASE_ARC_PHASES.pursuit) {
       // Brief pulses interrupt the closing run. They are deliberately short:
       // the chaser should regain the gap between them, creating the readable
@@ -191,7 +193,7 @@ export function chaseEvasionForFish(fish, state) {
       phaseStrength = 0.04 + proximity * 0.78 + burst * 0.08;
       accelerationResponse = 4.25 + burst * 1.15;
       turningResponse = (3.8 + Math.abs(wave) * 0.75) * agility;
-      maximumSpeed = 1.16 + Math.max(0, agility - 1) * 0.06;
+      maximumSpeed = 3;
     } else {
       // The final dodge trades forward speed for direction. The chaser is
       // allowed to commit and surge through the old line, then has to turn back
@@ -207,7 +209,7 @@ export function chaseEvasionForFish(fish, state) {
       awayWeight = 1 - juke * 0.82;
       accelerationResponse = 4.5;
       turningResponse = (3.45 + juke * 0.55) * agility;
-      maximumSpeed = 0.98 + Math.max(0, agility - 1) * 0.04;
+      maximumSpeed = 2.3;
     }
 
     const direction = safeNormalize(
@@ -324,7 +326,7 @@ export function steerActivityVelocity(fish, target, {
       turningResponse *= (0.16 + correctionRelease * 1.34) * agility;
       maximumSpeed = Math.max(
         maximumSpeed,
-        (1.58 + Math.max(0, agility - 1) * 0.18) * motionScale,
+        3 * motionScale,
       );
     } else if (chasePhaseName === "break") {
       const bounds = chaseArcBoundaries(chaseTuning);
