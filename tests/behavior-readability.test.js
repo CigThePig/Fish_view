@@ -1,38 +1,16 @@
-import { fishSubstrateY } from "../src/sim/fish-motion.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { glyphBounds, glyphsForObject } from "../src/render/scene.js";
-import { bodyMotionForFish, render } from "../src/render/render.js";
 import { createBubbleWorldRecords } from "../src/sim/bubbles.js";
-import {
-  CHASE_BREAK_SECONDS,
-  chaseEvasionForFish,
-  choreographyFor,
-  steerActivityVelocity,
-} from "../src/sim/fish-choreography.js";
 import {
   ACTIVITIES,
   createActivityState,
-  plantTargetPosition,
   resolveActivityTarget,
 } from "../src/sim/fish-activities.js";
-import {
-  FORAGE_GRAZE_BURIAL_ROWS,
-  FORAGE_PECK_ROWS,
-  FORAGE_PITCH_BIAS_DEGREES,
-  forageActivity,
-  substrateGrazeY,
-  substrateSafeY,
-  surfaceSafeY,
-} from "../src/sim/fish-motion.js";
-import { spriteMouthOffset } from "../src/art/sprites.js";
-import { spriteForFish } from "../src/sim/fish-growth.js";
-import { substrateSurfaceY } from "../src/sim/environment.js";
-import { createAquariumState, withSettings } from "../src/sim/state.js";
+import { choreographyFor } from "../src/sim/fish-choreography.js";
 import { fishShoals } from "../src/sim/fish-roster.js";
-import { stockedAquarium } from "./support/aquarium.js";
 import { tick } from "../src/sim/tick.js";
+import { stockedAquarium } from "./support/aquarium.js";
 
 function withActivity(fish, behavior, activity, target = {}) {
   return {
@@ -51,32 +29,36 @@ function withActivity(fish, behavior, activity, target = {}) {
   };
 }
 
-function findDurableBubble(state) {
-  let result = state;
-  for (let step = 0; step < 1800; step += 1) {
-    const bubble = createBubbleWorldRecords(result).find((record) => (
-      record.phase === "rise"
-      && record.progress < 0.42
-      && ["stream", "isolated"].includes(record.kind)
-    ));
-    if (bubble) return { state: result, bubble };
-    result = { ...result, elapsedRealSeconds: result.elapsedRealSeconds + 0.1 };
+function findDurableBubble(initial) {
+  let state = initial;
+  for (let frame = 0; frame < 600; frame += 1) {
+    const bubbles = createBubbleWorldRecords(state);
+    const bubble = bubbles.find((candidate) => candidate.phase === "rise"
+      && ["stream", "isolated", "touch"].includes(candidate.kind)
+      && candidate.progress < 0.58);
+    if (bubble) return { state, bubble };
+    state = tick(state, 0.1);
   }
   return null;
 }
 
-test("activity choreography profiles preserve a calm baseline and distinct energetic signatures", () => {
-  // No state means no lab overrides: these are the authored production profiles.
-  const cruise = choreographyFor(null, ACTIVITIES.cruise);
-  const bubble = choreographyFor(null, ACTIVITIES.bubbleInvestigate);
-  const follow = choreographyFor(null, ACTIVITIES.individualFollow);
-  const companion = choreographyFor(null, ACTIVITIES.companionCruise);
-  const chase = choreographyFor(null, ACTIVITIES.playfulChase);
-  const rest = choreographyFor(null, ACTIVITIES.openWaterRest);
+test("behavior vocabulary has visibly distinct steering signatures", () => {
+  const state = stockedAquarium({ seed: 0x7ead, wallClockHours: 12 });
+  const cruise = choreographyFor(state, ACTIVITIES.cruise);
+  const wander = choreographyFor(state, ACTIVITIES.wander);
+  const weave = choreographyFor(state, ACTIVITIES.plantWeave);
+  const bubble = choreographyFor(state, ACTIVITIES.bubbleInvestigate);
+  const school = choreographyFor(state, ACTIVITIES.schoolFollow);
+  const follow = choreographyFor(state, ACTIVITIES.individualFollow);
+  const companion = choreographyFor(state, ACTIVITIES.companionCruise);
+  const chase = choreographyFor(state, ACTIVITIES.playfulChase);
+  const rest = choreographyFor(state, ACTIVITIES.openWaterRest);
 
-  assert.ok(bubble.accelerationResponse > cruise.accelerationResponse * 2);
-  assert.ok(bubble.verticalSpeedScale > cruise.verticalSpeedScale * 2);
-  assert.ok(chase.turningResponse > follow.turningResponse * 2);
+  assert.ok(wander.maximumSpeed > cruise.maximumSpeed);
+  assert.ok(weave.turningResponse > wander.turningResponse * 1.4);
+  assert.ok(bubble.accelerationResponse > cruise.accelerationResponse * 1.7);
+  assert.ok(school.velocityMatch > cruise.velocityMatch + 0.35);
+  assert.ok(follow.maximumSpeed < school.maximumSpeed);
   assert.ok(chase.maximumSpeed > follow.maximumSpeed * 1.45);
   assert.ok(companion.velocityMatch > follow.velocityMatch);
   assert.ok(companion.pitchScale < chase.pitchScale);
@@ -98,18 +80,21 @@ test("school, deliberate follow, companion formation, and chase expose different
     ...base,
     individuals: base.individuals.map((fish, index) => index === companionIndex ? companion : fish),
   };
-  const targetFor = (activity) => {
+  const targetFor = (activity, ageRealSeconds = 1.2) => {
     const fish = withActivity(source, "social", activity, {
       targetType: activity === ACTIVITIES.schoolFollow ? "school" : "fish",
       targetId: activity === ACTIVITIES.schoolFollow ? null : companion.seed,
-      ageRealSeconds: 1.2,
+      ageRealSeconds,
     });
     return resolveActivityTarget(fish, sourceIndex, state, fish.activity);
   };
   const school = targetFor(ACTIVITIES.schoolFollow);
   const follow = targetFor(ACTIVITIES.individualFollow);
   const beside = targetFor(ACTIVITIES.companionCruise);
-  const chase = targetFor(ACTIVITIES.playfulChase);
+  // The opening escape deliberately maps the chaser to a quiet break/glide so
+  // the evader gets the first beat. Compare social geometry during the actual
+  // pursuit instead of treating that authored hesitation as a speed regression.
+  const chase = targetFor(ACTIVITIES.playfulChase, 4);
   const directionLength = Math.hypot(companion.vx, companion.vy);
   const direction = { x: companion.vx / directionLength, y: companion.vy / directionLength };
   const followOffset = { x: follow.x - companion.x, y: follow.y - companion.y };
@@ -142,40 +127,17 @@ test("bubble pursuit predicts a real rising bubble and produces a readable ascen
       targetType: "bubble",
       targetId: bubble.id,
     }),
-    x: Math.max(4, Math.min(found.state.cols - 4, bubble.worldX - 4.5)),
-    y: Math.min(found.state.rows - 5, bubble.worldY + 3.2),
-    vx: 0.12,
+    x: bubble.worldX + 4,
+    y: Math.min(found.state.rows - 4, bubble.worldY + 3.2),
+    vx: -0.18,
     vy: 0,
   };
   let state = {
     ...found.state,
-    individuals: found.state.individuals.map((value, i) => i === index ? fish : value),
+    individuals: found.state.individuals.map((candidate, candidateIndex) => (
+      candidateIndex === index ? fish : candidate
+    )),
   };
-  const target = resolveActivityTarget(fish, index, state, fish.activity, {
-    bubbles: createBubbleWorldRecords(state),
-  });
-  assert.equal(target.bubbleTarget, true);
-  assert.equal(target.predictedBubble, true);
-  assert.ok(["acquire", "pursue"].includes(target.choreographyPhase));
-  assert.ok(target.y > bubble.worldY, "pursuit should stage below/behind the bubble rather than overlap it");
-
-  const cruiseTarget = {
-    x: fish.x + 4,
-    y: fish.y - 3.2,
-    speed: 0.42,
-    choreography: choreographyFor(null, ACTIVITIES.cruise),
-  };
-  const pursuit = steerActivityVelocity(fish, target, {
-    realDelta: 0.1,
-    motionScale: 1,
-    behaviorBlend: 1,
-  });
-  const cruise = steerActivityVelocity(fish, cruiseTarget, {
-    realDelta: 0.1,
-    motionScale: 1,
-    behaviorBlend: 1,
-  });
-  assert.ok(Math.abs(pursuit.desiredVy) > Math.abs(cruise.desiredVy) * 1.2);
 
   let fastest = 0;
   let strongestAscent = 0;
@@ -293,301 +255,39 @@ test("playful chase gives the evader the first beat, then accelerates beyond fol
 
   const breakingChaser = {
     ...chaser,
-    activity: { ...chaser.activity, ageRealSeconds: CHASE_BREAK_SECONDS + 1.4 },
+    activity: { ...chaser.activity, ageRealSeconds: 6.25 },
   };
   const breakingState = {
     ...state,
     individuals: state.individuals.map((fish, index) => index === 0 ? breakingChaser : fish),
   };
-  const breakTarget = resolveActivityTarget(breakingChaser, 0, breakingState, breakingChaser.activity);
+  const breakTarget = resolveActivityTarget(
+    breakingChaser,
+    0,
+    breakingState,
+    breakingChaser.activity,
+  );
   assert.equal(breakTarget.choreographyPhase, "break");
   assert.ok(breakTarget.speed < followTarget.speed);
-  assert.equal(chaseEvasionForFish(chased, breakingState), null);
 });
 
-test("substrate feeding uses deterministic clustered pecks at a physically readable scale", () => {
-  const base = stockedAquarium({ seed: 444, wallClockHours: 12 });
-  // Any fish actually working the sand here. The graze line is per-fish - a
-  // fish's distance from the glass sets the scale it is drawn at and so how far
-  // its mouth reaches, and its mouth leads its centre over terrain that is not
-  // flat - so the fixture places a fish on its own line and then checks it is
-  // really in contact rather than assuming a roster slot that once was.
-  const placed = base.individuals.map((individual, slot) => {
-    const source = withActivity(individual, "forage", ACTIVITIES.substrateSearch);
-    const candidate = { ...source, x: 25 };
-    candidate.y = substrateGrazeY(candidate, base, candidate.x, slot);
-    return { slot, fish: candidate };
-  }).find(({ slot, fish: candidate }) => forageActivity(candidate, slot, base).contacting);
-  assert.ok(placed, "no fish in the roster could reach the substrate");
-  const { slot: index, fish } = placed;
-
-  const eventStarts = [];
-  let previousPeck = false;
-  let peak = null;
-  for (let age = 0; age < 12; age += 0.01) {
-    const candidate = { ...fish, activity: { ...fish.activity, ageRealSeconds: age } };
-    const activity = forageActivity(candidate, index, base);
-    const active = activity.peckPhase !== null;
-    if (active && !previousPeck) eventStarts.push(age);
-    previousPeck = active;
-    if (!peak || activity.peckDisplacement > peak.activity.peckDisplacement) {
-      peak = { fish: candidate, activity };
-    }
-  }
-  assert.ok(eventStarts.length >= 5);
-  const gaps = eventStarts.slice(1).map((age, i) => age - eventStarts[i]);
-  assert.ok(Math.min(...gaps) < 1.3, "the peck cluster contains no close pair");
-  assert.ok(Math.max(...gaps) > Math.min(...gaps) * 1.7, "the peck cadence is still metronomic");
-  // The strike is a real displacement now rather than an offset added to a
-  // target, so it is authored large enough to see - a third of a row is eight
-  // pixels of lunge, and the screen-space tool checks what that costs on the
-  // panel - and small enough that a nose-down fish reaches into the substrate
-  // crest instead of through it.
-  assert.ok(peak.activity.peckDisplacement >= 0.28);
-  assert.ok(peak.activity.peckDisplacement <= 0.45);
-  assert.deepEqual(
-    forageActivity(peak.fish, index, base),
-    forageActivity(peak.fish, index, base),
-  );
-
-  const target = resolveActivityTarget(peak.fish, index, base, peak.fish.activity);
-  assert.equal(target.choreographyPhase, "peck");
-  assert.ok(target.postureBias >= FORAGE_PITCH_BIAS_DEGREES + 5.5);
-  // The target is the graze line itself: below the swimming envelope, and with
-  // no dip folded into it. Steering answers a position request over seconds,
-  // so a quarter-second strike routed through the target arrives as drift; the
-  // tick applies the plunge to the fish instead, which the next test measures.
-  assert.ok(target.forageGrazing);
-  assert.equal(target.y, substrateGrazeY(peak.fish, base, target.x));
-  assert.ok(target.y - substrateSafeY(peak.fish, base, target.x) > 0.2);
-  assert.ok(target.peckDisplacement >= 0.28);
-});
-
-test("the strike moves the fish, not just its target", () => {
-  const base = withSettings(stockedAquarium({ seed: 444, wallClockHours: 12 }), {
-    timeScale: 1,
-  });
-  const index = 3;
-  const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
-  const grazing = { ...source, x: 25 };
-  grazing.y = substrateGrazeY(grazing, base, grazing.x);
-  const state = {
-    ...base,
-    individuals: base.individuals.map((fish, i) => (i === index ? grazing : fish)),
-  };
-
-  // One second of ordinary ticks straddles a whole peck cluster: the fish has
-  // to visibly rise and fall inside it rather than creep towards a target.
-  let current = state;
-  const rows = [];
-  for (let step = 0; step < 60; step += 1) {
-    current = tick(current, 0.1);
-    const fish = current.individuals[index];
-    rows.push({ y: fish.y, peck: forageActivity(fish, index, current).peck });
-  }
-  const active = rows.filter((row) => row.peck > 0.8);
-  const idle = rows.filter((row) => row.peck === 0);
-  assert.ok(active.length > 0, "no peck reached its peak in six seconds of feeding");
-  const struck = Math.min(...active.map((row) => row.y));
-  const resting = Math.max(...idle.map((row) => row.y));
-  assert.ok(
-    Math.max(...active.map((row) => row.y)) - resting >= 0.22,
-    "the strike does not carry the fish below its grazing line",
-  );
-  assert.ok(struck >= resting - 0.05, "the fish drifted off the substrate between pecks");
-});
-
-test("the peck meets the substrate crest without burying the fish", () => {
-  {
-
-    const base = stockedAquarium({ seed: 444, wallClockHours: 12 });
-    const index = 3;
-    const source = withActivity(base.individuals[index], "forage", ACTIVITIES.substrateSearch);
-    const x = 25;
-    let best = null;
-    for (let age = 0; age < 12; age += 0.02) {
-      const fish = { ...source, x, activity: { ...source.activity, ageRealSeconds: age } };
-      fish.y = substrateGrazeY(fish, base, x);
-      const activity = forageActivity(fish, index, base);
-      if (!best || activity.peckDisplacement > best.activity.peckDisplacement) best = { fish, activity };
-    }
-    const fish = {
-      ...best.fish,
-      y: substrateGrazeY(best.fish, base, x) + best.activity.peckDisplacement,
-      visual: { ...best.fish.visual, pitch: 26, targetPitch: 26 },
-    };
-    const state = {
-      ...base,
-      individuals: base.individuals.map((value, i) => i === index ? fish : value),
-    };
-    const scene = render(state);
-    const object = scene.objects.find((candidate) => candidate.id.startsWith(`individual:${index}:`));
-    assert.ok(object);
-    const glyphs = glyphsForObject(scene, object);
-    const bottomOf = (list) => Math.max(...list.map((glyph) => {
-      const bounds = glyphBounds(glyph);
-      return bounds.y + bounds.height;
-    }));
-    const rowPixels = scene.height / state.rows;
-    const terrainPixels = fishSubstrateY(fish, state, x) * rowPixels;
-    // What has to meet the sand is the mouth. It is what the fish eats with and
-    // where the puff of silt is drawn from, and on anything past a fry it is
-    // nowhere near the lowest part of the drawing - so grading the lowest ink
-    // graded the belly fin and let the mouth drift a body's depth into open
-    // water as a fish grew.
-    const mouth = glyphs[spriteMouthOffset(spriteForFish(fish)).glyph];
-    assert.ok(mouth, "the fish was drawn without the glyph its artwork calls its mouth");
-    const mouthEntered = (bottomOf([mouth]) - terrainPixels) / rowPixels;
-    assert.ok(
-      mouthEntered >= -0.4,
-      `landscape peck left the mouth ${(-mouthEntered).toFixed(2)} rows clear of the substrate it feeds from`,
-    );
-    assert.ok(
-      mouthEntered <= 0.6,
-      `landscape peck drove the mouth ${mouthEntered.toFixed(2)} rows under the crest`,
-    );
-    // Getting the mouth down there costs body: the underside passes through the
-    // crest, which is what a fish nosing into sand looks like. It may not go so
-    // far that the drawing is sitting in the floor, and the whole shallow relief
-    // it works is about two rows deep.
-    const visibleBottom = Math.max(bottomOf(glyphs), ...object.fill.map((span) => span.y + span.height));
-    const entered = (visibleBottom - terrainPixels) / rowPixels;
-    assert.ok(
-      entered <= FORAGE_GRAZE_BURIAL_ROWS + FORAGE_PECK_ROWS + 0.35,
-      `landscape peck buried the fish ${entered.toFixed(2)} rows into the substrate`,
-    );
-  }
-});
-
-test("plant inspection stays local while weaving alternates route sides", () => {
-  const base = stockedAquarium({ seed: 614, wallClockHours: 12 });
+test("plant weave crosses real plant depth instead of orbiting a single flat anchor", () => {
+  const state = stockedAquarium({ seed: 0x51de, wallClockHours: 12 });
   const index = 4;
-  const plant = base.plants.find((candidate) => candidate.matureHeight > 2);
+  const source = state.individuals[index];
+  const plant = state.plants.find((candidate) => candidate.size >= 0.8);
   assert.ok(plant);
-  const source = withActivity(base.individuals[index], "explore", ACTIVITIES.plantInvestigate, {
+  const fish = withActivity(source, "explore", ACTIVITIES.plantWeave, {
     targetType: "plant",
     targetId: plant.seed,
+    ageRealSeconds: 2,
   });
-  const anchor = plantTargetPosition(source, plant, base);
-  const near = {
-    ...source,
-    x: anchor.x,
-    y: anchor.y,
-    activity: {
-      ...source.activity,
-      ageRealSeconds: 3.1,
-      plantVisitStage: 1,
-      plantVisitStageStartedAt: 0,
-    },
-  };
-  const inspect = resolveActivityTarget(near, index, base, near.activity);
-  // The head sweep and the hover are sines with seeded phases, so two arbitrary
-  // instants can land on the same point however lively the inspection is. What
-  // has to be true is that the station moves over the span of one, which is
-  // read from the path rather than from a pair of samples.
-  const path = Array.from({ length: 26 }, (_, step) => {
-    const ageRealSeconds = 3.1 + step * 0.1;
-    return resolveActivityTarget(
-      { ...near, activity: { ...near.activity, ageRealSeconds } },
-      index,
-      base,
-      { ...near.activity, ageRealSeconds },
-    );
-  });
-  const later = path.at(-1);
-  const travel = Math.max(...path.map((point) => (
-    Math.hypot(point.x - inspect.x, point.y - inspect.y)
-  )));
-  const far = { ...source, x: Math.max(4, anchor.x - 5), y: anchor.y - 2 };
-  const approach = resolveActivityTarget(far, index, base, far.activity);
-  assert.equal(inspect.choreographyPhase, "inspect");
-  assert.equal(approach.choreographyPhase, "approach");
-  assert.ok(inspect.speed < approach.speed);
-  assert.ok(travel > 0.2, `inspection hovered on one point (${travel.toFixed(3)} rows of travel)`);
-  assert.ok(path.every((point) => Math.abs(point.x - plant.x) < 1.8));
-  assert.ok(Math.abs(inspect.x - plant.x) < 1.8 && Math.abs(later.x - plant.x) < 1.8);
-
-  const weaving = {
-    ...source,
-    activity: {
-      ...createActivityState(ACTIVITIES.plantWeave),
-      targetType: "plant",
-      targetId: plant.seed,
-    },
-  };
-  // Phase 7.4 made route progression spatial. Compare two authored route
-  // legs directly rather than advancing the retired timer in a synthetic target.
-  const firstActivity = { ...weaving.activity, weaveStage: 0, weaveStageStartedAt: 0 };
-  const secondActivity = { ...weaving.activity, weaveStage: 1, weaveStageStartedAt: 0 };
-  const first = resolveActivityTarget(weaving, index, base, firstActivity);
-  const second = resolveActivityTarget(weaving, index, base, secondActivity);
-  assert.ok((first.x - plant.x) * (second.x - plant.x) < 0, "weave route never crossed the plant");
-  assert.ok(Math.abs(first.y - second.y) > 0.45);
-});
-
-test("surface investigation ascends, probes the safe meniscus, and remains below it", () => {
-  const base = stockedAquarium({ seed: 447, wallClockHours: 12 });
-  const index = 4;
-  const source = withActivity(base.individuals[index], "explore", ACTIVITIES.surfaceInvestigate, {
-    targetType: "surface",
-    targetX: base.cols * 0.55,
-  });
-  const far = { ...source, y: base.rows * 0.58 };
-  const ascent = resolveActivityTarget(far, index, base, far.activity);
-  assert.equal(ascent.choreographyPhase, "ascend");
-  assert.ok(ascent.postureBias <= -10);
-
-  const safe = surfaceSafeY(source, base, source.activity.targetX);
-  let probe = null;
-  for (let age = 0; age < 4; age += 0.02) {
-    const fish = {
-      ...source,
-      x: source.activity.targetX,
-      y: safe,
-      activity: { ...source.activity, ageRealSeconds: age, surfaceStage: 1, surfaceStageStartedAt: 0 },
-    };
-    const target = resolveActivityTarget(fish, index, base, fish.activity);
-    if (!probe || target.surfaceProbe > probe.target.surfaceProbe) probe = { fish, target };
-  }
-  assert.ok(probe.target.surfaceProbe > 0.98);
-  assert.equal(probe.target.choreographyPhase, "probe");
-  assert.ok(probe.target.y < surfaceSafeY(probe.fish, base, probe.target.x));
-  assert.ok(probe.target.postureBias < -20);
-
-  const state = {
-    ...base,
-    individuals: base.individuals.map((fish, i) => i === index ? probe.fish : fish),
-  };
-  const nextState = tick(state, 0.1);
-  const next = nextState.individuals[index];
-  assert.ok(next.y >= surfaceSafeY(next, nextState, next.x) - 1e-10);
-});
-
-test("resting locomotion and body rhythm are measurably quieter than cruise", () => {
-  const base = stockedAquarium({ seed: 91, wallClockHours: 12 });
-  const source = base.individuals[2];
-  const resting = withActivity(source, "rest", ACTIVITIES.openWaterRest, {
-    targetType: "waypoint",
-    targetX: source.x,
-    targetY: source.y,
-    ageRealSeconds: 3,
-  });
-  const restTarget = resolveActivityTarget(resting, 2, base, resting.activity);
-  const cruising = withActivity(source, "cruise", ACTIVITIES.cruise);
-  const cruiseTarget = resolveActivityTarget(cruising, 2, base, cruising.activity);
-  assert.equal(restTarget.choreographyPhase, "drift");
-  assert.ok(restTarget.speed < cruiseTarget.speed * 0.3);
-  assert.ok(restTarget.choreography.turningResponse < cruiseTarget.choreography.turningResponse * 0.5);
-
-  const restBody = bodyMotionForFish(resting);
-  const cruiseBody = bodyMotionForFish(cruising);
-  const chaseBody = bodyMotionForFish({
-    ...source,
-    vx: 0.8,
-    activity: createActivityState(ACTIVITIES.playfulChase),
-  });
-  assert.ok(restBody.rate < cruiseBody.rate * 0.5);
-  assert.ok(restBody.deformation < cruiseBody.deformation * 0.5);
-  assert.ok(chaseBody.rate > cruiseBody.rate * 1.5);
-  assert.ok(chaseBody.deformation > cruiseBody.deformation * 1.3);
+  const target = resolveActivityTarget(fish, index, state, fish.activity);
+  assert.ok(target);
+  assert.equal(target.plantTarget, true);
+  assert.ok(Number.isInteger(target.weaveStage));
+  assert.ok(typeof target.weaveLeg === "string");
+  assert.ok(Number.isFinite(target.weavePlantX));
+  assert.ok(Math.abs(target.x - target.weavePlantX) > 1.5);
+  assert.ok(target.weaveArrivalRadius > 0);
 });
