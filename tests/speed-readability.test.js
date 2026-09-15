@@ -15,7 +15,7 @@ const PHONE_PIXELS_PER_ROW = PHONE_WIDTH_PIXELS / DISPLAY.cols;
 
 const ORDINARY_ACTIVE_ACTIVITIES = new Set([
   ACTIVITIES.cruise,
-  ACTIVITIES.openWaterWander,
+  ACTIVITIES.wander,
   ACTIVITIES.schoolFollow,
   ACTIVITIES.individualFollow,
   ACTIVITIES.companionCruise,
