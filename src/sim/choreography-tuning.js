@@ -434,7 +434,7 @@ export const SCENE_TUNING = Object.freeze({
     approachStandoffRows: 0.9,
     pursuitStandoffRows: 3,
     breakGlideSpeed: 0.18,
-    evasionSpeed: 1.2,
+    evasionSpeed: 1.55,
     evasionProximityGain: 1,
     evasionSideRows: 0.72,
     evasionBurstGain: 2,
