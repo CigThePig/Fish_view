@@ -38,6 +38,24 @@ jobs:
       - name: Observe frozen vocabulary on production path after Phase 7
         if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
         run: npm run measure:remaining-vocabulary -- --seconds=1800 --output=.audit-output/phase7-frozen-natural
+      - name: Measure frozen chase telemetry after Phase 7
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        run: npm run measure:chase-readiness -- --output=.audit-output/phase7-frozen-chase-readiness
+      - name: Capture naturally selected playful chase after Phase 7
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        run: npm run capture:episode -- --input=.audit-output/phase7-frozen-natural/playful-chase-state.json --seconds=12 --times=0,2,4,6,8,10 --output=.audit-output/phase7-frozen-natural-playful-chase
+      - name: Upload frozen Phase 7 chase evidence
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase7-frozen-chase-evidence
+          path: |
+            .audit-output/phase7-frozen-natural/natural.json
+            .audit-output/phase7-frozen-natural/playful-chase-state.json
+            .audit-output/phase7-frozen-chase-readiness
+            .audit-output/phase7-frozen-natural-playful-chase
+          if-no-files-found: error
+          retention-days: 14
       - run: npm run capture:relationship -- --scale=0.25 --output=.audit-output/relationship-captures
       - uses: actions/upload-artifact@v4
         with:

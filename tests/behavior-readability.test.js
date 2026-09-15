@@ -98,18 +98,20 @@ test("school, deliberate follow, companion formation, and chase expose different
     ...base,
     individuals: base.individuals.map((fish, index) => index === companionIndex ? companion : fish),
   };
-  const targetFor = (activity) => {
+  const targetFor = (activity, ageRealSeconds = 1.2) => {
     const fish = withActivity(source, "social", activity, {
       targetType: activity === ACTIVITIES.schoolFollow ? "school" : "fish",
       targetId: activity === ACTIVITIES.schoolFollow ? null : companion.seed,
-      ageRealSeconds: 1.2,
+      ageRealSeconds,
     });
     return resolveActivityTarget(fish, sourceIndex, state, fish.activity);
   };
   const school = targetFor(ACTIVITIES.schoolFollow);
   const follow = targetFor(ACTIVITIES.individualFollow);
   const beside = targetFor(ACTIVITIES.companionCruise);
-  const chase = targetFor(ACTIVITIES.playfulChase);
+  // Escape deliberately gives the evader the first beat. Compare the chase's
+  // social geometry once the chaser has entered its actual pursuit window.
+  const chase = targetFor(ACTIVITIES.playfulChase, 4);
   const directionLength = Math.hypot(companion.vx, companion.vy);
   const direction = { x: companion.vx / directionLength, y: companion.vy / directionLength };
   const followOffset = { x: follow.x - companion.x, y: follow.y - companion.y };

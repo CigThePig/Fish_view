@@ -10,10 +10,11 @@ import {
   chaseArcBoundaries,
   chaseArcPhase,
   chaseArcProgress,
-  chaseMacroPhase,
 } from "./chase-arc.js";
+import { WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
 import { fishSpriteWidth } from "./fish-growth.js";
+import { substrateSafeY, surfaceSafeY } from "./fish-motion.js";
 import { mix32, sampleRange } from "./prng.js";
 
 // Activity selection says what a fish intends to do. How that intention should
@@ -64,6 +65,52 @@ function chaseBodyAgility(fish) {
   return clamp(1.17 - Math.max(0, width - 5) * 0.035, 0.8, 1.17);
 }
 
+// Chase motion is now fast enough that waiting for tickIndividual() to clamp a
+// fish after it crosses the swimming envelope can create a one-frame velocity
+// reflection. That looks like a teleporting turn and produces enormous measured
+// turn rates. Bend an evader inward while there is still roughly half a second
+// of swimming room, and shed a little speed as the remaining clearance closes.
+// The ordinary movement controller and its final safety clamps remain unchanged;
+// this is only a predictive guard for the high-energy chase influence.
+function clearanceAwareChaseEvasion(fish, state, direction, speed) {
+  const halfWidth = fishSpriteWidth(fish) / 2;
+  const minimumX = halfWidth;
+  const maximumX = state.cols - halfWidth;
+  const individualIndex = (state.individuals ?? []).findIndex((candidate) => candidate.seed === fish.seed);
+  const minimumY = surfaceSafeY(fish, state, fish.x);
+  const terrainMaximumY = substrateSafeY(fish, state, fish.x);
+  const protectedMaximumY = WATERLINE_ROWS
+    + Math.max(0, terrainMaximumY - WATERLINE_ROWS) * 0.68;
+  const maximumY = individualIndex >= 0 && individualIndex < 3
+    ? Math.min(terrainMaximumY, protectedMaximumY)
+    : terrainMaximumY;
+  const lookAhead = clamp(0.7 + Math.max(0, speed) * 0.52, 1.05, 2.8);
+
+  const pressureFor = (clearance, movingToward) => movingToward
+    ? 1 - smoothstep(0, lookAhead, Math.max(0, clearance))
+    : 0;
+  const leftPressure = pressureFor(fish.x - minimumX, direction.x < 0);
+  const rightPressure = pressureFor(maximumX - fish.x, direction.x > 0);
+  const topPressure = pressureFor(fish.y - minimumY, direction.y < 0);
+  const bottomPressure = pressureFor(maximumY - fish.y, direction.y > 0);
+  const pressure = Math.max(leftPressure, rightPressure, topPressure, bottomPressure);
+  if (pressure <= 0.001) return { x: direction.x, y: direction.y, speed };
+
+  const inwardX = leftPressure - rightPressure;
+  const inwardY = topPressure - bottomPressure;
+  const adjusted = safeNormalize(
+    direction.x + inwardX * 1.9,
+    direction.y + inwardY * 1.9,
+    inwardX || direction.x,
+    inwardY || direction.y,
+  );
+  return {
+    x: adjusted.x,
+    y: adjusted.y,
+    speed: speed * (1 - pressure * 0.38),
+  };
+}
+
 // Pace is a fixed locomotion temperament reconstructed from identity. It costs
 // no persistence and never rerolls with learned history. The range is wide
 // enough for two fish doing the same ordinary activity to read differently,
@@ -104,12 +151,31 @@ export function choreographyFor(state, activity, phase = null) {
   };
 }
 
+// The low-level phase helper deliberately lets a hand-posed chase outside
+// recognition remain in engage. A real playful-chase activity, however, is only
+// selected from a recognised companion. Once that production activity has
+// reached its opening escape window, a widening gap means the escape worked;
+// it must not rewind the sentence to engage and then fire a second opening.
+export function chaseSemanticPhase(ageRealSeconds, distance, tuning = null) {
+  const age = Math.max(0, Number.isFinite(ageRealSeconds) ? ageRealSeconds : 0);
+  const bounds = chaseArcBoundaries(tuning);
+  const phase = chaseArcPhase(age, distance, tuning);
+  if (phase === CHASE_ARC_PHASES.engage
+    && age >= bounds.engageEnd
+    && age < bounds.escapeEnd) return CHASE_ARC_PHASES.escape;
+  return phase;
+}
+
 // fish-activities.js still needs its broad approach / pursuit / break branches,
 // but Phase 7.3 inserts escape and intercept inside the middle act. Those finer
-// phase names pass straight through the existing pursuit branch and are then
-// visible to steering and telemetry.
+// semantic phases are collapsed here only for the existing target branches.
 export function chasePhase(ageRealSeconds, distance, tuning = null) {
-  return chaseMacroPhase(ageRealSeconds, distance, tuning);
+  const phase = chaseSemanticPhase(ageRealSeconds, distance, tuning);
+  if (phase === CHASE_ARC_PHASES.engage) return "approach";
+  if (phase === CHASE_ARC_PHASES.escape
+    || phase === CHASE_ARC_PHASES.break
+    || phase === CHASE_ARC_PHASES.recover) return "break";
+  return phase;
 }
 
 // The chased fish keeps its own biological behavior and activity. This derived
@@ -131,12 +197,12 @@ export function chaseEvasionForFish(fish, state) {
     const dx = fish.x - chaser.x;
     const dy = fish.y - chaser.y;
     const distance = Math.hypot(dx, dy);
-    if (!Number.isFinite(distance) || distance > recognitionRadius + 0.18) continue;
+    if (!Number.isFinite(distance)) continue;
 
-    const arcPhase = chaseArcPhase(age, distance, tuning);
-    if (arcPhase === CHASE_ARC_PHASES.engage
-      || arcPhase === CHASE_ARC_PHASES.break
-      || arcPhase === CHASE_ARC_PHASES.recover) continue;
+    const arcPhase = chaseSemanticPhase(age, distance, tuning);
+    const endingPhase = arcPhase === CHASE_ARC_PHASES.break || arcPhase === CHASE_ARC_PHASES.recover;
+    if (!endingPhase && distance > recognitionRadius + 0.18) continue;
+    if (arcPhase === CHASE_ARC_PHASES.engage || arcPhase === CHASE_ARC_PHASES.recover) continue;
 
     const proximity = 1 - smoothstep(tuning.panicNearRows, tuning.panicFarRows, distance);
     const progress = chaseArcProgress(age, arcPhase, tuning);
@@ -156,7 +222,10 @@ export function chaseEvasionForFish(fish, state) {
     let phaseSpeedBonus = 0;
     let accelerationResponse = 4.2;
     let turningResponse = 4.2 * agility;
-    let maximumSpeed = 1.12;
+    let maximumSpeed = 2.4;
+    let directionOverride = null;
+    let speedOverride = null;
+    let weightOverride = null;
 
     if (arcPhase === CHASE_ARC_PHASES.escape) {
       // This beat has to open the gap. A merely decorative sidestep still lets
@@ -164,16 +233,23 @@ export function chaseEvasionForFish(fish, state) {
       // short real acceleration advantage while the chaser hesitates below.
       // Recognition at the outside of the radius stays subtle: panic strength
       // is still governed by distance, so noticing a fish four rows away is not
-      // the same thing as bolting from it.
+      // the same thing as bolting from it. Four rows per second is an absolute
+      // burst ceiling, not a cruise rate: only the middle of this short escape
+      // beat can ask for it.
       const burst = Math.sin(progress * Math.PI);
       signedSide = dodgeSign;
       sideMagnitude = (0.26 + burst * (tuning.evasionSideRows * 0.72 + 0.2)) * agility;
       burstPulse = 0.45 + burst * 0.55;
       phaseSpeedBonus = 0.34 + burst * 0.3;
       phaseStrength = 0.06 + proximity * 0.78 + burst * 0.08;
-      accelerationResponse = 5.6 + burst * 1.2;
+      accelerationResponse = 7 + burst * 2.5;
       turningResponse = (3.8 + burst * 0.8) * agility;
-      maximumSpeed = 1.22 + Math.max(0, agility - 1) * 0.08;
+      maximumSpeed = 4;
+      // Escape is the one chase beat where the evader temporarily outranks its
+      // own ordinary destination. Keep that destination in the turn direction,
+      // but do not let an unrelated cruise/wander vector numerically cancel the
+      // authored burst magnitude before the four-row ceiling can even matter.
+      weightOverride = 0.66 + burst * 0.24;
     } else if (arcPhase === CHASE_ARC_PHASES.pursuit) {
       // Brief pulses interrupt the closing run. They are deliberately short:
       // the chaser should regain the gap between them, creating the readable
@@ -191,7 +267,22 @@ export function chaseEvasionForFish(fish, state) {
       phaseStrength = 0.04 + proximity * 0.78 + burst * 0.08;
       accelerationResponse = 4.25 + burst * 1.15;
       turningResponse = (3.8 + Math.abs(wave) * 0.75) * agility;
-      maximumSpeed = 1.16 + Math.max(0, agility - 1) * 0.06;
+      maximumSpeed = 3;
+    } else if (arcPhase === CHASE_ARC_PHASES.break) {
+      // Releasing the chase is still part of the sentence. Without a short
+      // derived coast the evader instantly falls back under its ordinary
+      // activity cap on the first break frame, which reads like a collision or
+      // animation cut after a 3-4 row/s burst. Carry its current heading while
+      // the allowed ceiling eases back toward ordinary swimming. This remains
+      // derived entirely from the live chase, so it adds no persistence state.
+      const release = 1 - progress;
+      directionOverride = safeNormalize(fish.vx, fish.vy, away.x, away.y);
+      speedOverride = Math.max(0.72, Math.hypot(fish.vx, fish.vy) * (0.82 + release * 0.18));
+      phaseStrength = 0.72 * release;
+      accelerationResponse = 1.35;
+      turningResponse = 1.2 * agility;
+      maximumSpeed = 0.82 + release * 1.48;
+      weightOverride = 0.22 + release * 0.62;
     } else {
       // The final dodge trades forward speed for direction. The chaser is
       // allowed to commit and surge through the old line, then has to turn back
@@ -207,35 +298,42 @@ export function chaseEvasionForFish(fish, state) {
       awayWeight = 1 - juke * 0.82;
       accelerationResponse = 4.5;
       turningResponse = (3.45 + juke * 0.55) * agility;
-      maximumSpeed = 0.98 + Math.max(0, agility - 1) * 0.04;
+      maximumSpeed = 2.3;
     }
 
-    const direction = safeNormalize(
+    const rawDirection = directionOverride ?? safeNormalize(
       away.x * awayWeight + perpendicular.x * signedSide * sideMagnitude,
       away.y * awayWeight + perpendicular.y * signedSide * sideMagnitude,
       away.x,
       signedSide * 0.5,
     );
+    const rawSpeed = speedOverride ?? Math.max(
+      0.16,
+      tuning.evasionSpeed
+        + traits.activity * 0.18
+        + proximity * tuning.evasionProximityGain
+        + burstPulse * tuning.evasionBurstGain
+        + phaseSpeedBonus,
+    );
+    const boundedEscape = clearanceAwareChaseEvasion(fish, state, rawDirection, rawSpeed);
     const strength = clamp(phaseStrength, 0, 1);
-    if (strength <= 0.001 || (best && best.strength >= strength)) continue;
+    const priority = endingPhase ? 0 : 1;
+    if (strength <= 0.001 || (best && (
+      best.priority > priority
+      || (best.priority === priority && best.strength >= strength)
+    ))) continue;
 
     best = {
-      x: direction.x,
-      y: direction.y,
-      speed: Math.max(
-        0.16,
-        tuning.evasionSpeed
-          + traits.activity * 0.18
-          + proximity * tuning.evasionProximityGain
-          + burstPulse * tuning.evasionBurstGain
-          + phaseSpeedBonus,
-      ),
-      weight: arcPhase === CHASE_ARC_PHASES.escape
+      x: boundedEscape.x,
+      y: boundedEscape.y,
+      speed: boundedEscape.speed,
+      weight: weightOverride ?? (arcPhase === CHASE_ARC_PHASES.escape
         ? 0.08 + strength * 0.9
         : arcPhase === CHASE_ARC_PHASES.intercept
           ? 0.52 + strength * 0.36
-          : 0.12 + strength * 0.78,
+          : 0.12 + strength * 0.78),
       strength,
+      priority,
       sourceSeed: chaser.seed,
       accelerationResponse,
       turningResponse,
@@ -300,9 +398,16 @@ export function steerActivityVelocity(fish, target, {
   // allowed to swing back. This response timing is what turns the same target
   // relationship into a chase arc rather than perfectly mirrored steering.
   if (target?.playfulChase) {
-    const age = Math.max(0, Number.isFinite(fish.activity?.ageRealSeconds)
+    // tickFishActivity() advances the activity before it resolves this target,
+    // while the fish object passed to steering still carries the pre-tick age.
+    // Advance the controller clock by the same bounded real delta so phase
+    // progress and the already-resolved target describe the same frame. Without
+    // this, the first ending-break target still read as pre-break here and the
+    // new release ramp was skipped for exactly one frame.
+    const priorAge = Math.max(0, Number.isFinite(fish.activity?.ageRealSeconds)
       ? fish.activity.ageRealSeconds
       : 0);
+    const age = priorAge + delta;
     const traits = traitsFromSeed(fish.seed, fish.history);
     const agility = chaseBodyAgility(fish);
 
@@ -324,27 +429,44 @@ export function steerActivityVelocity(fish, target, {
       turningResponse *= (0.16 + correctionRelease * 1.34) * agility;
       maximumSpeed = Math.max(
         maximumSpeed,
-        (1.58 + Math.max(0, agility - 1) * 0.18) * motionScale,
+        3 * motionScale,
       );
     } else if (chasePhaseName === "break") {
       const bounds = chaseArcBoundaries(chaseTuning);
-      const agePastAuthoredBreak = Math.max(0, age - bounds.breakSeconds);
-      const recovering = age >= bounds.recoverStart;
-      const breakTurn = smoothstep(0, 0.72, agePastAuthoredBreak);
-      const turnSign = (mix32((fish.seed >>> 0) ^ 0x6a09e667) & 1) === 0 ? -1 : 1;
-      const rotated = rotateVector(
-        desiredVx,
-        desiredVy,
-        turnSign * breakTurn * (0.48 + traits.activity * 0.12),
-      );
-      desiredVx = rotated.x;
-      desiredVy = rotated.y;
-      accelerationResponse *= recovering ? 0.56 : 0.86;
-      turningResponse *= (recovering ? 0.62 : 0.94) * agility;
-      maximumSpeed *= recovering ? 0.6 : 1;
+      // chaseSemanticPhase() deliberately maps the opening semantic escape and
+      // the real ending break to the same broad "break" target branch. Only the
+      // ending gets this release ramp. Applying it before breakSeconds silently
+      // imposed the new 3->0.42 ending ceiling on the opening hesitation too.
+      if (age >= bounds.breakSeconds) {
+        const agePastAuthoredBreak = age - bounds.breakSeconds;
+        const recovering = age >= bounds.recoverStart;
+        const breakProgress = chaseArcProgress(age, CHASE_ARC_PHASES.break, chaseTuning);
+        const breakTurn = smoothstep(0, 0.72, agePastAuthoredBreak);
+        const turnSign = (mix32((fish.seed >>> 0) ^ 0x6a09e667) & 1) === 0 ? -1 : 1;
+        const rotated = rotateVector(
+          desiredVx,
+          desiredVy,
+          turnSign * breakTurn * (0.48 + traits.activity * 0.12),
+        );
+        desiredVx = rotated.x;
+        desiredVy = rotated.y;
+        accelerationResponse *= recovering ? 0.56 : 0.86;
+        turningResponse *= (recovering ? 0.62 : 0.94) * agility;
+        // The resolved break profile is the ramp destination. Do not hard-code
+        // the production default here: the behavior lab deliberately exposes
+        // lower valid ceilings and exported profiles must reproduce what they
+        // say when pasted back into the simulation.
+        const breakFloor = Math.max(
+          0.02,
+          Number.isFinite(profile.maximumSpeed) ? profile.maximumSpeed : 0.42,
+        );
+        const releaseCeiling = breakFloor + (3 - breakFloor) * (1 - breakProgress);
+        maximumSpeed = Math.max(maximumSpeed, releaseCeiling * motionScale);
+      }
     }
   }
 
+  let evasionSpeedFloor = 0;
   if (evasion) {
     const weight = clamp(evasion.weight ?? 0, 0, 1);
     const escapeSpeed = Math.max(0, evasion.speed ?? 0) * motionScale * effectivePace;
@@ -353,9 +475,20 @@ export function steerActivityVelocity(fish, target, {
     accelerationResponse = Math.max(accelerationResponse, evasion.accelerationResponse ?? 0);
     turningResponse = Math.max(turningResponse, evasion.turningResponse ?? 0);
     maximumSpeed = Math.max(maximumSpeed, (evasion.maximumSpeed ?? 0) * motionScale);
+    // During the opening escape only, preserve the magnitude of the authored
+    // burst separately from direction blending. The ordinary activity can still
+    // bend the line, but it cannot subtract enough opposing velocity to turn a
+    // four-row escape request back into ordinary two-row motion.
+    if ((evasion.maximumSpeed ?? 0) >= 3.99) {
+      const burstDominance = 0.62 + weight * 0.38;
+      evasionSpeedFloor = Math.min(maximumSpeed, escapeSpeed * burstDominance);
+    }
   }
 
-  const desiredSpeed = Math.min(maximumSpeed, Math.hypot(desiredVx, desiredVy));
+  const desiredSpeed = Math.min(
+    maximumSpeed,
+    Math.max(Math.hypot(desiredVx, desiredVy), evasionSpeedFloor),
+  );
   const desiredDirection = safeNormalize(desiredVx, desiredVy, direction.x, direction.y);
   const currentSpeed = Math.hypot(fish.vx, fish.vy);
   const currentDirection = safeNormalize(fish.vx, fish.vy, desiredDirection.x, desiredDirection.y);
@@ -382,6 +515,13 @@ export function steerActivityVelocity(fish, target, {
   const blendResponse = accelerationResponse * (0.72 + clamp(behaviorBlend, 0, 1) * 0.28);
   const accelerationEase = 1 - Math.exp(-delta * blendResponse);
   let speed = currentSpeed + (desiredSpeed - currentSpeed) * accelerationEase;
+  // The startle bolt is intentionally a one-beat exception to ordinary
+  // acceleration smoothing. Its window can close as soon as the evader opens
+  // enough space to leave the panic/recognition range; if the floor only shaped
+  // desiredSpeed, a 10 fps fish could leave that window before ever visibly
+  // reaching the authored burst. Apply the floor to realised speed only while
+  // the 4-row escape envelope is actually active.
+  if (evasionSpeedFloor > 0) speed = Math.max(speed, evasionSpeedFloor);
   const minimumSpeed = Math.min(
     maximumSpeed,
     Math.max(0, Number.isFinite(profile.minimumSpeed) ? profile.minimumSpeed : 0.055),

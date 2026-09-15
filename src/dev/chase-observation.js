@@ -1,8 +1,8 @@
 import { spriteDimensions } from "../art/sprites.js";
-import { CHASE_ARC_PHASES, chaseArcPhase } from "../sim/chase-arc.js";
+import { CHASE_ARC_PHASES } from "../sim/chase-arc.js";
 import { sceneTuning } from "../sim/choreography-tuning.js";
 import { traitsFromSeed } from "../sim/entities.js";
-import { chaseEvasionForFish } from "../sim/fish-choreography.js";
+import { chaseEvasionForFish, chaseSemanticPhase } from "../sim/fish-choreography.js";
 import { spriteForFish } from "../sim/fish-growth.js";
 import {
   createShowcaseState,
@@ -176,12 +176,12 @@ export function observeChaseShowcase({
     const gap = Math.hypot(dx, dy);
     const tuning = sceneTuning(state, CHASE_OBSERVATION_SCENARIO);
     const chaseStillActive = chaser.activity?.current === CHASE_OBSERVATION_SCENARIO;
-    const livePhase = chaseArcPhase(chaser.activity?.ageRealSeconds, gap, tuning);
+    const livePhase = chaseSemanticPhase(chaser.activity?.ageRealSeconds, gap, tuning);
     if (!chaseStillActive || livePhase === CHASE_ARC_PHASES.recover) chaseHasEnded = true;
     // Once the production activity has peeled away, its new activity age starts
-    // at zero. Feeding that reset age back into chaseArcPhase used to make the
-    // telemetry claim a second engagement that never happened. Hold the final
-    // semantic beat instead: this portion of the capture is the aftermath.
+    // at zero. Feeding that reset age back into chase phase logic used to make
+    // the telemetry claim a second engagement that never happened. Hold the
+    // final semantic beat instead: this portion of the capture is the aftermath.
     const semanticPhase = chaseHasEnded ? CHASE_ARC_PHASES.recover : livePhase;
     const chaserHeading = headingFor(chaser, previousChaserHeading);
     const evaderHeading = headingFor(evader, previousEvaderHeading);
