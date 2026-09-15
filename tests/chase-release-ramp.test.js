@@ -64,3 +64,19 @@ test("opening chase hesitation still uses the quiet break profile", () => {
 
   assert.ok(speed <= 0.421, `opening hesitation inherited ending release speed: ${speed.toFixed(3)} rows/s`);
 });
+
+test("ending ramp respects a behavior-lab break ceiling below the production default", () => {
+  const state = stockedAquarium({ seed: 4242, wallClockHours: 12 });
+  const fish = chaseFish(state.individuals[0], 7);
+  const target = breakTarget(state, fish);
+  target.choreography = { ...target.choreography, maximumSpeed: 0.1 };
+
+  const steered = steerActivityVelocity(fish, target, {
+    realDelta: 0.1,
+    motionScale: 1,
+    behaviorBlend: 1,
+  });
+  const speed = Math.hypot(steered.vx, steered.vy);
+
+  assert.ok(speed <= 0.101, `release ramp overrode tuned 0.10 ceiling with ${speed.toFixed(3)} rows/s`);
+});
