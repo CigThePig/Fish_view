@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { CHASE_ARC_PHASES } from "../src/sim/chase-arc.js";
+import { sceneTuning } from "../src/sim/choreography-tuning.js";
 import { ACTIVITIES, createActivityState } from "../src/sim/fish-activities.js";
-import { chaseEvasionForFish } from "../src/sim/fish-choreography.js";
+import {
+  chaseEvasionForFish,
+  chasePhase,
+  chaseSemanticPhase,
+} from "../src/sim/fish-choreography.js";
 import { stockedAquarium } from "./support/aquarium.js";
 
 function chasing(source, targetId, ageRealSeconds, x, y) {
@@ -45,4 +51,18 @@ test("a live chase outranks another chaser's stronger release coast", () => {
     active.seed,
     "release coast from an old chase displaced the currently active chase",
   );
+});
+
+test("production chase cannot rewind to engage after its escape opens the gap", () => {
+  const state = stockedAquarium({ seed: 7878, wallClockHours: 12 });
+  const tuning = sceneTuning(state, ACTIVITIES.playfulChase);
+
+  assert.equal(chaseSemanticPhase(0.4, 6, tuning), CHASE_ARC_PHASES.engage);
+  assert.equal(chaseSemanticPhase(1, 1.6, tuning), CHASE_ARC_PHASES.escape);
+  assert.equal(
+    chaseSemanticPhase(2.5, 6, tuning),
+    CHASE_ARC_PHASES.escape,
+    "widened gap restarted the opening instead of preserving the escape beat",
+  );
+  assert.equal(chasePhase(2.5, 6, tuning), "break");
 });
