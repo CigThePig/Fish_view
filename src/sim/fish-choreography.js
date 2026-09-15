@@ -10,7 +10,6 @@ import {
   chaseArcBoundaries,
   chaseArcPhase,
   chaseArcProgress,
-  chaseMacroPhase,
 } from "./chase-arc.js";
 import { WATERLINE_ROWS } from "./config.js";
 import { clamp, traitsFromSeed } from "./entities.js";
@@ -152,22 +151,30 @@ export function choreographyFor(state, activity, phase = null) {
   };
 }
 
-// fish-activities.js still needs its broad approach / pursuit / break branches,
-// but Phase 7.3 inserts escape and intercept inside the middle act. Those finer
-// phase names pass straight through the existing pursuit branch and are then
-// visible to steering and telemetry.
-export function chasePhase(ageRealSeconds, distance, tuning = null) {
+// The low-level phase helper deliberately lets a hand-posed chase outside
+// recognition remain in engage. A real playful-chase activity, however, is only
+// selected from a recognised companion. Once that production activity has
+// reached its opening escape window, a widening gap means the escape worked;
+// it must not rewind the sentence to engage and then fire a second opening.
+export function chaseSemanticPhase(ageRealSeconds, distance, tuning = null) {
   const age = Math.max(0, Number.isFinite(ageRealSeconds) ? ageRealSeconds : 0);
   const bounds = chaseArcBoundaries(tuning);
-  const phase = chaseMacroPhase(age, distance, tuning);
-  // A production playful-chase activity is only selected from a recognised
-  // companion. Once its opening escape/hesitation beat has started, a widening
-  // gap is evidence that the beat worked, not a reason to rewind the chaser to
-  // approach. The lower-level chaseArcPhase() intentionally keeps its stricter
-  // distance gate for hand-posed diagnostics that begin outside recognition.
-  if (phase === "approach" && age >= bounds.engageEnd && age < bounds.escapeEnd) {
-    return "break";
-  }
+  const phase = chaseArcPhase(age, distance, tuning);
+  if (phase === CHASE_ARC_PHASES.engage
+    && age >= bounds.engageEnd
+    && age < bounds.escapeEnd) return CHASE_ARC_PHASES.escape;
+  return phase;
+}
+
+// fish-activities.js still needs its broad approach / pursuit / break branches,
+// but Phase 7.3 inserts escape and intercept inside the middle act. Those finer
+// semantic phases are collapsed here only for the existing target branches.
+export function chasePhase(ageRealSeconds, distance, tuning = null) {
+  const phase = chaseSemanticPhase(ageRealSeconds, distance, tuning);
+  if (phase === CHASE_ARC_PHASES.engage) return "approach";
+  if (phase === CHASE_ARC_PHASES.escape
+    || phase === CHASE_ARC_PHASES.break
+    || phase === CHASE_ARC_PHASES.recover) return "break";
   return phase;
 }
 
@@ -192,7 +199,7 @@ export function chaseEvasionForFish(fish, state) {
     const distance = Math.hypot(dx, dy);
     if (!Number.isFinite(distance)) continue;
 
-    const arcPhase = chaseArcPhase(age, distance, tuning);
+    const arcPhase = chaseSemanticPhase(age, distance, tuning);
     const endingPhase = arcPhase === CHASE_ARC_PHASES.break || arcPhase === CHASE_ARC_PHASES.recover;
     if (!endingPhase && distance > recognitionRadius + 0.18) continue;
     if (arcPhase === CHASE_ARC_PHASES.engage || arcPhase === CHASE_ARC_PHASES.recover) continue;
@@ -426,8 +433,8 @@ export function steerActivityVelocity(fish, target, {
       );
     } else if (chasePhaseName === "break") {
       const bounds = chaseArcBoundaries(chaseTuning);
-      // chaseMacroPhase() deliberately maps the opening semantic escape and the
-      // real ending break to the same broad "break" target branch. Only the
+      // chaseSemanticPhase() deliberately maps the opening semantic escape and
+      // the real ending break to the same broad "break" target branch. Only the
       // ending gets this release ramp. Applying it before breakSeconds silently
       // imposed the new 3->0.42 ending ceiling on the opening hesitation too.
       if (age >= bounds.breakSeconds) {
