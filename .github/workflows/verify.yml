@@ -25,19 +25,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Run npm test
-        run: |
-          mkdir -p .audit-output
-          set -o pipefail
-          npm test 2>&1 | tee .audit-output/npm-test.log
-      - name: Upload failing npm test transcript
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-test-failure-${{ github.run_id }}
-          path: .audit-output/npm-test.log
-          if-no-files-found: ignore
-          retention-days: 2
+      - run: npm test
       - run: npm run audit:simulation
       - run: npm run audit:persistence -- --cases=200
       - run: npm run audit:render
