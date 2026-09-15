@@ -32,6 +32,12 @@ jobs:
       - run: npm run measure:feeding
       - run: npm run measure:relationship
       - run: npm run measure:readability
+      - name: Guard frozen Phase 7 vocabulary after Phase 7
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        run: npm run audit:phase7-vocabulary -- --output=.audit-output/phase7-frozen-audit
+      - name: Observe frozen vocabulary on production path after Phase 7
+        if: ${{ !startsWith(github.ref_name, 'phase-7') && !startsWith(github.head_ref, 'phase-7') }}
+        run: npm run measure:remaining-vocabulary -- --seconds=1800 --output=.audit-output/phase7-frozen-natural
       - run: npm run capture:relationship -- --scale=0.25 --output=.audit-output/relationship-captures
       - uses: actions/upload-artifact@v4
         with:
