@@ -24,7 +24,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply guarded fixes
-        run: python tools/apply-latest-phase7-review-fixes.py
+        run: |
+          python tools/apply-latest-phase7-review-fixes.py
+          python tools/refine-latest-phase7-review-fixes.py
       - name: Run focused regressions
         run: node --test tests/chase-observation.test.js tests/choreography-tuning.test.js tests/phase7-review-regressions.test.js tests/phase7-vocabulary-freeze.test.js
       - name: Run chase production observation
