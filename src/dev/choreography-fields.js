@@ -63,7 +63,6 @@ export function constrainedSteeringEdit(profile, key, value) {
 }
 
 const SCENE_INTERVAL_PAIRS = Object.freeze([
-  Object.freeze(["legTimeoutSecondsMin", "legTimeoutSecondsMax"]),
   Object.freeze(["inspectSecondsMin", "inspectSecondsMax"]),
   Object.freeze(["quietSecondsMin", "quietSecondsMax"]),
   Object.freeze(["trailingMinRows", "trailingMaxRows"]),
@@ -136,8 +135,6 @@ export const SCENE_FIELDS = Object.freeze({
     field("speedBase", "Speed", "rows/s through the weave", 0.05, 1.4, 0.005),
     field("speedActivity", "Speed · activity", "rows/s added by an energetic fish", 0, 1, 0.005),
     field("speedAffinity", "Speed · plant affinity", "rows/s added by a plant lover", 0, 0.5, 0.005),
-    field("legTimeoutSecondsMin", "Leg timeout · min", "safety seconds before a stuck middle leg may advance", 4, 20, 0.1),
-    field("legTimeoutSecondsMax", "Leg timeout · max", "safety seconds before a stuck middle leg may advance", 4, 20, 0.1),
     field("asymmetryRows", "Route asymmetry", "rows of per-fish variation in the route", 0, 1.5, 0.01),
   ]),
   "bubble-investigate": Object.freeze([

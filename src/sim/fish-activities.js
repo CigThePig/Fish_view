@@ -61,6 +61,8 @@ const WEAVE_EMERGE_EXTRA_COLUMNS = 1.65;
 // physically finishes the route. This is only a pathological-stall escape:
 // ordinary completion is still the final reached emergence waypoint.
 const WEAVE_ROUTE_FAILURE_SECONDS = 120;
+const WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MIN = 11;
+const WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MAX = 14;
 // The follower spends the tail of its own dwell visibly leaving its rear
 // slot. Selection remains unchanged afterward, so social/chase frequency is
 // not distorted merely to make the sentence legible.
@@ -1056,8 +1058,14 @@ function shelterPoint(fish, plant, state, activity) {
     };
   }
 
-  const side = Math.sign(base.x - plant.x) || (sample01(pairSeed, 8182) < 0.5 ? -1 : 1);
+  const seededSide = Math.sign(base.x - plant.x) || (sample01(pairSeed, 8182) < 0.5 ? -1 : 1);
   const emerge = departureColumns(fish, tuning.emergeColumns);
+  const halfWidth = spriteHalfWidth(fish);
+  const hasEmergenceRoom = (side) => {
+    const x = base.x + side * emerge;
+    return x >= halfWidth && x <= state.cols - halfWidth;
+  };
+  const side = hasEmergenceRoom(seededSide) ? seededSide : -seededSide;
   return {
     ...boundedPlantPoint(fish, state, base.x + side * emerge, base.y - tuning.emergeRiseRows),
     stage,
@@ -1145,7 +1153,6 @@ function weaveRoute(fish, primary, state) {
 }
 
 function weavePoint(fish, primary, state, activity) {
-  const tuning = sceneTuning(state, ACTIVITIES.plantWeave);
   const route = weaveRoute(fish, primary, state);
   const stage = clamp(
     Number.isInteger(activity.weaveStage) ? activity.weaveStage : 0,
@@ -1157,8 +1164,8 @@ function weavePoint(fish, primary, state, activity) {
   const timeoutSeconds = sampleRange(
     pairSeed,
     8190 + stage,
-    tuning.legTimeoutSecondsMin,
-    tuning.legTimeoutSecondsMax,
+    WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MIN,
+    WEAVE_LEG_DIAGNOSTIC_TIMEOUT_SECONDS_MAX,
   );
   return {
     ...waypoint,

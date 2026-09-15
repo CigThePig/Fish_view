@@ -15,18 +15,35 @@ import { steerActivityVelocity } from "../src/sim/fish-choreography.js";
 import {
   ACTIVITIES,
   activityUtilities,
+  plantTargetPosition,
   resolveActivityTarget,
   tickFishActivity,
 } from "../src/sim/fish-activities.js";
 import { fishSpriteWidth } from "../src/sim/fish-growth.js";
 import { surfaceSafeY } from "../src/sim/fish-motion.js";
 
-test("playful chase never advances beyond engagement outside recognition range", () => {
-  const tuning = { breakSeconds: 3, recognitionRadiusRows: 4.9 };
+test("recognition gates the chase opening without rewinding a mature arc", () => {
+  const tuning = { breakSeconds: 6.2, recognitionRadiusRows: 4.9 };
   const bounds = chaseArcBoundaries(tuning);
+  const openingAge = (bounds.engageEnd + bounds.escapeEnd) * 0.5;
   assert.equal(
-    chaseArcPhase(bounds.recoverStart + 5, 5.05, tuning),
+    chaseArcPhase(openingAge, 5.05, tuning),
     CHASE_ARC_PHASES.engage,
+    "a far hand-posed chase should still wait for opening recognition",
+  );
+  assert.equal(
+    chaseArcPhase((bounds.interceptStart + bounds.breakSeconds) * 0.5, 5.05, tuning),
+    CHASE_ARC_PHASES.intercept,
+    "a mature chase rewound after the evader opened the gap",
+  );
+  assert.equal(
+    chaseArcPhase((bounds.breakSeconds + bounds.recoverStart) * 0.5, 6.2, tuning),
+    CHASE_ARC_PHASES.break,
+    "the chase ending disappeared outside recognition range",
+  );
+  assert.equal(
+    chaseArcPhase(bounds.recoverStart + 0.2, 6.2, tuning),
+    CHASE_ARC_PHASES.recover,
   );
 });
 
@@ -316,4 +333,50 @@ test("individual follow has a visible peel-away before its dwell boundary", () =
   const currentGap = Math.hypot(fish.x - companion.x, fish.y - companion.y);
   const targetGap = Math.hypot(target.x - companion.x, target.y - companion.y);
   assert.ok(targetGap > currentGap, "peel-away target did not open space from the leader");
+});
+
+
+test("edge shelter emergence turns inward instead of completing at the wall", () => {
+  const base = createShowcaseState({ scenario: ACTIVITIES.plantShelter });
+  const subject = showcaseSubjects(base, ACTIVITIES.plantShelter)[0];
+  const sourcePlant = base.plants.find(({ seed }) => seed === subject.fish.activity.targetId);
+  assert.ok(sourcePlant, "showcase shelter is missing its plant");
+
+  const centered = { ...sourcePlant, x: base.cols / 2 };
+  const centeredPoint = plantTargetPosition(subject.fish, centered, base, { shelter: true });
+  const seededSide = Math.sign(centeredPoint.x - centered.x) || 1;
+  const halfWidth = fishSpriteWidth(subject.fish) / 2;
+  const edgeX = seededSide < 0 ? halfWidth + 0.5 : base.cols - halfWidth - 0.5;
+  const edgePlant = { ...sourcePlant, x: edgeX };
+  const quietPoint = plantTargetPosition(subject.fish, edgePlant, base, { shelter: true });
+  const fish = {
+    ...subject.fish,
+    x: quietPoint.x,
+    y: quietPoint.y,
+    behavior: { ...subject.fish.behavior, current: "rest" },
+    activity: {
+      ...subject.fish.activity,
+      current: ACTIVITIES.plantShelter,
+      targetId: edgePlant.seed,
+      ageRealSeconds: 12,
+      plantVisitStage: 2,
+      plantVisitStageStartedAt: 10,
+    },
+  };
+  const state = {
+    ...base,
+    plants: base.plants.map((plant) => plant.seed === edgePlant.seed ? edgePlant : plant),
+    individuals: base.individuals.map((entry, index) => index === subject.index ? fish : entry),
+  };
+  const target = resolveActivityTarget(fish, subject.index, state, fish.activity);
+  assert.ok(target);
+  assert.equal(target.choreographyPhase, "emerge");
+  assert.ok(
+    (target.x - quietPoint.x) * seededSide < 0,
+    "edge shelter kept its outward departure instead of turning into the tank",
+  );
+  assert.ok(
+    Math.hypot(target.x - fish.x, target.y - fish.y) > target.plantVisitArrivalRadius,
+    "edge shelter emergence collapsed inside its completion radius",
+  );
 });

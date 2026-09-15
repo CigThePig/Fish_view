@@ -32,6 +32,42 @@ const SEED_LABELS = Object.freeze([
   "phase-7-7-identity-f",
 ]);
 
+// Only behaviors whose frozen meaning depends on an ordered multi-beat sentence
+// get hard semantic gates. Broad motion metrics remain evidence, not a thicket
+// of magic-number assertions. Longer windows tick production cheaply after the
+// ordinary rendered evidence window has ended.
+const SEMANTIC_CONTRACTS = Object.freeze({
+  "individual-follow": Object.freeze({
+    observationSeconds: 30,
+    phases: Object.freeze(["trail", "peel-away"]),
+  }),
+  "companion-cruise": Object.freeze({
+    observationSeconds: 42,
+    phases: Object.freeze(["beside", "separate"]),
+    requiresExit: true,
+  }),
+  "plant-investigate": Object.freeze({
+    observationSeconds: 45,
+    phases: Object.freeze(["approach", "inspect", "retreat"]),
+    requiresExit: true,
+  }),
+  "plant-shelter": Object.freeze({
+    observationSeconds: 55,
+    phases: Object.freeze(["enter", "quiet", "emerge"]),
+    requiresExit: true,
+  }),
+  "plant-weave": Object.freeze({
+    observationSeconds: 122,
+    phases: Object.freeze(["weave-1", "weave-2", "weave-3", "weave-4", "weave-5"]),
+    requiresExit: true,
+  }),
+  "surface-investigate": Object.freeze({
+    observationSeconds: 38,
+    phases: Object.freeze(["ascend", "probe", "descend"]),
+    requiresExit: true,
+  }),
+});
+
 function optionValue(argumentsList, name, fallback) {
   const prefix = name + "=";
   const inline = argumentsList.find((argument) => argument.startsWith(prefix));
@@ -83,8 +119,20 @@ function observeScenario(scenario, seed, failures) {
   let fullFrames = 0;
   let transition = null;
   const phases = new Set();
+  // Capture the authored target at t=0 before the first production tick can
+  // physically arrive and advance a short opening leg. Otherwise a fish posed
+  // inside its first arrival radius can genuinely perform weave-1 while the
+  // audit starts its evidence at weave-2.
+  const initialTarget = showcaseTarget(state, scenario.id);
+  if (initialTarget?.choreographyPhase) phases.add(initialTarget.choreographyPhase);
   const activities = new Set([startingActivity]);
-  const frameCount = Math.ceil((scenario.loopSeconds + RECOVERY_SECONDS) / STEP_SECONDS);
+  const renderedSeconds = scenario.loopSeconds + RECOVERY_SECONDS;
+  const renderedFrameCount = Math.ceil(renderedSeconds / STEP_SECONDS);
+  const semanticSeconds = Math.max(
+    renderedSeconds,
+    SEMANTIC_CONTRACTS[scenario.id]?.observationSeconds ?? 0,
+  );
+  const frameCount = Math.ceil(semanticSeconds / STEP_SECONDS);
 
   for (let frame = 1; frame <= frameCount; frame += 1) {
     state = tickShowcase(state, STEP_SECONDS, scenario.id);
@@ -110,13 +158,15 @@ function observeScenario(scenario, seed, failures) {
     maximumVelocityChange = Math.max(maximumVelocityChange, velocityChange);
     if (step > 2) failures.push(scenario.id + ": teleport-like " + rounded(step) + "-column frame step for seed " + seed);
 
-    const nextScene = render(state);
-    const damage = calculateDamage(previousScene, nextScene);
-    const damageFraction = damage.area / damage.total;
-    damageTotal += damageFraction;
-    maximumDamage = Math.max(maximumDamage, damageFraction);
-    if (damage.full) fullFrames += 1;
-    previousScene = nextScene;
+    if (frame <= renderedFrameCount) {
+      const nextScene = render(state);
+      const damage = calculateDamage(previousScene, nextScene);
+      const damageFraction = damage.area / damage.total;
+      damageTotal += damageFraction;
+      maximumDamage = Math.max(maximumDamage, damageFraction);
+      if (damage.full) fullFrames += 1;
+      previousScene = nextScene;
+    }
 
     const target = showcaseTarget(state, scenario.id);
     if (target?.choreographyPhase) phases.add(target.choreographyPhase);
@@ -142,7 +192,7 @@ function observeScenario(scenario, seed, failures) {
     transition,
     maximumStep: rounded(maximumStep),
     maximumVelocityChange: rounded(maximumVelocityChange),
-    meanDamagePercent: rounded(damageTotal / frameCount * 100),
+    meanDamagePercent: rounded(damageTotal / renderedFrameCount * 100),
     maximumDamagePercent: rounded(maximumDamage * 100),
     fullFrames,
   };
@@ -163,6 +213,21 @@ function summarizeActivity(record, scenario, samples, failures) {
   if (identityCount !== SEED_LABELS.length) failures.push(record.activity + ": identity matrix collapsed");
   if (profiles.length < 2) failures.push(record.activity + ": body-profile matrix did not vary");
   if (variedTraits < 3) failures.push(record.activity + ": fewer than three seeded traits varied materially");
+
+  const semantic = SEMANTIC_CONTRACTS[record.activity];
+  if (semantic) {
+    for (const sample of samples) {
+      const identity = sample.seedLabel ?? String(sample.identity.seed);
+      for (const phase of semantic.phases) {
+        if (!sample.phases.includes(phase)) {
+          failures.push(record.activity + ": " + identity + " missed semantic phase " + phase);
+        }
+      }
+      if (semantic.requiresExit && !sample.transition) {
+        failures.push(record.activity + ": " + identity + " never completed its frozen sentence");
+      }
+    }
+  }
   return {
     activity: record.activity,
     decision: record.decision,

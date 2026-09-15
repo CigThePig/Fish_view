@@ -81,3 +81,14 @@ test("later branches rerun the frozen Phase 7 machine and production-path gates"
   assert.match(workflow, /npm run measure:remaining-vocabulary/);
   assert.match(workflow, /!startsWith\(github\.ref_name, 'phase-7'\)/);
 });
+
+
+test("the vocabulary audit gates defining sequential motion beats per identity", () => {
+  const audit = readFileSync(new URL("../tools/audit-phase7-vocabulary.mjs", import.meta.url), "utf8");
+  assert.match(audit, /SEMANTIC_CONTRACTS/);
+  assert.match(audit, /"individual-follow"[\s\S]*"trail", "peel-away"/);
+  assert.match(audit, /"plant-weave"[\s\S]*"weave-1"[\s\S]*"weave-5"/);
+  assert.match(audit, /for \(const sample of samples\)/);
+  assert.match(audit, /missed semantic phase/);
+  assert.match(audit, /never completed its frozen sentence/);
+});

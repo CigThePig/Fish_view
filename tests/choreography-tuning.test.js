@@ -127,7 +127,6 @@ test("speed-bound edits cannot export an interval the controller will collapse",
 
 test("scene interval edits keep every lower endpoint at or below its upper endpoint", () => {
   const cases = [
-    ["legTimeoutSecondsMin", "legTimeoutSecondsMax"],
     ["inspectSecondsMin", "inspectSecondsMax"],
     ["quietSecondsMin", "quietSecondsMax"],
     ["trailingMinRows", "trailingMaxRows"],
@@ -279,6 +278,20 @@ test("chase tuning moves both fish, not only the chaser", () => {
   assert.equal(tuned.evasionSpeed, 1.1);
   // Untouched entries still come from the authored table.
   assert.equal(tuned.breakSeconds, SCENE_TUNING[ACTIVITIES.playfulChase].breakSeconds);
+});
+
+test("plant weave timeout remains telemetry rather than a dead lab control", () => {
+  const tuning = SCENE_TUNING[ACTIVITIES.plantWeave];
+  const fields = new Set(SCENE_FIELDS[ACTIVITIES.plantWeave].map(({ key }) => key));
+  assert.equal("legTimeoutSecondsMin" in tuning, false);
+  assert.equal("legTimeoutSecondsMax" in tuning, false);
+  assert.equal(fields.has("legTimeoutSecondsMin"), false);
+  assert.equal(fields.has("legTimeoutSecondsMax"), false);
+
+  const state = createShowcaseState({ scenario: ACTIVITIES.plantWeave });
+  const target = showcaseTarget(state, ACTIVITIES.plantWeave);
+  assert.ok(Number.isFinite(target?.weaveLegTimeoutSeconds));
+  assert.ok(target.weaveLegTimeoutSeconds > 0);
 });
 
 test("bubble inspection answers its own standoff tuning", () => {

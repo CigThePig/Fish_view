@@ -25,6 +25,12 @@ function summary(state, index) {
  targetX:glass?.x,targetY:glass?.y,targetId:f.activity.targetId,
  partner:state.individuals.find(p=>p.seed===f.activity.targetId)?.seed ?? null};
 }
+function glassVisitStarted(fish, previousFish) {
+ const visit=fish?.viewerRelationship?.glassVisit;
+ if(!visit) return false;
+ const previous=previousFish?.viewerRelationship?.glassVisit;
+ return !previous || visit.epoch!==previous.epoch || visit.startedAt!==previous.startedAt;
+}
 // Longer than the ordinary lab loops: include the end and normal recovery.
 const forced=[];
 for(const scenario of SHOWCASE_SCENARIOS){
@@ -54,10 +60,15 @@ for(let t=0;t<seconds;t+=dt){
  const previous=state; state=tick(state,dt);
  for(let i=0;i<state.individuals.length;i++){
   const f=state.individuals[i], old=previous.individuals[i];
-  const name=f.viewerRelationship?.glassVisit ? 'glass-visit' : f.activity.current;
+  const visit=f.viewerRelationship?.glassVisit;
+  const oldVisit=old?.viewerRelationship?.glassVisit;
+  const name=visit ? 'glass-visit' : f.activity.current;
   counts[name]=(counts[name]??0)+dt;
-  const oldName=old?.viewerRelationship?.glassVisit ? 'glass-visit' : old?.activity.current;
-  if(name!==oldName || f.activity.ageRealSeconds<old.activity.ageRealSeconds){
+  const oldName=oldVisit ? 'glass-visit' : old?.activity.current;
+  const episodeStarted=visit
+   ? glassVisitStarted(f,old)
+   : name!==oldName || f.activity.ageRealSeconds<old.activity.ageRealSeconds;
+  if(episodeStarted){
    episodes[name]=(episodes[name]??0)+1;
    if(wanted.has(name) && !examples[name]) examples[name]={state,index:i};
   }
