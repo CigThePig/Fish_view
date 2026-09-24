@@ -417,8 +417,14 @@ is a development-only dependency used by the capture tools.
 npm ci
 npm start                 # http://localhost:4173
 npm test                  # node --test, ~2 minutes
-npm run verify            # the full CI gate: tests + all four audits
+npm run verify            # tests plus the first six gates listed below, ~4 minutes
 ```
+
+`npm run verify` is the core of CI's verify job, not all of it. Since Phase 7
+froze the behaviour vocabulary, CI also fails a branch that loses any of it,
+with `audit:phase7-vocabulary` and `measure:remaining-vocabulary`. Run both
+before pushing anything that touches choreography, activity selection or the
+utilities; together they add about two minutes.
 
 Individual gates and instruments:
 
@@ -427,7 +433,10 @@ npm run audit:simulation                  # deterministic tick replay, escapes, 
 npm run audit:persistence -- --cases=200  # malformed-save fuzzing and repair
 npm run audit:render                      # incremental vs full render, pixel comparison
 npm run measure:feeding                   # substrate strike geometry per species and stage
+npm run measure:relationship              # familiarity growth, personality contrast, glass visits
 npm run measure:readability               # per-activity motion signatures and damage
+npm run audit:phase7-vocabulary           # not in verify: the final vocabulary across identities and bodies
+npm run measure:remaining-vocabulary -- --seconds=1800  # not in verify: every recurring episode, production path
 npm run measure:stage2-baseline           # tap synchronisation, damage headroom, save size
 npm run observe:interaction               # replay pointer histories; per-fish and whole-aquarium response
 npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap

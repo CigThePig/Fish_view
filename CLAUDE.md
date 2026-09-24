@@ -12,5 +12,5 @@ Quick start:
 
 ```sh
 npm ci
-npm run verify   # tests plus the four CI audits, about three minutes
+npm run verify   # tests plus six CI gates, about four minutes
 ```
