@@ -258,6 +258,13 @@ canvas.addEventListener("pointerdown", (event) => {
   if (event.isTrusted) canvas.setPointerCapture?.(event.pointerId);
   if (!point.hotspot) {
     gesture.reset();
+    // There is one contact, so a press that finds one still live is a finger
+    // whose release never arrived - or a mouse pressed while a finger rests on
+    // a hybrid panel, where both are primary. `applyTouch` lets go of it either
+    // way; ending it here first lets it go the way every other contact goes,
+    // confirmed where it was last seen, rather than wherever the last tick left
+    // it.
+    endContact();
     state = applyTouch(state, point.x, point.y);
     contact = { id: event.pointerId, x: point.x, y: point.y, time: pointerStart.time };
     drawVisible();

@@ -159,7 +159,15 @@ function pressPoint(state, x, y) {
   };
 }
 
-export function applyTouch(state, x, y) {
+export function applyTouch(current, x, y) {
+  // One contact. A press begins a new one, so a finger the aquarium still
+  // believes is resting on the glass has gone, whether or not anything said so:
+  // a `pointerup` the platform never received leaves exactly that. Left held,
+  // the old presence is what the next `applyContact` finds first, and the new
+  // finger drags it across the tank to wherever it landed - a stationary press
+  // read as a forty-cell drag, every responder to the old one pulled along, and
+  // the press actually made never becoming a presence at all.
+  const state = applyRelease(current);
   const { pointerX, pointerY, pressX, pressY, safeX, safeY } = pressPoint(state, x, y);
 
   // A press is three things: water that moves, something the inhabitants can

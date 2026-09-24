@@ -190,9 +190,15 @@ help while `src/app.js` is still confirming a contact every frame, which is
 exactly what a lost `pointerup` leaves it doing. So `src/app.js` ends a contact
 on the release, on a cancel from the same pointer, on `lostpointercapture`, on
 a release delivered anywhere else on the page, when the drawer opens, when the
-tab goes away — and, needing no event at all, from the frame loop once the
-contact passes `MAX_HOLD_SECONDS`. If you add another way for a press to begin,
-give it a way to end that does not depend on an event arriving.
+tab goes away, when a new press lands — and, needing no event at all, from the
+frame loop once the contact passes `MAX_HOLD_SECONDS`. If you add another way
+for a press to begin, give it a way to end that does not depend on an event
+arriving.
+
+The new-press case is also the simulation's own rule: `applyTouch` releases any
+presence still marked held before it registers the press, because there is one
+contact. Without that, the next `applyContact` finds the stale presence first
+and the new finger drags it across the tank.
 
 The Phase 2 response model sits on top:
 
