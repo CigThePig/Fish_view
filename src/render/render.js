@@ -1,5 +1,5 @@
 import { drawLivingWorld } from './living-world.js';
-import { mirrorRows, normalizeRows } from "../art/mirror.js";
+import { mirrorRows } from "../art/mirror.js";
 import { PLANT_SPECIES_BY_ID } from "../art/plants.js";
 import {
   individualSprites,
@@ -7,7 +7,7 @@ import {
   spriteDimensions,
   substrateArt,
 } from "../art/sprites.js";
-import { CELL_HEIGHT, CELL_WIDTH, DISPLAY, SUBSTRATE_ROWS, WATERLINE_ROWS } from "../sim/config.js";
+import { CELL_HEIGHT, CELL_WIDTH, DISPLAY, SUBSTRATE_ROWS } from "../sim/config.js";
 import {
   SUBSTRATE_RELIEF_ROWS,
   SURFACE_WAVE_CURVATURE,
@@ -617,35 +617,6 @@ function drawSurfaceRipples(builder, state, palette, metrics) {
         fg: mixColor(palette.waterBands[0], palette.waterline, 0.52 + 0.32 * clamp(-offset / SURFACE_WAVE_ROWS, 0, 1)),
         scaleX: char === "~" ? 0.95 : 0.78,
         scaleY: 0.84,
-      })],
-    });
-  }
-}
-
-function drawAmbient(builder, state, palette, metrics) {
-  const waterTop = SURFACE_Y_ROWS + 0.5;
-  const waterBottom = state.rows - SUBSTRATE_ROWS - 0.2;
-  const travel = waterBottom - waterTop;
-  const count = 13;
-  for (let index = 0; index < count; index += 1) {
-    const initialY = sampleRange(state.seed, 1400 + index, 0, travel);
-    const speed = sampleRange(state.seed, 1500 + index, 0.035, 0.085);
-    const path = positiveModulo(initialY + state.elapsedRealSeconds * speed, travel);
-    const phase = sampleRange(state.seed, 1600 + index, 0, TAU);
-    const worldX = sampleRange(state.seed, 1700 + index, 1, state.cols - 1)
-      + Math.sin(state.elapsedRealSeconds * 0.18 + phase) * 0.18;
-    const worldY = waterBottom - path;
-    const char = index % 9 === 0 ? "o" : index % 4 === 0 ? "'" : ".";
-    addGlyphObject(builder, {
-      id: `ambient:${index}`,
-      layer: LAYERS.ambient,
-      glyphs: [positionedGlyph(metrics, {
-        char,
-        worldX,
-        worldY,
-        fg: palette.ambient,
-        scaleX: char === "o" ? 0.72 : 0.62,
-        scaleY: char === "o" ? 0.72 : 0.62,
       })],
     });
   }
