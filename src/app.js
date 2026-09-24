@@ -22,12 +22,17 @@ const TICK_INTERVAL = 1 / 10;
 const query = new URLSearchParams(globalThis.location.search);
 const requestedSeed = query.get("seed");
 const seed = requestedSeed ? hashSeed(requestedSeed) : DEFAULT_SEED;
+// Read when an aquarium is created rather than once at load: this page is a
+// nightlight that stays open for hours, and a reset in the evening must not
+// start the new aquarium at whatever hour the page happened to be opened.
+function wallClockHours(date = new Date()) {
+  return date.getHours() + date.getMinutes() / 60;
+}
 const now = new Date();
-const wallClockHours = now.getHours() + now.getMinutes() / 60;
 const visibilityClock = new VisibilityClock();
 if (document.visibilityState === "hidden") visibilityClock.pause(now.getTime());
 
-let state = loadPersistedState(createAquariumState({ seed, wallClockHours }));
+let state = loadPersistedState(createAquariumState({ seed, wallClockHours: wallClockHours(now) }));
 const canvas = document.querySelector("#aquarium-canvas");
 const renderer = new CanvasSceneRenderer(canvas);
 const debugPanel = document.querySelector("#debug-panel");
@@ -405,7 +410,7 @@ globalThis.addEventListener("pagehide", saveAquarium);
 
 document.querySelector("#reset-simulation").addEventListener("click", () => {
   clearPersistedState(state);
-  state = createAquariumState({ seed, wallClockHours });
+  state = createAquariumState({ seed, wallClockHours: wallClockHours() });
   syncControls();
   renderer.reset();
   previousPlantSignatures.clear();
