@@ -119,10 +119,15 @@ test('Pages gives every stylesheet and module a new shared asset namespace', asy
   const src = path.join(output,built.assets,'src');
   for(const file of (await readdir(src,{recursive:true})).filter(file=>file.endsWith('.js'))) {
     const code = await readFile(path.join(src,file),'utf8');
-    for(const match of code.matchAll(/(?:from\s+|import\s*\()\s*["'](\.[^"']+\.js)(?:\?[^"']*)?["']/g)) {
+    for(const match of code.matchAll(/(?:from\s+|import\s*\()\s*["'](\.[^"']+\.js)(\?[^"']*)?["']/g)) {
       const dependency = path.resolve(path.dirname(path.join(src,file)),match[1]);
       assert.ok(dependency.startsWith(src+path.sep));
       assert.ok((await readFile(dependency)).length>0);
+      // The namespace is the cache-buster. A browser keys a module by its whole
+      // URL, so one file imported both with and without a query is two module
+      // instances - parsed twice, each with its own raster caches - and the
+      // query cannot be applied consistently by hand across the graph.
+      assert.equal(match[2],undefined,`${file} imports ${match[1]}${match[2]}`);
     }
   }
 });

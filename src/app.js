@@ -1,6 +1,6 @@
 import { DeveloperGesture, aquariumPoint } from "./platform/aquarium-input.js";
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=horizontal-20260909";
-import { render } from "./render/render.js?v=horizontal-20260909";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
+import { render } from "./render/render.js";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { VisibilityClock } from "./platform/visibility-clock.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
