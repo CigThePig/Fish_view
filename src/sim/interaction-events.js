@@ -244,6 +244,21 @@ export function impulseStrength(impulse) {
   return impulse.strength * Math.sin(progress * Math.PI) * (1 - progress * 0.45);
 }
 
+/**
+ * How much of a disturbance is still to come, which is what decides the one
+ * that makes way when the list is full.
+ *
+ * Not `impulseStrength`. That envelope rises from nothing, so by it the ring a
+ * press has just made is the faintest thing in the water, and past the cap
+ * every new press evicted the one before it a few frames into its life while
+ * rings from seconds earlier finished fading. What a disturbance is worth
+ * keeping is what it has left.
+ */
+export function impulseRemaining(impulse) {
+  if (!impulse || impulse.durationSeconds <= 0) return 0;
+  return impulse.strength * clamp(1 - impulse.ageSeconds / impulse.durationSeconds, 0, 1);
+}
+
 /** Whether this fish is close enough to notice the stimulus at all. */
 export function perceivesStimulus(fish, stimulus) {
   if (!stimulus) return false;
@@ -511,7 +526,7 @@ export function registerTouch(state, x, y, context = "open-water", { pointerX = 
     MAX_STIMULI,
     stimulusSalience,
   );
-  const impulses = admit(state.impulses ?? [], touchImpulse(state, x, y, sequence), MAX_IMPULSES, impulseStrength);
+  const impulses = admit(state.impulses ?? [], touchImpulse(state, x, y, sequence), MAX_IMPULSES, impulseRemaining);
   return {
     // The events as the aquarium now holds them, identities included.
     stimulus: stimuli.event,
@@ -705,7 +720,7 @@ export function registerWake(state, { x, y, dirX, dirY, strength, contact = "wat
   if (existing >= 0) {
     return Object.freeze((state.impulses ?? []).map((entry, index) => (index === existing ? impulse : entry)));
   }
-  return admit(state.impulses ?? [], impulse, MAX_IMPULSES, impulseStrength).list;
+  return admit(state.impulses ?? [], impulse, MAX_IMPULSES, impulseRemaining).list;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1026,7 +1041,7 @@ export function releaseStimulus(state, stimulus) {
       seed: mix32(stimulus.sequence ?? 0),
     }),
     MAX_IMPULSES,
-    impulseStrength,
+    impulseRemaining,
   );
   return {
     stimulus: released,

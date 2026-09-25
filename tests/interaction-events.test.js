@@ -192,6 +192,23 @@ test("the event lists are capped, and the faintest event is what makes way", () 
   assert.equal(dominantStimulus(state).ageSeconds, Math.min(...state.stimuli.map((s) => s.ageSeconds)));
 });
 
+// A found defect, kept fixed. Water arrives, peaks and settles, so its envelope
+// is nothing at the moment it is rung - and ranked by that envelope, the ring a
+// press has just made is the faintest thing in the water. Past the cap every new
+// press evicted the one before it three tenths of a second into its life, while
+// rings from two seconds earlier went on fading: a child tapping across the
+// glass watched the old taps answered and the new ones not.
+test("past the impulse cap, the ring that makes way is the one nearest its end", () => {
+  let state = stockedAquarium({ seed: 7 });
+  for (let tap = 1; tap <= 14; tap += 1) {
+    state = applyTouch(state, 1 + tap * 4, 9);
+    const live = state.impulses.map((impulse) => impulse.id).sort();
+    const youngest = Array.from({ length: Math.min(tap, MAX_IMPULSES) }, (_, back) => `touch:${tap - back}`).sort();
+    assert.deepEqual(live, youngest, `tap ${tap} kept the wrong rings`);
+    for (let frame = 0; frame < 3; frame += 1) state = tick(state, 0.1);
+  }
+});
+
 test("the same aquarium and the same event history give the same aquarium", () => {
   const script = [[18, 8], [18.2, 8.1], [44, 13], [30, 15]];
   const replay = () => {
