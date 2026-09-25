@@ -16,7 +16,12 @@ function random(length) {
 const values = [null, false, "bad", [], {}, -1e300, 1e308, -1, 0, 0.5];
 const fishFields = ["seed", "ageDays", "x", "y", "vx", "vy", "phase", "drives", "history", "behavior", "visual", "shape"];
 const plantFields = ["seed", "speciesId", "ageDays", "x", "matureHeight", "phase", "secondaryPhase", "frequency", "sway", "lean"];
-const report = { options, generatorSeed: randomState, failures: 0, examples: [] };
+// Fish the calendar had put in the tank that a restore did not bring back. Not
+// a failure: a save whose own clock is destroyed cannot say which slots the
+// calendar has reached, and one that rewrites a fish to another plausible
+// identity looks exactly like an aquarium older than the calendar. Reported so
+// a regression in repair shows up as a number rather than as nothing.
+const report = { options, generatorSeed: randomState, failures: 0, fishLost: 0, savesLosingFish: 0, examples: [] };
 for (let sample = 0; sample < options.cases; sample++) {
   const seed = random(0x100000000);
 
@@ -48,7 +53,14 @@ for (let sample = 0; sample < options.cases; sample++) {
   // Only JSON-representable corruption can actually arrive from localStorage.
   const json = JSON.stringify(saved);
   try {
-    let state = restorePersistentState(base, JSON.parse(json));
+    // Restored onto a brand-new aquarium, exactly as the app restores one: it
+    // holds only its founder, so every other damaged slot has to be repaired
+    // from the calendar rather than copied back from the aquarium that wrote it.
+    let state = restorePersistentState(createAquariumState({ seed }), JSON.parse(json));
+    const restoredSeeds = new Set(state.individuals.map((fish) => fish.seed));
+    const lost = base.individuals.filter((fish) => !restoredSeeds.has(fish.seed)).length;
+    report.fishLost += lost;
+    if (lost) report.savesLosingFish += 1;
     const identities = new Set(state.individuals.map((fish) => fish.seed));
     if (identities.size !== state.individuals.length
       || identities.size < 1
@@ -70,5 +82,6 @@ for (let sample = 0; sample < options.cases; sample++) {
   }
 }
 await writeAudit(options.output, "persistence", report);
-console.log(`${options.cases} malformed saves, ${report.failures} failures`);
+console.log(`${options.cases} malformed saves, ${report.failures} failures, `
+  + `${report.fishLost} fish not restored across ${report.savesLosingFish} saves`);
 if (report.failures) process.exitCode = 1;

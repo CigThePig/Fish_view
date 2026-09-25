@@ -407,6 +407,11 @@ cost and real interaction quality, not on hundreds of redundant edge cases.
 restore with sensible defaults, malformed values must be repaired rather than
 discarding the aquarium, and transient interaction state must never be written.
 A fully stocked ten-year aquarium serialises to under 18 KB; keep it bounded.
+The app restores a save onto a brand-new aquarium, which holds only its
+founder, so test a restore against `createAquariumState({ seed })` rather than
+against the stocked aquarium that wrote the save. Repair that only worked there
+deleted the fish from every damaged record from the day the stocking calendar
+landed until this was found.
 
 ## Running things
 

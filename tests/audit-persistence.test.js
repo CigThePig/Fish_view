@@ -43,6 +43,61 @@ test("damaged fish slots do not reset healthy identities or the aquarium's histo
   }
 });
 
+// The tests above restore onto the stocked aquarium itself, which is not what
+// the app does: `loadPersistedState` restores onto a brand-new one, and a new
+// aquarium holds only its founder. The repair used to look for a damaged slot's
+// fish there, find nothing past slot 0, and drop it - and because that fish's
+// arrival is already marked resolved, it never came back. One corrupt record
+// cost the aquarium a fish for good, and shifted every later fish down a slot.
+test("a damaged fish slot is repaired onto the aquarium the app restores into", () => {
+  const seed = 42;
+  const base = stocked(seed);
+  const fresh = createAquariumState({ seed });
+  assert.equal(fresh.individuals.length, 1, "expected a new aquarium to hold only its founder");
+  for (const damage of [
+    (fish) => { fish[5] = null; },
+    (fish) => { fish[5].seed = "fish"; },
+    (fish) => { delete fish[5].seed; },
+    (fish) => { fish[5] = { ...fish[0] }; },
+    // Copied over by its neighbour, so the copy comes first.
+    (fish) => { fish[5] = { ...fish[6] }; },
+  ]) {
+    const saved = JSON.parse(JSON.stringify(serializePersistentState(base)));
+    saved.individuals[9].history.touches = 23;
+    damage(saved.individuals);
+    const restored = restorePersistentState(fresh, saved);
+    assert.deepEqual(restored.individuals.map((fish) => fish.seed), base.individuals.map((fish) => fish.seed));
+    assert.equal(restored.individuals[9].history.touches, 23, "a healthy record lost its history");
+    // Repaired as the fish the calendar put in that slot, at the age it has
+    // reached, rather than as a newly hatched arrival.
+    assert.equal(restored.individuals[5].ageDays, base.individuals[5].ageDays);
+    assertHealthy(restored);
+  }
+});
+
+// With no fish in the roster at all, the calendar still says who lives here.
+// Restoring only the founder and trusting the zero-length advance to bring back
+// the rest only works for a save that never recorded the arrivals; one that did
+// would be a single fish for the rest of its life.
+test("a save with no fish comes back with every fish its calendar has reached", () => {
+  const seed = 42;
+  const base = stocked(seed);
+  const saved = JSON.parse(JSON.stringify(serializePersistentState(base)));
+  saved.individuals = [];
+  const restored = restorePersistentState(createAquariumState({ seed }), saved);
+  assert.deepEqual(restored.individuals.map((fish) => fish.seed), base.individuals.map((fish) => fish.seed));
+  assertHealthy(restored);
+
+  // And a young aquarium does not gain fish it has not reached yet.
+  const young = advanceAquariumHistory(createAquariumState({ seed }), 30);
+  const youngSave = JSON.parse(JSON.stringify(serializePersistentState(young)));
+  youngSave.individuals = [];
+  assert.deepEqual(
+    restorePersistentState(createAquariumState({ seed }), youngSave).individuals.map((fish) => fish.seed),
+    young.individuals.map((fish) => fish.seed),
+  );
+});
+
 test("duplicate identities are repaired without displacing a valid later record", () => {
   const base = stocked(83);
   const saved = serializePersistentState(base);

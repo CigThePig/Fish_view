@@ -50,7 +50,7 @@ import {
 } from "./fish-activities.js";
 import { MAX_FISH_PITCH_DEGREES, substrateSafeY, surfaceSafeY } from "./fish-motion.js";
 import { fishSpriteWidth } from "./fish-growth.js";
-import { schoolCountFor } from "./fish-roster.js";
+import { aquariumRoster, schoolCountFor } from "./fish-roster.js";
 import { affinitiesFromSeed, sanitizeSocialMemory } from "./fish-personality.js";
 import {
   createPlantFromSeed,
@@ -648,15 +648,36 @@ export function restorePersistentState(baseState, saved) {
   // before the roster rather than after it.
   const totalDays = savedAge(saved.totalDays);
   const originals = new Map(baseState.individuals.map((fish) => [fish.seed, fish]));
+  // The fish that lives in slot `index`, for a record too damaged to say. The
+  // calendar appends arrivals in order, so a save's array index is its roster
+  // slot. The app restores onto a brand-new aquarium, which holds only its
+  // founder, so every later slot comes from the calendar - and only a slot the
+  // calendar has reached, because a damaged save is not a way to hatch a fish
+  // early.
+  const roster = aquariumRoster(baseState.seed);
+  const slotFish = (index) => {
+    if (baseState.individuals[index]) return baseState.individuals[index];
+    const entry = roster[index];
+    if (!entry || entry.day > totalDays) return null;
+    return createIndividualFromSeed(entry.seed, index, baseState.cols, baseState.rows);
+  };
   const sources = saved.individuals.slice(0, MAX_INDIVIDUALS);
-  const reserved = new Set(sources.filter((fish) => record(fish)
-    && stableSeed(fish.seed, -1) === fish.seed).map((fish) => fish.seed));
+  const valid = (fish) => record(fish) && stableSeed(fish.seed, -1) === fish.seed;
+  const reserved = new Set(sources.filter(valid).map((fish) => fish.seed));
+  // Identities the save holds in their own roster slot. A record copied over
+  // its neighbour puts one identity in two slots, and the copy is the one that
+  // is not at home: honouring whichever came first kept the copy, dropped the
+  // original as the duplicate, and lost the fish the copy had overwritten.
+  const home = new Set(sources
+    .filter((fish, index) => valid(fish) && roster[index]?.seed === fish.seed)
+    .map((fish) => fish.seed));
   const seen = new Set();
   const individuals = sources.flatMap((source, index) => {
     let fish = record(source) ? source : {};
-    const slot = baseState.individuals[index];
+    const slot = slotFish(index);
     let seed = stableSeed(fish.seed, -1);
-    if (seed !== fish.seed || seen.has(seed)) {
+    const displaced = home.has(seed) && roster[index]?.seed !== seed;
+    if (seed !== fish.seed || seen.has(seed) || displaced) {
       // Repair a damaged original slot without replacing another valid saved
       // identity or resetting all of the aquarium's learned history.
       if (!slot || seen.has(slot.seed) || reserved.has(slot.seed)) return [];
@@ -716,12 +737,14 @@ export function restorePersistentState(baseState, saved) {
   });
 
   // A save that came back with nothing usable still has to come back with the
-  // fish the aquarium was founded on. Everything the calendar has since been
-  // through is restored by the zero-length advance at the end of this function,
-  // so this only has to cover the founder rather than reconstruct a whole cast.
+  // fish its calendar has put in it. The zero-length advance at the end of this
+  // function cannot be trusted to: it only brings back an arrival the save
+  // never recorded, and a save that recorded them would be left holding the
+  // founder alone for the rest of its life.
   if (!individuals.length) {
-    for (const fish of baseState.individuals) {
-      if (seen.has(fish.seed)) continue;
+    for (let index = 0; index < MAX_INDIVIDUALS; index += 1) {
+      const fish = slotFish(index);
+      if (!fish || seen.has(fish.seed)) continue;
       individuals.push({ ...fish, ageDays: savedAge(inferredFishAgeDays(baseState.seed, fish.seed, totalDays)) });
       seen.add(fish.seed);
     }
