@@ -740,6 +740,35 @@ test("letting go of the sand lifts less than pressing it did", () => {
   assert.equal(raised({ ...press, strength: 1 }), pressBubbles);
 });
 
+// A found defect, kept fixed. A press becomes a presence at under half a
+// second, and the ring it started lives for over three, so most short holds
+// are let go while their own arrival ring is still expanding at the same
+// point. Both rings were touch water at one spot, so the release was coalesced
+// into the arrival: the crest collapsed back to the fingertip mid-swell and
+// started again as the gentle one. Letting go is a second, smaller ring, not
+// the first one being reset.
+test("letting go of a short hold leaves the arrival ring running", () => {
+  const base = settled(5);
+  let state = applyTouch(base, 33, 9.5);
+  for (let frame = 1; frame <= 10; frame += 1) {
+    state = tick(applyContact(state, 33, 9.5, frame * STEP), STEP);
+  }
+  assert.ok(heldStimulus(state), "a one-second press did not become a presence");
+  const arrival = state.impulses.find((impulse) => impulse.id.startsWith("touch:"));
+  assert.ok(arrival && arrival.ageSeconds > 0.5, "the arrival ring had already gone");
+
+  const released = applyRelease(state);
+  assert.deepEqual(
+    released.impulses.find((impulse) => impulse.id === arrival.id),
+    arrival,
+    "letting go cut the arrival ring short",
+  );
+  const ring = released.impulses.find((impulse) => impulse.id.startsWith("release:"));
+  assert.ok(ring, "letting go did not ring the water");
+  assert.equal(ring.strength, RELEASE_IMPULSE_STRENGTH);
+  assert.equal(ring.ageSeconds, 0);
+});
+
 // A captured pointer goes on reporting after the finger leaves the canvas, so
 // the movement allowance has to be measured on coordinates that are not clamped
 // to the aquarium's own bounds either. Clamped, a finger dragged off the side of

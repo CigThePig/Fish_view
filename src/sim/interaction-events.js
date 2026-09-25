@@ -1006,6 +1006,12 @@ export function releaseStimulus(state, stimulus) {
     state.impulses ?? [],
     createImpulse({
       id: `release:${stimulus.sequence ?? 0}`,
+      // Its own kind of disturbance, so it coalesces only with another release.
+      // A hold is let go of while the ring its press started is usually still
+      // expanding at the same point, and as a second touch impulse there it was
+      // merged into that ring: the arrival collapsed back to the fingertip and
+      // restarted as this one instead of carrying on beside it.
+      source: "release",
       sequence: stimulus.sequence ?? 0,
       x: stimulus.x,
       y: stimulus.y,
