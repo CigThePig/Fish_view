@@ -59,7 +59,7 @@ Requires Node 20 or later.
 npm ci
 npm start
 npm test
-npm run verify                    # tests plus every audit the CI gate runs
+npm run verify                    # tests plus the core CI gates (see AGENTS.md for the rest)
 npm run build:pages
 npm run audit:simulation
 npm run audit:persistence -- --cases=200

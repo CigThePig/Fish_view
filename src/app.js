@@ -1,6 +1,6 @@
 import { DeveloperGesture, aquariumPoint } from "./platform/aquarium-input.js";
-import { CanvasSceneRenderer } from "./render/canvas-renderer.js?v=horizontal-20260909";
-import { render } from "./render/render.js?v=horizontal-20260909";
+import { CanvasSceneRenderer } from "./render/canvas-renderer.js";
+import { render } from "./render/render.js";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./platform/storage.js";
 import { VisibilityClock } from "./platform/visibility-clock.js";
 import { historyDiagnostics } from "./sim/aquarium-history.js";
@@ -22,12 +22,17 @@ const TICK_INTERVAL = 1 / 10;
 const query = new URLSearchParams(globalThis.location.search);
 const requestedSeed = query.get("seed");
 const seed = requestedSeed ? hashSeed(requestedSeed) : DEFAULT_SEED;
+// Read when an aquarium is created rather than once at load: this page is a
+// nightlight that stays open for hours, and a reset in the evening must not
+// start the new aquarium at whatever hour the page happened to be opened.
+function wallClockHours(date = new Date()) {
+  return date.getHours() + date.getMinutes() / 60;
+}
 const now = new Date();
-const wallClockHours = now.getHours() + now.getMinutes() / 60;
 const visibilityClock = new VisibilityClock();
 if (document.visibilityState === "hidden") visibilityClock.pause(now.getTime());
 
-let state = loadPersistedState(createAquariumState({ seed, wallClockHours }));
+let state = loadPersistedState(createAquariumState({ seed, wallClockHours: wallClockHours(now) }));
 const canvas = document.querySelector("#aquarium-canvas");
 const renderer = new CanvasSceneRenderer(canvas);
 const debugPanel = document.querySelector("#debug-panel");
@@ -258,6 +263,13 @@ canvas.addEventListener("pointerdown", (event) => {
   if (event.isTrusted) canvas.setPointerCapture?.(event.pointerId);
   if (!point.hotspot) {
     gesture.reset();
+    // There is one contact, so a press that finds one still live is a finger
+    // whose release never arrived - or a mouse pressed while a finger rests on
+    // a hybrid panel, where both are primary. `applyTouch` lets go of it either
+    // way; ending it here first lets it go the way every other contact goes,
+    // confirmed where it was last seen, rather than wherever the last tick left
+    // it.
+    endContact();
     state = applyTouch(state, point.x, point.y);
     contact = { id: event.pointerId, x: point.x, y: point.y, time: pointerStart.time };
     drawVisible();
@@ -398,7 +410,7 @@ globalThis.addEventListener("pagehide", saveAquarium);
 
 document.querySelector("#reset-simulation").addEventListener("click", () => {
   clearPersistedState(state);
-  state = createAquariumState({ seed, wallClockHours });
+  state = createAquariumState({ seed, wallClockHours: wallClockHours() });
   syncControls();
   renderer.reset();
   previousPlantSignatures.clear();

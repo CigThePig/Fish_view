@@ -41,6 +41,7 @@ import {
   MAX_STIMULI,
   RELEASE_IMPULSE_SECONDS,
   RELEASE_IMPULSE_STRENGTH,
+  RELEASE_SECONDS,
   SUBSTRATE_RELEASE_SECONDS,
   TOUCH_STIMULUS_RADIUS_CELLS,
   chainEnvironmentStimuli,
@@ -490,6 +491,40 @@ test("a hold nobody confirms lets go of itself", () => {
   for (let frame = 0; frame < 60; frame += 1) state = tick(state, STEP);
   assert.deepEqual([...state.stimuli], []);
   assert.equal(state.individuals.every((fish) => fish.attention === null), true);
+});
+
+// The same lost release, seen from the next press rather than from the clock:
+// the platform is still confirming a finger that has gone when a new one lands.
+// There is one contact, so the new press is it. Left held, the old presence is
+// what the next confirmation finds first, and a finger resting still across the
+// tank drags it there - a stationary press read as a forty-cell drag.
+test("a new press lets go of a presence whose release never arrived", () => {
+  let state = applyTouch(settled(5), 12, 8);
+  for (let at = STEP; at <= 1 + 1e-9; at += STEP) {
+    state = tick(applyContact(state, 12, 8, at), STEP);
+  }
+  const first = heldStimulus(state);
+  assert.ok(first, "the fixture never became a presence");
+
+  state = applyTouch(state, 52, 12);
+  const second = latestTouchStimulus(state);
+  assert.notEqual(second.id, first.id);
+  const abandoned = state.stimuli.find((stimulus) => stimulus.id === first.id);
+  assert.equal(abandoned.held, false, "the old presence outlived the press that replaced it");
+  assert.equal(abandoned.released, true, "the old presence ended without an aftermath");
+
+  for (let at = STEP; at <= 1 + 1e-9; at += STEP) {
+    state = tick(applyContact(state, 52, 12, at), STEP);
+  }
+  const held = heldStimulus(state);
+  assert.equal(held?.id, second.id, "the press actually made never became the presence");
+  assert.equal(held.gesture, GESTURES.press, "a finger resting still was read as moving");
+  // A second into its aftermath, the old presence is still fading where it was
+  // left.
+  assert.ok(RELEASE_SECONDS > 1, "the fixture assumes an aftermath outlasts one second");
+  const old = state.stimuli.find((stimulus) => stimulus.id === first.id);
+  assert.ok(old, "the old presence's aftermath was cut short");
+  assert.deepEqual([old.x, old.y], [first.x, first.y], "the new finger moved the old presence");
 });
 
 test("holding the same place twice does not replay the same performance", () => {

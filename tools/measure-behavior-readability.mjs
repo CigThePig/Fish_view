@@ -173,10 +173,7 @@ for (const row of rows) {
 
 const failures = [];
 {
-
-  const sample = Object.fromEntries(rows
-    .filter((row) => true)
-    .map((row) => [row.activity, row]));
+  const sample = Object.fromEntries(rows.map((row) => [row.activity, row]));
   if (!(sample["bubble-investigate"].peakSpeed > sample.cruise.peakSpeed * 1.7)) {
     failures.push(`landscape: bubble peak speed is not distinct from cruise`);
   }
@@ -196,7 +193,7 @@ const failures = [];
     || sample["substrate-search"].peakAbsPitch < 18) {
     failures.push(`landscape: substrate sequence did not reach a readable peck`);
   }
-  if (rows.some((row) => true && row.fullFrames > 0)) {
+  if (rows.some((row) => row.fullFrames > 0)) {
     failures.push(`landscape: at least one choreography requested a full redraw`);
   }
 }

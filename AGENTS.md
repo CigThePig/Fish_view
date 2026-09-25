@@ -190,9 +190,15 @@ help while `src/app.js` is still confirming a contact every frame, which is
 exactly what a lost `pointerup` leaves it doing. So `src/app.js` ends a contact
 on the release, on a cancel from the same pointer, on `lostpointercapture`, on
 a release delivered anywhere else on the page, when the drawer opens, when the
-tab goes away — and, needing no event at all, from the frame loop once the
-contact passes `MAX_HOLD_SECONDS`. If you add another way for a press to begin,
-give it a way to end that does not depend on an event arriving.
+tab goes away, when a new press lands — and, needing no event at all, from the
+frame loop once the contact passes `MAX_HOLD_SECONDS`. If you add another way
+for a press to begin, give it a way to end that does not depend on an event
+arriving.
+
+The new-press case is also the simulation's own rule: `applyTouch` releases any
+presence still marked held before it registers the press, because there is one
+contact. Without that, the next `applyContact` finds the stale presence first
+and the new finger drags it across the tank.
 
 The Phase 2 response model sits on top:
 
@@ -411,8 +417,14 @@ is a development-only dependency used by the capture tools.
 npm ci
 npm start                 # http://localhost:4173
 npm test                  # node --test, ~2 minutes
-npm run verify            # the full CI gate: tests + all four audits
+npm run verify            # tests plus the first six gates listed below, ~4 minutes
 ```
+
+`npm run verify` is the core of CI's verify job, not all of it. Since Phase 7
+froze the behaviour vocabulary, CI also fails a branch that loses any of it,
+with `audit:phase7-vocabulary` and `measure:remaining-vocabulary`. Run both
+before pushing anything that touches choreography, activity selection or the
+utilities; together they add about two minutes.
 
 Individual gates and instruments:
 
@@ -421,7 +433,10 @@ npm run audit:simulation                  # deterministic tick replay, escapes, 
 npm run audit:persistence -- --cases=200  # malformed-save fuzzing and repair
 npm run audit:render                      # incremental vs full render, pixel comparison
 npm run measure:feeding                   # substrate strike geometry per species and stage
+npm run measure:relationship              # familiarity growth, personality contrast, glass visits
 npm run measure:readability               # per-activity motion signatures and damage
+npm run audit:phase7-vocabulary           # not in verify: the final vocabulary across identities and bodies
+npm run measure:remaining-vocabulary -- --seconds=1800  # not in verify: every recurring episode, production path
 npm run measure:stage2-baseline           # tap synchronisation, damage headroom, save size
 npm run observe:interaction               # replay pointer histories; per-fish and whole-aquarium response
 npm run observe:interaction -- --seeds=5 --scenario=chase-tap --detail=chase-tap

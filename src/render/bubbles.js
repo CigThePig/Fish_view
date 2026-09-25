@@ -6,9 +6,9 @@ import {
 import { SUBSTRATE_ROWS } from "../sim/config.js";
 import { SURFACE_Y_ROWS } from "../sim/environment.js";
 import { sampleSigned } from "../sim/prng.js";
-import { worldLayer, laneForDepth } from "./depth.js?v=horizontal-20260909";
-import { mixColor } from "./palette.js?v=horizontal-20260909";
-import { addGlyphObject, positionedGlyph } from "./scene.js?v=horizontal-20260909";
+import { worldLayer, laneForDepth } from "./depth.js";
+import { mixColor } from "./palette.js";
+import { addGlyphObject, positionedGlyph } from "./scene.js";
 
 const NEAR_BUBBLE_SCALE = 0.28;
 

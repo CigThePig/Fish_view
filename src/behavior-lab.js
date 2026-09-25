@@ -8,7 +8,7 @@ import {
   steeringFieldsFor,
   steeringKeyLabel,
   steeringKeysFor,
-} from "./dev/choreography-fields.js?v=horizontal-20260909";
+} from "./dev/choreography-fields.js";
 import {
   SHOWCASE_DEFAULT_SEED,
   SHOWCASE_SCENARIOS,
@@ -24,7 +24,7 @@ import {
   resolvedSceneTuning,
   resolvedSteeringProfile,
   steeringDeviations,
-} from "./sim/choreography-tuning.js?v=horizontal-20260909";
+} from "./sim/choreography-tuning.js";
 import { hashSeed } from "./sim/prng.js";
 
 const TICK_SECONDS = 0.1;

@@ -3,8 +3,8 @@ import { groundY, meadowDepth, woodDepth } from '../sim/habitat-depth.js';
 import { impulseFlowAt } from '../sim/interaction-events.js';
 import { worldLayer, laneForDepth } from './depth.js';
 import { sample01, sampleRange } from '../sim/prng.js';
-import { mixColor } from './palette.js?v=horizontal-20260909';
-import { addGlyphObject, positionedGlyph } from './scene.js?v=horizontal-20260909';
+import { mixColor } from './palette.js';
+import { addGlyphObject, positionedGlyph } from './scene.js';
 
 // How far a speck of dust is carried by water that is moving. A little more
 // than a tuft, because a speck is smaller than anything else in the tank.

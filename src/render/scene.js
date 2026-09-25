@@ -1,5 +1,5 @@
 import { CELL_HEIGHT, CELL_WIDTH } from "../sim/config.js";
-import { glyphRasterBounds } from "./glyph-raster.js?v=horizontal-20260909";
+import { glyphRasterBounds } from "./glyph-raster.js";
 
 // A thousandth of a glyph's own scale: a step moves the far edge of the tallest
 // character by a fortieth of a pixel, and makes the raster reproducible from a
